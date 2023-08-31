@@ -20,3 +20,7 @@ func IsValidIndiaZip(val string) bool {
 func IsValidCountryCode2(val string) bool {
 	return (DEFAULT_COUNTRY.Alpha2() == strings.ToUpper(val))
 }
+
+func IsValidCountryCode3(val string) bool {
+	return (DEFAULT_COUNTRY.Alpha3() == strings.ToUpper(val))
+}

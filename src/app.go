@@ -14,6 +14,10 @@ func main() {
 
 	fmt.Println("Valid CC2 in: ", valid.IsValidCountryCode2("in"))
 	fmt.Println("Valid CC2 IN: ", valid.IsValidCountryCode2("IN"))
-	fmt.Println("Invalid CC2 II: ", valid.IsValidCountryCode2("II"))
+	fmt.Println("Invalid CC2 US: ", valid.IsValidCountryCode2("US"))
+
+	fmt.Println("Valid CC3 ind: ", valid.IsValidCountryCode3("ind"))
+	fmt.Println("Valid CC3 IND: ", valid.IsValidCountryCode3("IND"))
+	fmt.Println("Invalid CC3 IIN: ", valid.IsValidCountryCode3("IIN"))
 
 }
