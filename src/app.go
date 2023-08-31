@@ -36,4 +36,8 @@ func main() {
 	fmt.Println("Invalid Aadhaar 023456789123: ", valid.IsValidAadhaarNumber("023456789123"))
 	fmt.Println("Invalid Aadhaar 0234-5678-9123: ", valid.IsValidAadhaarNumber("0234-5678-9123"))
 
+	fmt.Println("Valid PAN BNZAA2318J: ", valid.IsValidPanNumber("BNZAA2318J"))
+	fmt.Println("Invalid PAN 23ZAABN18J: ", valid.IsValidPanNumber("23ZAABN18J"))
+	fmt.Println("Invalid PAN BNZAA 23184: ", valid.IsValidPanNumber("BNZAA 23184"))
+
 }

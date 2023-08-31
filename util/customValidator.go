@@ -39,3 +39,8 @@ func IsValidFileType(val string) bool {
 func IsValidAadhaarNumber(val string) bool {
 	return regexp.MustCompile(`^[1-9]{4}[ -]?[0-9]{4}[ -]?[0-9]{4}$`).MatchString(val)
 }
+
+// Write a function to validate GST number
+func IsValidPanNumber(val string) bool {
+	return regexp.MustCompile(`[A-Z]{5}[0-9]{4}[A-Z]{1}`).MatchString(val)
+}
