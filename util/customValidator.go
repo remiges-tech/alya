@@ -35,3 +35,7 @@ func IsValidFileType(val string) bool {
 	}
 	return false
 }
+
+func IsValidAadhaarNumber(val string) bool {
+	return regexp.MustCompile(`^[1-9]{4}[ -]?[0-9]{4}[ -]?[0-9]{4}$`).MatchString(val)
+}
