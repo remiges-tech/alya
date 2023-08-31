@@ -9,6 +9,8 @@ import (
 
 const DEFAULT_COUNTRY = countries.India
 
+var FILE_EXT = []string{"doc", "docx", "png"}
+
 func ValidatorTest(str string) string {
 	return "Hello " + str
 }
@@ -23,4 +25,13 @@ func IsValidCountryCode2(val string) bool {
 
 func IsValidCountryCode3(val string) bool {
 	return (DEFAULT_COUNTRY.Alpha3() == strings.ToUpper(val))
+}
+
+func IsValidFileType(val string) bool {
+	for _, ext := range FILE_EXT {
+		if strings.HasSuffix(val, ext) {
+			return true
+		}
+	}
+	return false
 }

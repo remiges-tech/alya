@@ -19,5 +19,6 @@ func main() {
 	fmt.Println("Valid CC3 ind: ", valid.IsValidCountryCode3("ind"))
 	fmt.Println("Valid CC3 IND: ", valid.IsValidCountryCode3("IND"))
 	fmt.Println("Invalid CC3 IIN: ", valid.IsValidCountryCode3("IIN"))
+	fmt.Println("File: ", valid.IsValidFileType("text.docx"))
 
 }
