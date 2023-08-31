@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	valid "remiges.tech/util"
+	valid "go-framework/util"
 )
 
 func main() {
