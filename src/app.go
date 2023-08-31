@@ -8,7 +8,6 @@ import (
 
 func main() {
 	fmt.Println("in main")
-	fmt.Println(valid.CleanerTest("clean file"))
-	fmt.Println(valid.ValidatorTest("validator file"))
+	fmt.Println(valid.IsValidIndiaZip("111100"))
 
 }
