@@ -1,13 +1,18 @@
 package util
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/biter777/countries"
+	"github.com/ttacon/libphonenumber"
 )
 
 const DEFAULT_COUNTRY = countries.India
+const DEFAULT_COUNTRY_CODE = "IN"
+const NUMBER_TYPE_MOBILE = 1
+const NUMBER_TYPE_FIXED_LINE = 0
 
 var FILE_EXT = []string{"doc", "docx", "png"}
 
@@ -43,4 +48,17 @@ func IsValidAadhaarNumber(val string) bool {
 // Write a function to validate GST number
 func IsValidPanNumber(val string) bool {
 	return regexp.MustCompile(`[A-Z]{5}[0-9]{4}[A-Z]{1}`).MatchString(val)
+}
+
+func IsValidMobileNumber(val string) bool {
+	num, err := libphonenumber.Parse(val, DEFAULT_COUNTRY_CODE)
+	//fmt.Printf("%T\n", num)
+	if err != nil {
+		fmt.Println("Err:", err)
+		return false
+	}
+	if libphonenumber.IsValidNumberForRegion(num, DEFAULT_COUNTRY_CODE) && libphonenumber.GetNumberType(num) == NUMBER_TYPE_MOBILE {
+		return true
+	}
+	return false
 }
