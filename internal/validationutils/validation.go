@@ -1,63 +1,57 @@
-// Validationutils provides a set of utilities for validating
-// and format the validation errors for API requests.
+// Validationutils provides a set of utilities for validating request bodies
+// and formatting the validation errors
 package main
 
 import (
-	"github.com/asaskevich/govalidator"
-	"strings"
+	"errors"
+	"github.com/go-playground/validator/v10"
 )
 
 // ValidationError is a struct that defines the format
-// of all validation error responses from the server.
-// This is designed for uniformity of server response and easy
-// consumption by the client regardless of the type of validation error.
+// of error part of the standard response object specified at
+// See: https://redmine.bquanta.xyz/projects/mail-doc/wiki/Websvcgeneral#Web-service-response-format
 type ValidationError struct {
-	Code    string `json:"code"`
-	Msgcode int    `json:"msgcode"`
-	Field   string `json:"field"`
+	Field   string   `json:"field"`
+	Code    string   `json:"code"`
+	Msgcode int      `json:"msgcode"`
+	Vals    []string `json:"vals,omitempty"` // omit if Vals is empty
 }
+
+// FieldValuesFunc retrieves both the input value and validated value for
+// a field from a data structure. This is required because this package
+// is not aware of the data structures being validated.
+// The caller of Validate would implement the logic to get field's input
+// value and allowed values for the validation rule for each field.
+// These values go into `vals` field or the error response.
+// See: https://redmine.bquanta.xyz/projects/mail-doc/wiki/Websvcgeneral#Web-service-response-format
+type FieldValuesFunc[T any] func(data T, fieldName string) []string
 
 // Validate is a generic function that accepts any data structure,
 // validates it according to struct tag-provided validation rules
 // and returns a slice of ValidationError in case of validation errors.
-// If there are no validation errors, it returns an empty slice.
-// This design allows for usage across different data structures
-// and validation rules in a uniform manner.
-func Validate(data interface{}) []ValidationError {
+// This design allows validating reqeust bodies in a uniform manner.
+func Validate[T any](data T, getValuesFunc FieldValuesFunc[T]) []ValidationError {
 	var validationErrors []ValidationError
 
-	// govalidator.ValidateStruct takes our data input
-	// and validates it according to the provided struct tags.
-	valid, err := govalidator.ValidateStruct(data)
+	validate := validator.New()
 
-	if !valid {
-		errs := err.(govalidator.Errors)
+	err := validate.Struct(data)
 
-		for _, e := range errs.Errors() {
-			validationError := ValidationError{}
-			errorString := e.Error()
+	if err != nil {
+		var errs validator.ValidationErrors
+		if errors.As(err, &errs) {
+			for _, e := range errs {
+				fieldName := e.Field()
+				errorType := e.Tag()
 
-			// The error messages returned by govalidator typically
-			// take the form 'name: validationmessage', hence we split this
-			// to extract field name and error type.
-			splitErr := strings.Split(errorString, ":")
-			fieldName := strings.TrimSpace(splitErr[0])
-			errorType := strings.TrimSpace(splitErr[1])
+				// vals array from https://redmine.bquanta.xyz/projects/mail-doc/wiki/Websvcgeneral#Web-service-response-format
+				// The caller knows the logic to get these values for their data structure.
+				vals := getValuesFunc(data, fieldName)
 
-			// Map govalidator's validation
-			// rule failures to our custom error codes and messages.
-			switch errorType {
-			case "required":
-				validationError = ValidationError{"missing", 45, fieldName}
-			case "email":
-				validationError = ValidationError{"invalid", 50, fieldName}
-			case "range":
-				validationError = ValidationError{"outofrange", 55, fieldName}
-			default:
-				validationError = ValidationError{"unknown", 0, fieldName}
+				validationError := GetValidationError(fieldName, errorType, vals)
+
+				validationErrors = append(validationErrors, validationError)
 			}
-
-			validationErrors = append(validationErrors, validationError)
 		}
 	}
 

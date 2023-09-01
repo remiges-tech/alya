@@ -1,0 +1,24 @@
+required:
+  code: "missing"
+  msgcode: 45
+  msgtemplate: "__FIELD1__ is missing"
+
+email:
+  code: "invalid"
+  msgcode: 50
+  msgtemplate: "__FIELD1__ should be a valid email"
+
+min:
+  code: "outofrange"
+  msgcode: 55
+  msgtemplate: "__FIELD1__ should not be less than __FIELD2__"
+
+max:
+  code: "outofrange"
+  msgcode: 55
+  msgtemplate: "__FIELD1__ should not be more than __FIELD2__"
+
+unknown:
+  code: "unknown"
+  msgcode: 0
+  msgtemplate: "__FIELD1__ has an unknown error"
