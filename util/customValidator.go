@@ -6,15 +6,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/biter777/countries"
 	"github.com/ttacon/libphonenumber"
 )
 
 // Default country is set as India
-const DEFAULT_COUNTRY = countries.India
+//const DEFAULT_COUNTRY = countries.India
 
 // Default country code is set as IN
 const DEFAULT_COUNTRY_CODE = "IN"
+const DEFAULT_COUNTRY_CODE_3C = "IND"
 
 // constant value of 1 for Mobile types in googllibphone library
 const NUMBER_TYPE_MOBILE = 1
@@ -41,14 +41,18 @@ func IsValidIndiaZip(val string) bool {
 // val: the country code to validate.
 // returns: a boolean indicating whether the string is a valid country code of 2 character.
 func IsValidCountryCode2(val string) bool {
-	return (DEFAULT_COUNTRY.Alpha2() == strings.ToUpper(val))
+	//return (DEFAULT_COUNTRY.Alpha2() == strings.ToUpper(val))
+	return DEFAULT_COUNTRY_CODE == strings.ToUpper(val)
+
 }
 
 // IsValidCountryCode3 checks if the provided country code is valid and is of 3 Character.
 // val: the country code to validate.
 // returns: a boolean indicating whether the string is a valid country code of 3 character.
 func IsValidCountryCode3(val string) bool {
-	return (DEFAULT_COUNTRY.Alpha3() == strings.ToUpper(val))
+	//return (DEFAULT_COUNTRY.Alpha3() == strings.ToUpper(val))
+	return DEFAULT_COUNTRY_CODE_3C == strings.ToUpper(val)
+
 }
 
 // IsValidFileType checks if the given value is a valid file type.
