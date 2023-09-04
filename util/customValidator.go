@@ -1,4 +1,4 @@
-// Package util provide validation function
+// This package util provide validation function
 package util
 
 import (
@@ -10,11 +10,19 @@ import (
 	"github.com/ttacon/libphonenumber"
 )
 
+// Default country is set as India
 const DEFAULT_COUNTRY = countries.India
+
+// Default country code is set as IN
 const DEFAULT_COUNTRY_CODE = "IN"
+
+// constant value of 1 for Mobile types in googllibphone library
 const NUMBER_TYPE_MOBILE = 1
+
+// constant value of 0 for Fixed line types in googllibphone library
 const NUMBER_TYPE_FIXED_LINE = 0
 
+// Variable to hold allowed set of file extensions
 var FILE_EXT = []string{"doc", "docx", "png"}
 
 // ValidatorTest is a dummy test function
