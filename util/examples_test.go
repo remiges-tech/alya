@@ -3,6 +3,7 @@ package util_test
 import (
 	"fmt"
 	valid "go-framework/util"
+	"testing"
 )
 
 func ExampleValidatorTest() {
@@ -11,6 +12,16 @@ func ExampleValidatorTest() {
 	// Output:
 	// Hello indu
 
+}
+
+func TestIsValidMobileNumber(t *testing.T) {
+
+	got := valid.IsValidMobileNumber("+918888888888")
+	want := true
+
+	if got != want {
+		t.Errorf("got %v, wanted %v", got, want)
+	}
 }
 
 func ExampleIsValidMobileNumber() {
