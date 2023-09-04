@@ -78,7 +78,9 @@ func IsValidPanNumber(val string) bool {
 }
 
 // IsValidMobileNumber checks if a given string is a valid mobile number.
+//
 // val: the string to be checked as a mobile number, which represents the mobile number to be validated.
+//
 // returns: a boolean value indicating whether the given number is valid.
 func IsValidMobileNumber(val string) bool {
 	num, err := libphonenumber.Parse(val, DEFAULT_COUNTRY_CODE)

@@ -15,15 +15,28 @@ func ExampleValidatorTest() {
 
 }
 
-// Unit test
+// mobileNumber means argument 1 and the expected stands for the 'result we expect'
+type mobileNumberTest struct {
+	mobileNumber string
+	expected     bool
+}
 
+// Struct object for Table-Driven test with various valid and invalid mobile numbers
+var mobileNumberTests = []mobileNumberTest{
+	{"+918888888888", true},
+	{"8888888888", true},
+	{"+9111111111111", false},
+	{"11111111111", false},
+	{"022274688879", false},
+}
+
+// Function for Table-Driven test
 func TestIsValidMobileNumber(t *testing.T) {
 
-	got := valid.IsValidMobileNumber("+918888888888")
-	want := true
-
-	if got != want {
-		t.Errorf("got %v, wanted %v", got, want)
+	for _, val := range mobileNumberTests {
+		if output := valid.IsValidMobileNumber(val.mobileNumber); output != val.expected {
+			t.Errorf("got %v, wanted %v", output, val.expected)
+		}
 	}
 }
 
