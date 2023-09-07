@@ -9,9 +9,6 @@ import (
 	"github.com/ttacon/libphonenumber"
 )
 
-// Default country is set as India
-//const DEFAULT_COUNTRY = countries.India
-
 // Default country code is set as IN
 const DEFAULT_COUNTRY_CODE = "IN"
 const DEFAULT_COUNTRY_CODE_3C = "IND"
@@ -24,11 +21,6 @@ const NUMBER_TYPE_FIXED_LINE = 0
 
 // Variable to hold allowed set of file extensions
 var FILE_EXT = []string{"doc", "docx", "png"}
-
-// ValidatorTest is a dummy test function
-func ValidatorTest(str string) string {
-	return "Hello " + str
-}
 
 // IsValidIndiaZip checks if a given string is a valid India zip code.
 // val: the string to be validated as a zip code.
@@ -82,9 +74,7 @@ func IsValidPanNumber(val string) bool {
 }
 
 // IsValidMobileNumber checks if a given string is a valid mobile number.
-//
 // val: the string to be checked as a mobile number, which represents the mobile number to be validated.
-//
 // returns: a boolean value indicating whether the given number is valid.
 func IsValidMobileNumber(val string) bool {
 	num, err := libphonenumber.Parse(val, DEFAULT_COUNTRY_CODE)

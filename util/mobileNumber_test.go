@@ -1,3 +1,5 @@
+// This package provide testing utilities for IsValidMobileNumber function
+// This covers the table-driven test and Exmample for the IsValidMobileNumber function
 package util_test
 
 import (
@@ -6,14 +8,6 @@ import (
 	valid "go-framework/util"
 	"testing"
 )
-
-func ExampleValidatorTest() {
-
-	fmt.Println(valid.ValidatorTest("indu"))
-	// Output:
-	// Hello indu
-
-}
 
 // mobileNumber means argument 1 and the expected stands for the 'result we expect'
 type mobileNumberTest struct {
@@ -28,11 +22,16 @@ var mobileNumberTests = []mobileNumberTest{
 	{"+9111111111111", false},
 	{"11111111111", false},
 	{"022274688879", false},
+	{"", false},
+	{"asdf", false},
 }
 
 // Function for Table-Driven test
+// TestIsValidMobileNumber tests the IsValidMobileNumber function.
+// It iterates over the mobileNumberTests slice and checks if the output of
+// IsValidMobileNumber matches the expected value. If the output doesn't match,
+// it reports an error using the t.Errorf function.
 func TestIsValidMobileNumber(t *testing.T) {
-
 	for _, val := range mobileNumberTests {
 		if output := valid.IsValidMobileNumber(val.mobileNumber); output != val.expected {
 			t.Errorf("got %v, wanted %v", output, val.expected)
@@ -40,8 +39,10 @@ func TestIsValidMobileNumber(t *testing.T) {
 	}
 }
 
+// ExampleIsValidMobileNumber generates examples of valid and invalid mobile numbers and prints the results.
+// No parameters.
+// No return value.
 func ExampleIsValidMobileNumber() {
-
 	fmt.Println("Valid mobile number examples")
 	fmt.Println("+918888888888: ", valid.IsValidMobileNumber("+918888888888"))
 	fmt.Println("8888888888: ", valid.IsValidMobileNumber("8888888888"))
@@ -59,5 +60,4 @@ func ExampleIsValidMobileNumber() {
 	// +9111111111111:  false
 	// 11111111111:  false
 	// 022274688879:  false
-
 }
