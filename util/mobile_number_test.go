@@ -1,5 +1,5 @@
 // This package provide testing utilities for IsValidMobileNumber function
-// This covers the table-driven test and Exmample for the IsValidMobileNumber function
+// This covers the table-driven test and Exmample for the IsValidMobileNumber function for documentation
 package util_test
 
 import (
@@ -10,13 +10,13 @@ import (
 )
 
 // mobileNumber means argument 1 and the expected stands for the 'result we expect'
-type mobileNumberTest struct {
+type testMobileNumber struct {
 	mobileNumber string
 	expected     bool
 }
 
 // Struct object for Table-Driven test with various valid and invalid mobile numbers
-var mobileNumberTests = []mobileNumberTest{
+var testMobileNumbers = []testMobileNumber{
 	{"+918888888888", true},
 	{"8888888888", true},
 	{"+9111111111111", false},
@@ -32,7 +32,7 @@ var mobileNumberTests = []mobileNumberTest{
 // IsValidMobileNumber matches the expected value. If the output doesn't match,
 // it reports an error using the t.Errorf function.
 func TestIsValidMobileNumber(t *testing.T) {
-	for _, val := range mobileNumberTests {
+	for _, val := range testMobileNumbers {
 		if output := valid.IsValidMobileNumber(val.mobileNumber); output != val.expected {
 			t.Errorf("got %v, wanted %v", output, val.expected)
 		}
