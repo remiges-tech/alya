@@ -1,5 +1,5 @@
-// This package provide testing utilities for IsValidDOB function
-// This covers the table-driven test and Exmample for the IsValidDOB function for documentation
+// This package provide testing utilities for IsValidDateOfBirth function
+// This covers the table-driven test and Exmample for the IsValidDateOfBirth function for documentation
 package util_test
 
 import (
@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// dob means argument 1 and the expected stands for the 'result we expect'
 const MIN_AGE = 18
 const MAX_AGE = 65
 
+// dob means argument 1 and the expected stands for the 'result we expect'
 type testDOB struct {
 	dob      string
 	expected bool
@@ -28,7 +28,7 @@ var testDOBs = []testDOB{
 }
 
 // Function for Table-Driven test
-// TestIsValidDOB tests the IsValidDOB function.
+// TestIsValidDateOfBirth tests the IsValidDateOfBirth function.
 // It iterates over the testDOBs slice and checks if the output of
 // IsValidDateOfBirth matches the expected value. If the output doesn't match,
 // it reports an error using the t.Errorf function.
@@ -40,7 +40,7 @@ func TestIsValidDateOfBirth(t *testing.T) {
 	}
 }
 
-// ExampleIsValidDOB generates examples of valid and invalid file names and prints the results.
+// ExampleIsValidDateOfBirth generates examples of valid and invalid file names and prints the results.
 // No parameters.
 // No return value.
 func ExampleIsValidDateOfBirth() {
