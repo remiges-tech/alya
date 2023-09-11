@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ttacon/libphonenumber"
 )
@@ -21,6 +22,8 @@ const NUMBER_TYPE_FIXED_LINE = 0
 
 // Variable to hold allowed set of file extensions
 var FILE_EXT = []string{"doc", "docx", "png"}
+
+const DATE_FORMAT = "2006-01-02"
 
 // IsValidIndiaZip checks if a given string is a valid India zip code.
 // val: the string to be validated as a zip code.
@@ -87,4 +90,20 @@ func IsValidMobileNumber(val string) bool {
 		return true
 	}
 	return false
+}
+
+// Write a function to validate the date of birth based on maximum age and minimum age
+func IsValidDateOfBirth(val string, minAge float64, maxAge float64) bool {
+	// convert val in date format
+	date, err := time.Parse(DATE_FORMAT, val)
+	if err == nil {
+		age := time.Since(date).Hours() / 24 / 365
+		if age >= minAge && age <= maxAge {
+			return true
+		} else {
+			return false
+		}
+	} else {
+		return false
+	}
 }
