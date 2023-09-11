@@ -92,7 +92,7 @@ func IsValidMobileNumber(val string) bool {
 	return false
 }
 
-// Write a function to validate the date of birth based on maximum age and minimum age
+// Write a function to validate the date of birth based on maximum age and minimum age passesed in the function
 func IsValidDateOfBirth(val string, minAge float64, maxAge float64) bool {
 	// convert val in date format
 	date, err := time.Parse(DATE_FORMAT, val)
