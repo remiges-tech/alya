@@ -12,28 +12,28 @@ import (
 // It returns strings in return types.
 func main() {
 	var input_num string
-	fmt.Printf("Please enter the numer :")
+	fmt.Printf("Please enter the number :")
 	fmt.Scan(&input_num)
 
-	/*words, err := util.ConvertNums2Words(input_num)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("In words: %s", words)*/
-
-	//get words for India
-	words, err := util.ConvertNums2Words(input_num, "IND") // IntegerToEnIn(num)
+	//get integer to Indian words.
+	words, err := util.ConvertIntegerToEnIn(input_num)
 	if err != nil {
 		log.Fatal("Not a valid number")
 	}
 	fmt.Printf("In words(India): %s\n", words)
-	//get words for International
-	words1, err := util.ConvertNums2Words(input_num, "INTERNATIONAL") // IntegerToEnIn(num)
+
+	//get integer to international words
+	words1, err := util.ConvertIntegerToEnUS(input_num)
 	if err != nil {
 		log.Fatal("Not a valid number")
 	}
 	fmt.Printf("In words(International): %s\n", words1)
 
+	/*words, err := util.ConvertNums2Words(input_num,"IND")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("In words: %s", words)*/
 }
 
 /* output

@@ -20,11 +20,8 @@ var indianMuliplier = []string{"", "thousand", "lakh", "crore", "arab", "kharab"
 // International  Muilitpliers or Units
 var englishMegas = []string{"", "thousand", "million", "billion", "trillion", "quadrillion", "quintillion", "sextillion", "septillion", "octillion", "nonillion", "decillion", "undecillion", "duodecillion", "tredecillion", "quattuordecillion"}
 
-// constants
 // const variables
 const (
-	// Default country is set as India
-	DEFAULT_COUNTRY_CODE = "IND"
 	// constant value of 2 for Max Demimal allowed/considered
 	MAX_DECIMAL_NUMBER_ALLOWED = 2
 	// constant value of 0 for Min Demimal allowed/considered
@@ -38,16 +35,19 @@ const (
 	MIN_TEN_MULTIPLIER = 10
 )
 
-// This is ConvertNums2Words function. It used to convert the numbers into words.
-// It uses num2words package to convert Numbers to words
-// It takes 2 input parameters. first parameter will be numbers and second will be country code to as a input parameters.
-// If its proper number, it returns strings else it returns errors in return types.
-func ConvertNums2Words(input_num string, country_code string) (string, error) {
+// ConvertIntegerToEnIn converts an integer to its English representation in Indian format.
+//
+// Parameters:
+// - input_num: the input number as a string.
+//
+// Returns:
+// - the Indian English representation of the number, and the error is returned if the input_num is empty or not a valid number.
+func ConvertIntegerToEnIn(input_num string) (string, error) {
 	// If no input_num was given, return an error with a message.
 	if input_num == "" {
 		return input_num, errors.New("Empty string. Please provide valid number")
 	}
-	// if its valid number then it will return proper string else returen error
+
 	num, err := strconv.ParseFloat(input_num, 32)
 	if err != nil {
 		return input_num, errors.New("Not a valid number")
@@ -58,49 +58,87 @@ func ConvertNums2Words(input_num string, country_code string) (string, error) {
 	words := []string{}
 
 	for i := 0; i < len(slc); i++ {
-		// Create a response using a string, error format.
 		number, err := strconv.Atoi(slc[i])
 		if err != nil {
 			return input_num, errors.New("Not a valid number")
 		}
-		if country_code == DEFAULT_COUNTRY_CODE { //generte words for Indian
-			if i == 0 {
-				words = append(words, IntegerToEnIn(number))
-				words = append(words, "Rupees")
+		// Create a response using a string, error format.
 
-			} else {
-				if number >= MIN_MULTIPLIER_ALLOWED {
-					temp_str := slc[i]
-					//consider first two digits
-					temp_str1 := temp_str[MIN_DECIMAL_NUMBER_ALLOWED:MAX_DECIMAL_NUMBER_ALLOWED]
-					number, _ = strconv.Atoi(temp_str1)
-				}
-				words = append(words, "and "+IntegerToEnIn(number)+" Paise")
+		// if its valid number then it will return proper string
+		//approach 1 will accept 12 digit numbers
+		if i == 0 {
+			words = append(words, IntegerToEnIn(number))
+			words = append(words, "Rupees")
+		} else {
+			if number >= MIN_MULTIPLIER_ALLOWED {
+				temp_str := slc[i]
+				//consider first two digits
+				temp_str1 := temp_str[MIN_DECIMAL_NUMBER_ALLOWED:MAX_DECIMAL_NUMBER_ALLOWED]
+				number, _ = strconv.Atoi(temp_str1)
 			}
-
-		} else { // generate words for International
-			if i == 0 {
-				words = append(words, IntegerToEnUs(number))
-			} else {
-				if number >= MIN_MULTIPLIER_ALLOWED { //100 {
-					temp_str := slc[i]
-					//consider first two digits
-					temp_str1 := temp_str[MIN_DECIMAL_NUMBER_ALLOWED:MAX_DECIMAL_NUMBER_ALLOWED]
-					number, _ = strconv.Atoi(temp_str1) //GetFirstTwoDigits(number) //  strings.SplitAfterN(res3[i], "", 1)
-				}
-				words = append(words, "and "+IntegerToEnUs(number))
-			}
-
+			words = append(words, "and "+IntegerToEnIn(number)+" Paise")
 		}
+
 	}
-	//join the words and return the final string
 	return strings.Join(words, " "), nil
 
 }
 
-// IntegerToEnIn converts an integer to Indian words.
+// ConvertIntegerToEnUS converts an input number to its English representation in US format.
 //
-// It takes an input integer and returns the English representation of the number as a string.
+// Parameters:
+// - input_num: the input number as a string.
+//
+// Returns:
+// - the Indian English representation of the number, and the error is returned if the input_num is empty or not a valid number.
+func ConvertIntegerToEnUS(input_num string) (string, error) {
+	// If no input_num was given, return an error with a message.
+	if input_num == "" {
+		return input_num, errors.New("Empty string. Please provide valid number")
+	}
+
+	num, err := strconv.ParseFloat(input_num, 32)
+	if err != nil {
+		return input_num, errors.New("Not a valid number")
+	}
+	fmt.Println("Entered Number: ", num)
+	slc := []string{}
+	slc = strings.Split(input_num, ".")
+	words := []string{}
+
+	for i := 0; i < len(slc); i++ {
+		number, err := strconv.Atoi(slc[i])
+		if err != nil {
+			return input_num, errors.New("Not a valid number")
+		}
+		// Create a response using a string, error format.
+
+		// if its valid number then it will return proper string
+		//approach 1 will accept 12 digit numbers
+		if i == 0 {
+			words = append(words, IntegerToEnUs(number))
+		} else {
+			if number >= MIN_MULTIPLIER_ALLOWED {
+				temp_str := slc[i]
+				//consider first two digits
+				temp_str1 := temp_str[MIN_DECIMAL_NUMBER_ALLOWED:MAX_DECIMAL_NUMBER_ALLOWED]
+				number, _ = strconv.Atoi(temp_str1)
+			}
+			words = append(words, "and "+IntegerToEnUs(number))
+		}
+
+	}
+	return strings.Join(words, " "), nil
+
+}
+
+// IntegerToEnIn converts an integer to indian words.
+//
+// Parameters:
+// - input: the integer to convert.
+//
+// Returns:
+// - the English representation of the input integer as a string.
 func IntegerToEnIn(input int) string {
 	//log.Printf("Input: %d\n", input)
 	words := []string{}
