@@ -1,2 +1,0 @@
-The package name is main just for time being because I need to run Gin server for testing. I may have separate Gin 
-server for testing request and responses also. So, temporarily I will keep the package names as main.
