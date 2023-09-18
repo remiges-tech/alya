@@ -14,14 +14,19 @@ var slcUnits = []string{"", "one", "two", "three", "four", "five", "six", "seven
 var slcTens = []string{"", "ten", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"}
 var slcTeens = []string{"ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"}
 
-// Indian Muilitpliers or Units
+// Ancient Indian Muilitpliers or Units
 var indianMuliplier = []string{"", "thousand", "lakh", "crore", "arab", "kharab", "neel", "padma", "shankh", "mahashankh"}
+
+// Modern Indian Muilitpliers or Units
+var indianMuliplier2 = []string{"", "thousand", "lakh", "crore", "hundred", "thousand", "lakh", "crore", "hundred", "thousand"}
 
 // International  Muilitpliers or Units
 var englishMegas = []string{"", "thousand", "million", "billion", "trillion", "quadrillion", "quintillion", "sextillion", "septillion", "octillion", "nonillion", "decillion", "undecillion", "duodecillion", "tredecillion", "quattuordecillion"}
 
 // const variables
 const (
+	//coonstant value for max number of digits allowed
+	MAX_NUMBERS_ALLOWED = 19
 	// constant value of 2 for Max Demimal allowed/considered
 	MAX_DECIMAL_NUMBER_ALLOWED = 2
 	// constant value of 0 for Min Demimal allowed/considered
@@ -35,29 +40,36 @@ const (
 	MIN_TEN_MULTIPLIER = 10
 )
 
-// ConvertIntegerToEnIn converts an integer to its English representation in Indian format.
+// ConvertIntegerToEnAncientIn converts an integer to its English representation in Ancient Indian format.
 //
 // Parameters:
 // - input_num: the input number as a string.
 //
 // Returns:
-// - the Indian English representation of the number, and the error is returned if the input_num is empty or not a valid number.
-func ConvertIntegerToEnIn(input_num string) (string, error) {
+// - the Ancient Indian English representation of the number, and the error is returned if the input_num is empty or not a valid number.
+func ConvertIntegerToEnAncientIn(input_num string) (string, error) {
 	// If no input_num was given, return an error with a message.
 	if input_num == "" {
 		return input_num, errors.New("Empty string. Please provide valid number")
 	}
 
-	num, err := strconv.ParseFloat(input_num, 32)
+	_, err := strconv.ParseFloat(input_num, 32)
 	if err != nil {
 		return input_num, errors.New("Not a valid number")
 	}
-	fmt.Println("Entered Number: ", num)
 	slc := []string{}
 	slc = strings.Split(input_num, ".")
 	words := []string{}
 
 	for i := 0; i < len(slc); i++ {
+
+		temp_str1 := ""
+		temp_str1 = slc[i][MIN_DECIMAL_NUMBER_ALLOWED:1]
+		//fmt.Println(temp_str1)
+		if (temp_str1 == "-" && len(slc[i]) > MAX_NUMBERS_ALLOWED+1) || (temp_str1 != "-" && len(slc[i]) > MAX_NUMBERS_ALLOWED) {
+			return input_num, errors.New("Overflow error: 19 digits are allowed max. for example: 1234567890123456789.03")
+		}
+
 		number, err := strconv.Atoi(slc[i])
 		if err != nil {
 			return input_num, errors.New("Not a valid number")
@@ -67,7 +79,7 @@ func ConvertIntegerToEnIn(input_num string) (string, error) {
 		// if its valid number then it will return proper string
 		//approach 1 will accept 12 digit numbers
 		if i == 0 {
-			words = append(words, IntegerToEnIn(number))
+			words = append(words, IntegerToEnAncientIn(number))
 			words = append(words, "Rupees")
 		} else {
 			if number >= MIN_MULTIPLIER_ALLOWED {
@@ -76,7 +88,7 @@ func ConvertIntegerToEnIn(input_num string) (string, error) {
 				temp_str1 := temp_str[MIN_DECIMAL_NUMBER_ALLOWED:MAX_DECIMAL_NUMBER_ALLOWED]
 				number, _ = strconv.Atoi(temp_str1)
 			}
-			words = append(words, "and "+IntegerToEnIn(number)+" Paise")
+			words = append(words, "and "+IntegerToEnAncientIn(number)+" Paise")
 		}
 
 	}
@@ -97,16 +109,22 @@ func ConvertIntegerToEnUS(input_num string) (string, error) {
 		return input_num, errors.New("Empty string. Please provide valid number")
 	}
 
-	num, err := strconv.ParseFloat(input_num, 32)
+	_, err := strconv.ParseFloat(input_num, 64)
 	if err != nil {
 		return input_num, errors.New("Not a valid number")
 	}
-	fmt.Println("Entered Number: ", num)
 	slc := []string{}
 	slc = strings.Split(input_num, ".")
 	words := []string{}
 
 	for i := 0; i < len(slc); i++ {
+		temp_str1 := ""
+		temp_str1 = slc[i][MIN_DECIMAL_NUMBER_ALLOWED:1]
+		//fmt.Println(temp_str1)
+		if (temp_str1 == "-" && len(slc[i]) > MAX_NUMBERS_ALLOWED+1) || (temp_str1 != "-" && len(slc[i]) > MAX_NUMBERS_ALLOWED) {
+			return input_num, errors.New("Overflow error: 19 digits are allowed max. for example: 1234567890123456789.03")
+		}
+
 		number, err := strconv.Atoi(slc[i])
 		if err != nil {
 			return input_num, errors.New("Not a valid number")
@@ -130,6 +148,131 @@ func ConvertIntegerToEnUS(input_num string) (string, error) {
 	}
 	return strings.Join(words, " "), nil
 
+}
+
+// ConvertIntegerToEnIn converts an integer to its English representation in Indian numbering system.
+//
+// input_num: the input number as a string.
+// Returns the English representation of the input number and an error, if any.
+func ConvertIntegerToEnIn(input_num string) (string, error) {
+	// If no input_num was given, return an error with a message.
+	if input_num == "" {
+		return input_num, errors.New("Empty string. Please provide valid number")
+	}
+	_, err := strconv.ParseFloat(input_num, 64)
+	if err != nil {
+		return input_num, errors.New("Not a valid number1")
+	}
+	slc := []string{}
+	slc = strings.Split(input_num, ".")
+	words := []string{}
+
+	for i := 0; i < len(slc); i++ {
+		temp_str1 := ""
+		temp_str1 = slc[i][MIN_DECIMAL_NUMBER_ALLOWED:1]
+		if (temp_str1 == "-" && len(slc[i]) > MAX_NUMBERS_ALLOWED+1) || (temp_str1 != "-" && len(slc[i]) > MAX_NUMBERS_ALLOWED) {
+			return input_num, errors.New("Overflow error: 19 digits are allowed max. for example: 1234567890123456789.03")
+		}
+		number, err := strconv.Atoi(slc[i])
+		if err != nil {
+			return input_num, errors.New("Not a valid number")
+		}
+		// Create a response using a string, error format.
+
+		// if its valid number then it will return proper string
+		//approach 1 will accept 12 digit numbers
+		if i == 0 {
+			words = append(words, IntegerToEnIn(number))
+			words = append(words, "Rupees")
+
+		} else {
+			if number >= MIN_MULTIPLIER_ALLOWED {
+				temp_str := slc[i]
+				//consider first two digits
+				temp_str1 := temp_str[MIN_DECIMAL_NUMBER_ALLOWED:MAX_DECIMAL_NUMBER_ALLOWED]
+				number, _ = strconv.Atoi(temp_str1)
+			}
+			words = append(words, "and "+IntegerToEnIn(number)+" Paise")
+		}
+
+	}
+	return strings.Join(words, " "), nil
+
+}
+
+// IntegerToEnAncientIn converts an integer to indian words.
+//
+// Parameters:
+// - input: the integer to convert.
+//
+// Returns:
+// - the English representation of the input integer as a string.
+func IntegerToEnAncientIn(input int) string {
+	//log.Printf("Input: %d\n", input)
+	words := []string{}
+
+	if input < 0 {
+		words = append(words, "minus")
+		input *= -1
+	}
+
+	// split integer in hybrids
+	var hybrids []int
+	hybrids = integerToDAncinetHybrid(input)
+	// log.Printf("Hybrids: %v\n", hybrids)
+
+	// zero is a special case
+	if len(hybrids) == 0 {
+		return "zero"
+	}
+
+	// iterate over hybrids
+	for idx := len(hybrids) - 1; idx >= 0; idx-- {
+		hybrid := hybrids[idx]
+		//log.Printf("hybrid: %d (idx=%d)\n", hybrid, idx)
+
+		// nothing todo for empty hybrid
+		if hybrid == 0 {
+			continue
+		}
+
+		// three-digits
+		hundreds := hybrid / MIN_MULTIPLIER_ALLOWED % MIN_TEN_MULTIPLIER
+		tens := hybrid / MIN_TEN_MULTIPLIER % MIN_TEN_MULTIPLIER
+		units := hybrid % MIN_TEN_MULTIPLIER
+
+		//log.Printf("Hundreds:%d, Tens:%d, Units:%d\n", hundreds, tens, units)
+		if hundreds > 0 {
+			words = append(words, slcUnits[hundreds], "hundred")
+		}
+		if tens == 0 && units == 0 {
+			goto hybridEnd
+		}
+
+		switch tens {
+		case 0:
+			words = append(words, slcUnits[units])
+		case 1:
+			words = append(words, slcTeens[units])
+			break
+		default:
+			if units > 0 {
+				word := fmt.Sprintf("%s-%s", slcTens[tens], slcUnits[units])
+				words = append(words, word)
+			} else {
+				words = append(words, slcTens[tens])
+			}
+			break
+		}
+
+	hybridEnd:
+		// mega
+		if mega := indianMuliplier[idx]; mega != "" {
+			words = append(words, mega)
+		}
+	}
+	//log.Printf("Words length: %d\n", len(words))
+	return strings.Join(words, " ")
 }
 
 // IntegerToEnIn converts an integer to indian words.
@@ -199,7 +342,7 @@ func IntegerToEnIn(input int) string {
 
 	hybridEnd:
 		// mega
-		if mega := indianMuliplier[idx]; mega != "" {
+		if mega := indianMuliplier2[idx]; mega != "" {
 			words = append(words, mega)
 		}
 	}
@@ -207,11 +350,11 @@ func IntegerToEnIn(input int) string {
 	return strings.Join(words, " ")
 }
 
-// integerToDHybrid converts an integer to a hybrid representation.
+// integerToDAncinetHybrid converts an integer to a hybrid representation.
 //
 // The function takes an integer as a parameter and converts it to a hybrid representation.
 // It returns a slice of integers.
-func integerToDHybrid(number int) []int {
+func integerToDAncinetHybrid(number int) []int {
 	hybrid := []int{}
 
 	startHybrid := false
@@ -301,6 +444,31 @@ func IntegerToEnUs(input int) string {
 	}
 	//log.Printf("Words length: %d\n", len(words))
 	return strings.Join(words, " ")
+}
+
+// integerToDModernHybrid converts an integer to a hybrid representation.
+//
+// The function takes an integer as a parameter and converts it to a hybrid representation.
+// It returns a slice of integers.
+func integerToDHybrid(number int) []int {
+	hybrid := []int{}
+	i := 0
+	startHybrid := false
+	for number > 0 {
+		i += 1
+		if !startHybrid {
+			hybrid = append(hybrid, number%MAX_MULTIPLIER_ALLOWED)
+			number = number / MAX_MULTIPLIER_ALLOWED
+			startHybrid = true
+		} else if i == 5 || i == 9 {
+			hybrid = append(hybrid, number%10)
+			number = number / 10
+		} else {
+			hybrid = append(hybrid, number%100)
+			number = number / MIN_MULTIPLIER_ALLOWED
+		}
+	}
+	return hybrid
 }
 
 // integerToTriplets generates triplets from the given number.

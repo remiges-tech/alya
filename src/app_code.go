@@ -16,16 +16,21 @@ func main() {
 	fmt.Scan(&input_num)
 
 	//get integer to Indian words.
-	words, err := util.ConvertIntegerToEnIn(input_num)
+	words, err := util.ConvertIntegerToEnIn(input_num) //Indian words
 	if err != nil {
-		log.Fatal("Not a valid number")
+		log.Fatalf("Not a valid number. Error: %v", err)
 	}
-	fmt.Printf("In words(India): %s\n", words)
+	fmt.Printf("In words(Modern India): %s\n", words)
 
-	//get integer to international words
-	words1, err := util.ConvertIntegerToEnUS(input_num)
+	ancient_words, err := util.ConvertIntegerToEnAncientIn(input_num) //Indian words
 	if err != nil {
-		log.Fatal("Not a valid number")
+		log.Fatalf("Not a valid number. Error: %v", err)
+	}
+	fmt.Printf("In words(Ancient India): %s\n", ancient_words)
+
+	words1, err := util.ConvertIntegerToEnUS(input_num) //INTERNATIONAL words
+	if err != nil {
+		log.Fatalf("Not a valid number. Error: %v", err)
 	}
 	fmt.Printf("In words(International): %s\n", words1)
 
@@ -38,23 +43,28 @@ func main() {
 
 /* output
 
-PS D:\Merce\GoLang\go-framework\src> go run .\app_code.go
-Please enter the number :-12345.400
-Entered Number:  -12345.400390625
-In words(India): minus twelve thousand three hundred forty-five Rupees and forty Paise
-Entered Number:  -12345.400390625
-In words(International): minus twelve thousand three hundred forty-five and forty
+PS D:\Merce\GoLang_master\go-framework\src> go run .\app_code.go
+Please enter the number :1234567890123456789.123
+In words(Modern India): twelve thousand three hundred forty-five crore sixty-seven lakh eighty-nine thousand twelve crore thirty-four lakh fifty-six thousand seven hundred eighty-nine Rupees and twelve Paise
+In words(Ancient India): twelve shankh thirty-four padma fifty-six neel seventy-eight kharab ninety arab twelve crore thirty-four lakh fifty-six thousand seven hundred eighty-nine Rupees and twelve Paise
+In words(International): one quintillion two hundred thirty-four quadrillion five hundred sixty-seven trillion eight hundred ninety billion
+one hundred twenty-three million four hundred fifty-six thousand seven hundred eighty-nine and twelve
+PS D:\Merce\GoLang_master\go-framework\src> go run .\app_code.go
+Please enter the number :-1234567890123456789.123
+In words(Modern India): minus twelve thousand three hundred forty-five crore sixty-seven lakh eighty-nine thousand twelve crore thirty-four
+lakh fifty-six thousand seven hundred eighty-nine Rupees and twelve Paise
+In words(Ancient India): minus twelve shankh thirty-four padma fifty-six neel seventy-eight kharab ninety arab twelve crore thirty-four lakh fifty-six thousand seven hundred eighty-nine Rupees and twelve Paise
+In words(International): minus one quintillion two hundred thirty-four quadrillion five hundred sixty-seven trillion eight hundred ninety billion one hundred twenty-three million four hundred fifty-six thousand seven hundred eighty-nine and twelve
 
-Please enter the number :12334434534534545.7000
-Entered Number:  1.2334434183282688e+16
-In words(India): twelve padma thirty-three neel forty-four kharab thirty-four arab fifty-three crore forty-five lakh thirty-four thousand five hundred forty-five Rupees and seventy Paise
-Entered Number:  1.2334434183282688e+16
-In words(International): twelve quadrillion three hundred thirty-four trillion four hundred thirty-four billion five hundred thirty-four million five hundred thirty-four thousand five hundred forty-five and seventy
 
-PS D:\Merce\GoLang\go-framework\src> go run .\app_code.go
-Please enter the number :12345678901234567.43445
-Entered Number:  1.2345678407663616e+16
-In words(India): twelve padma thirty-four neel fifty-six kharab seventy-eight arab ninety crore twelve lakh thirty-four thousand five hundred sixty-seven Rupees and forty-three Paise
-Entered Number:  1.2345678407663616e+16
-In words(International): twelve quadrillion three hundred forty-five trillion six hundred seventy-eight billion nine hundred one million two hundred thirty-four thousand five hundred sixty-seven and forty-three
+PS D:\Merce\GoLang_master\go-framework\src> go run .\app_code.go
+Please enter the number :12345678901234567890.123
+2023/09/18 13:59:29 Not a valid number. Error: Overflow error: 19 digits are allowed max. for example: 1234567890123456789.03
+exit status 1
+
+PS D:\Merce\GoLang_master\go-framework\src> go run .\app_code.go
+Please enter the number :-12345678901234567890.123
+2023/09/18 14:00:02 Not a valid number. Error: Overflow error: 19 digits are allowed max. for example: 1234567890123456789.03
+exit status 1
+
 */
