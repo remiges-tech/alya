@@ -3,12 +3,16 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"go-framework/internal/webservices/user"
+	"go-framework/internal/wscutils"
 )
 
 func main() {
-	router := gin.Default()
+	r := gin.Default()
+	logger := &wscutils.CustomLogger{}
 
-	user.RegisterUserHandlers(router)
+	r.Use(wscutils.CustomLoggerMiddleware(logger))
 
-	router.Run(":8080")
+	user.RegisterUserHandlers(r)
+
+	r.Run(":8080")
 }
