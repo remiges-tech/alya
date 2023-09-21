@@ -30,3 +30,6 @@ Creating a new web service:
 
 
 
+## Working with RDBMS
+
+We will use sqlc (https://sqlc.dev/). It is a tool that generates type-safe Go code from SQL queries. 

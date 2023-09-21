@@ -1,0 +1,12 @@
+version: "3.7"
+
+services:
+  pg:
+    image: bitnami/postgresql
+    container_name: erptest-pg
+    environment:
+      POSTGRES_USER: erptest
+      POSTGRES_PASSWORD: erptest
+      POSTGRES_DB: erptest
+    ports:
+      - "5432:5432"

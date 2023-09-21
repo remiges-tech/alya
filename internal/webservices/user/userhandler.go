@@ -3,10 +3,24 @@ package user
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"go-framework/internal/pg/sqlc-gen"
 	"go-framework/internal/wscutils"
+	"go-framework/logharbour"
 	"net/http"
 	"strings"
 )
+
+type UserHandler struct {
+	sqlq *sqlc.Queries
+	lh   *logharbour.LogHarbour
+}
+
+func NewHandler(sqlq *sqlc.Queries, lh *logharbour.LogHarbour) *UserHandler {
+	return &UserHandler{
+		sqlq: sqlq,
+		lh:   lh,
+	}
+}
 
 type User struct {
 	Fullname string `json:"fullname" validate:"required"`
@@ -21,12 +35,20 @@ func RegisterUserHandlers(router *gin.Engine) { // we create a function to regis
 	// other user specific handlers
 }
 
+func (h *UserHandler) RegisterUserHandlers(router *gin.Engine) {
+	router.POST("/user", createUser)
+	// router.GET("/user", getUser)
+	// other user specific handlers
+}
+
 // createUser handles the POST /user request
 func createUser(c *gin.Context) {
 	var user User
 
 	// step 1: bind request body to struct
-	if err := wscutils.BindJson(c, &user); err != nil {
+	err := wscutils.BindJson(c, &user)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{wscutils.BuildValidationError("invalid_req_body", "invalida_req_body")}))
 		return
 	}
 
@@ -39,7 +61,10 @@ func createUser(c *gin.Context) {
 		return
 	}
 
-	// step 4: if there are no validation errors, send success response
+	// step 4: process the request
+	// create user
+
+	// step 5: if there are no errors, send success response
 	c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, &user, []wscutils.ErrorMessage{}))
 }
 
