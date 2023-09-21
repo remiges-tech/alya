@@ -32,14 +32,14 @@ func run() error {
 
 	queries := querybuilder.New(db)
 
-	// list all authors
-	authors, err := queries.ListVouchers(ctx)
+	// list all vouchers
+	vouchers, err := queries.ListVouchers(ctx)
 	if err != nil {
 		return err
 	}
-	log.Println(authors)
+	log.Println(vouchers)
 
-	// create an author
+	// create an voucher
 	insertedVoucher, err := queries.CreateVoucher(ctx, querybuilder.CreateVoucherParams{
 		Date:            time.Now(),
 		DebitAccountID:  sql.NullInt64{Int64: 1, Valid: true},
@@ -53,7 +53,7 @@ func run() error {
 	}
 	log.Println(insertedVoucher)
 
-	// get the author we just inserted
+	// get the voucher we just inserted
 	fetchedVoucher, err := queries.GetVoucher(ctx, insertedVoucher.ID)
 	if err != nil {
 		return err
