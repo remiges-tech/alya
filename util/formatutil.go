@@ -544,7 +544,7 @@ func NumberWithCommaInEnAncientInd(input int) string {
 
 	// zero is a special case
 	if len(hybrids) == 0 {
-		return "zero"
+		return "0"
 	}
 	// iterate over hybrids
 	for idx := len(hybrids) - 1; idx >= 0; idx-- {
@@ -646,7 +646,7 @@ func NumberWithCommaInEnInd(input int) string {
 
 	// zero is a special case
 	if len(hybrids) == 0 {
-		return "zero"
+		return "0"
 	}
 
 	// iterate over hybrids
@@ -664,6 +664,7 @@ func NumberWithCommaInEnInd(input int) string {
 		} else {
 			words = append(words, hybrids[idx])
 		}
+		//log.Printf("hybrid: %s (idx=%d)\n", hybrid, idx)
 	}
 
 	//log.Printf("Words length: %d\n", len(words))
@@ -682,14 +683,11 @@ func integerToDHybridComma(number int) []string {
 	startHybrid := false
 	for number > 0 {
 		i += 1
-		if !startHybrid {
+		if !startHybrid || i == 4 || i == 7 { //hundreds
 			str := fmt.Sprintf("%03d", number%MAX_MULTIPLIER_ALLOWED)
 			hybrid = append(hybrid, str)
 			number = number / MAX_MULTIPLIER_ALLOWED
 			startHybrid = true
-		} else if i == 5 || i == 9 {
-			hybrid = append(hybrid, strconv.Itoa(number%MIN_TEN_MULTIPLIER))
-			number = number / MIN_TEN_MULTIPLIER
 		} else {
 			str := fmt.Sprintf("%02d", number%MIN_MULTIPLIER_ALLOWED)
 			if len(strconv.Itoa(number)) > 1 {
@@ -759,10 +757,10 @@ func NumberWithCommaInEnUs(input int) string {
 
 	// zero is a special case
 	if len(triplets) == 0 {
-		return "zero"
+		return "0"
 	}
 
-	// iterate over triplets
+	// iterate over triplets"
 	for idx := len(triplets) - 1; idx >= 0; idx-- {
 		if idx > 0 {
 			words = append(words, triplets[idx], ",")
