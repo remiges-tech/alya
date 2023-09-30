@@ -2,13 +2,14 @@ package voucher
 
 import (
 	"database/sql"
-	"github.com/gin-gonic/gin"
 	"go-framework/internal/pg/sqlc-gen"
 	"go-framework/internal/wscutils"
 	"go-framework/logharbour"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type VoucherHandler struct {
@@ -32,7 +33,7 @@ func (h *VoucherHandler) RegisterVoucherHandlers(router *gin.Engine) {
 
 type Voucher struct {
 	EmployeeID  int32   `json:"employee_id" validate:"required"`
-	DateOfClaim string  `json:"date_of_claim" validate:"required,datetime=2006-01-02T15:04:05Z07:00"`
+	DateOfClaim string  `json:"date_of_claim" validate:"required"` //,datetime=2006-01-02T15:04:05Z07:00
 	Amount      float64 `json:"amount" validate:"required,min=0"`
 	Description *string `json:"description"`
 }
@@ -44,6 +45,7 @@ func (h *VoucherHandler) createVoucher(c *gin.Context) {
 
 	// step 1: bind request body to struct
 	err := wscutils.BindJson(c, &voucher)
+
 	if err != nil {
 		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{wscutils.BuildValidationError("invalid_req_body", "invalida_req_body")}))
 		return
@@ -62,7 +64,7 @@ func (h *VoucherHandler) createVoucher(c *gin.Context) {
 	// step 4: process the request
 
 	// Convert DateOfClaim to time.Time as required by CreateVoucher function
-	timeOfClaim, _ := time.Parse(time.RFC3339, voucher.DateOfClaim)
+	timeOfClaim, _ := time.Parse(DATE_LAYOUT, voucher.DateOfClaim)
 
 	// Create and initialize createVoucherParams with data from the voucher struct
 	createVoucherParams = sqlc.CreateVoucherParams{
