@@ -45,9 +45,9 @@ func TestCreateUser(t *testing.T) {
 
 	// Perform the request
 	r.ServeHTTP(w, req)
-
+			
 	// Check the status code is what you expect
-	if w.Code != http.StatusOK {
+	if w.Result().StatusCode != http.StatusOK {
 		t.Errorf("Expected to get status %d but instead got %d. Body: %s\n", http.StatusOK, w.Code, w.Body.String())
 	}
 }
