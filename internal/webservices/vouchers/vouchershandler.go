@@ -104,6 +104,17 @@ func (h *VoucherHandler) getVoucher(c *gin.Context) {
 		return
 	}
 	voucher, err := h.sqlq.GetVoucher(c, int32(voucherIDInt))
+	// Check the error and respond accordingly
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// If there is no such voucher, we should return an empty JSON
+			c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, struct{}{}, nil))
+		} else {
+			// If there is a different kind of error, return it
+			c.JSON(http.StatusInternalServerError, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{}))
+		}
+		return
+	}
 
 	// Check the error and respond accordingly
 
