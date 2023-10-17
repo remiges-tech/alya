@@ -2,13 +2,13 @@ package wscutils
 
 import (
 	"errors"
-	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
-	"gopkg.in/yaml.v3"
 	"io"
 	"log"
 	"net/http"
-	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+	"gopkg.in/yaml.v3"
 )
 
 // Request represents the standard structure of a request to the web service.
@@ -37,29 +37,11 @@ type ErrorMessage struct {
 // errorTypes is a map from error type to its corresponding attributes.
 var errorTypes map[string]ErrorMessage
 
-func init() {
-	errorTypes = make(map[string]ErrorMessage)
-	loadErrorTypes()
-}
-
 // loadErrorTypes is used for loading predefined error types
-func loadErrorTypes() {
-	// todo: this will come from config
-	errorTypesPath := os.Getenv("ERROR_TYPES_FILE_PATH")
-	errorTypesFile, err := os.Open(errorTypesPath)
-	if err != nil {
-		log.Panic(err)
-	}
-	defer func(yamlFile *os.File) {
-		err := yamlFile.Close()
-		if err != nil {
-			log.Printf("Error closing file: %v", err)
-		}
-	}(errorTypesFile)
+func loadErrorTypes(errorTypesReader io.Reader) {
+	byteValue, _ := io.ReadAll(errorTypesReader)
 
-	byteValue, _ := io.ReadAll(errorTypesFile)
-
-	err = yaml.Unmarshal(byteValue, &errorTypes)
+	err := yaml.Unmarshal(byteValue, &errorTypes)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -71,7 +53,7 @@ func loadErrorTypes() {
 // This function will not add `vals` that's required as per the specifications
 // because it does not know the request-specific values.
 // `vals` will be added to ErrorMessage by the caller.
-func WscValidate[T any](data T) []ErrorMessage {
+func WscValidate[T any](data T, getVals func(err validator.FieldError) []string) []ErrorMessage {
 	var validationErrors []ErrorMessage
 
 	validate := validator.New()
@@ -83,7 +65,8 @@ func WscValidate[T any](data T) []ErrorMessage {
 		if errors.As(err, &validationErrs) {
 			for _, err := range validationErrs {
 				// We handle validation error creation for developers.
-				vErr := BuildValidationError(err.Field(), err.Tag())
+				vals := getVals(err)
+				vErr := BuildValidationError(err.Field(), err.Tag(), vals...)
 				validationErrors = append(validationErrors, vErr)
 			}
 		}
@@ -94,16 +77,27 @@ func WscValidate[T any](data T) []ErrorMessage {
 // BuildValidationError generates a ErrorMessage which includes
 // the required validation error information such as code, msgcode
 // It encapsulates the process of building an error message for consistency.
-func BuildValidationError(fieldName, errorType string) ErrorMessage {
+// Examples:
+// Without vals
+// errorMessage := BuildValidationError("field1", "error1")
+//
+// With vals
+// errorMessage := BuildValidationError("field2", "error2", "val1", "val2")
+func BuildValidationError(fieldName, errorType string, vals ...string) ErrorMessage {
 	errorMessage, exists := errorTypes[errorType]
 
 	// if the provided errorType doesn't exist, use attributes of "unknown" error type
 	// and set the code (string) to the provided errorType for debugging
 	if !exists {
-		errorMessage = errorTypes[Unknown]
-		errorMessage.Code = errorType
+		log.Printf("Unrecognized error type: %s", errorType)
+		errorMessage = ErrorMessage{
+			Field: fieldName,
+			Code:  errorType,
+		}
 	}
+
 	errorMessage.Field = fieldName
+	errorMessage.Vals = vals
 	return errorMessage
 }
 
@@ -129,4 +123,19 @@ func BindJson(c *gin.Context, data interface{}) error {
 		return err
 	}
 	return nil
+}
+
+// SingleValidationError simplifies the process of creating an error message slice
+func SingleValidationError(field, message string) []ErrorMessage {
+	return []ErrorMessage{BuildValidationError(field, message)}
+}
+
+// ValidationErrResponse simplifies the process of creating a standard error response
+func ValidationErrResponse(field, message string) *Response {
+	return NewResponse(ErrorStatus, nil, SingleValidationError(field, message))
+}
+
+// SuccessResponse simplifies the process of creating a standard success response
+func SuccessResponse(data interface{}) *Response {
+	return NewResponse(SuccessStatus, data, nil)
 }

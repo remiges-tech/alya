@@ -5,11 +5,13 @@ import (
 	"go-framework/internal/pg/sqlc-gen"
 	"go-framework/internal/wscutils"
 	"go-framework/logharbour"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 type VoucherHandler struct {
@@ -47,7 +49,7 @@ func (h *VoucherHandler) createVoucher(c *gin.Context) {
 	err := wscutils.BindJson(c, &voucher)
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{wscutils.BuildValidationError("invalid_req_body", "invalida_req_body")}))
+		c.JSON(http.StatusBadRequest, wscutils.ValidationErrResponse("invalid_req_body", "invalid_req_body"))
 		return
 	}
 
@@ -83,8 +85,8 @@ func (h *VoucherHandler) createVoucher(c *gin.Context) {
 		// log the error
 		h.lh.Log("error", "error creating voucher", err.Error())
 		// buildvalidationerror for something went wrong
-		validationError := wscutils.BuildValidationError("unknown", "unknown")
-		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{validationError}))
+		c.JSON(http.StatusInternalServerError, wscutils.ValidationErrResponse("database_error", "error_creating_voucher"))
+
 		return
 	}
 
@@ -99,8 +101,7 @@ func (h *VoucherHandler) getVoucher(c *gin.Context) {
 	voucherIDInt, err := strconv.Atoi(voucherID)
 	if err != nil {
 		// buildvalidationerror for invalid voucher id
-		validationError := wscutils.BuildValidationError("voucher_id", "invalid_voucher_id")
-		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{validationError}))
+		c.JSON(http.StatusBadRequest, wscutils.ValidationErrResponse("voucher_id", "invalid_voucher_id"))
 		return
 	}
 	voucher, err := h.sqlq.GetVoucher(c, int32(voucherIDInt))
@@ -111,7 +112,8 @@ func (h *VoucherHandler) getVoucher(c *gin.Context) {
 			c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, struct{}{}, nil))
 		} else {
 			// If there is a different kind of error, return it
-			c.JSON(http.StatusInternalServerError, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{}))
+			log.Printf("Error getting voucher: %v", err) // Add this line to log the error
+			c.JSON(http.StatusInternalServerError, wscutils.ValidationErrResponse("voucher_id", "data_invalid"))
 		}
 		return
 	}
@@ -145,10 +147,18 @@ func (h *VoucherHandler) updateVoucher(c *gin.Context) {
 	updatedVoucher, err := h.sqlq.UpdateVoucher(c, voucher)
 
 	// Check the error and respond accordingly
-	// your error handling code here
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, wscutils.ValidationErrResponse("voucher_id", "voucher_not_found"))
+		} else {
+			h.lh.Log("error", "error updating voucher", err.Error())
+			c.JSON(http.StatusInternalServerError, wscutils.ValidationErrResponse("database_error", "error_updating_voucher"))
+		}
+		return
+	}
 
 	// Step 3: Respond with the updated voucher details
-	c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, &updatedVoucher, []wscutils.ErrorMessage{}))
+	c.JSON(http.StatusOK, wscutils.SuccessResponse(&updatedVoucher))
 }
 
 func (h *VoucherHandler) deleteVoucher(c *gin.Context) {
@@ -158,8 +168,7 @@ func (h *VoucherHandler) deleteVoucher(c *gin.Context) {
 	voucherIDInt, err := strconv.Atoi(voucherID)
 	if err != nil {
 		// Build validation error for invalid voucher id
-		validationError := wscutils.BuildValidationError("voucher_id", "invalid_voucher_id")
-		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{validationError}))
+		c.JSON(http.StatusBadRequest, wscutils.ValidationErrResponse("voucher_id", "invalid_voucher_id"))
 		return
 	}
 
@@ -167,14 +176,38 @@ func (h *VoucherHandler) deleteVoucher(c *gin.Context) {
 	err = h.sqlq.DeleteVoucher(c, int32(voucherIDInt))
 
 	// Check the error and respond accordingly
-	// your error handling code here
+	if err != nil {
+		h.lh.Log("error", "Error deleting voucher: %v", err)
+		c.JSON(http.StatusInternalServerError, wscutils.ValidationErrResponse("voucher_id", "delete_failed"))
+		return
+	}
 
 	// Respond with the success message
-	c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, "Voucher deleted successfully", []wscutils.ErrorMessage{}))
+	c.JSON(http.StatusOK, wscutils.SuccessResponse("Voucher deleted successfully"))
 }
 
 func validate(voucher Voucher) []wscutils.ErrorMessage {
-	validationErrors := wscutils.WscValidate(voucher)
+	// step 2.1: validate request body using standard validator
+	validationErrors := wscutils.WscValidate(voucher, voucher.getValsForVoucherError)
 
 	return validationErrors
+}
+
+// getValsForVoucherError returns a slice of strings to be used as vals for a validation error.
+// The vals are determined based on the field and the validation rule that failed.
+func (v *Voucher) getValsForVoucherError(err validator.FieldError) []string {
+	var vals []string
+	switch err.Field() {
+	case "Amount":
+		switch err.Tag() {
+		case "min":
+			vals = append(vals, "0")                         // Minimum valid amount is 0
+			vals = append(vals, strconv.Itoa(int(v.Amount))) // provided amount
+		case "max":
+			vals = append(vals, "10000")                     // Maximum valid amount is 10000
+			vals = append(vals, strconv.Itoa(int(v.Amount))) // provided amount
+		}
+		// Add more cases as needed
+	}
+	return vals
 }

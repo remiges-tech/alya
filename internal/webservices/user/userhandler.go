@@ -2,12 +2,15 @@ package user
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"go-framework/internal/pg/sqlc-gen"
 	"go-framework/internal/wscutils"
 	"go-framework/logharbour"
 	"net/http"
+	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 type UserHandler struct {
@@ -48,7 +51,7 @@ func createUser(c *gin.Context) {
 	// step 1: bind request body to struct
 	err := wscutils.BindJson(c, &user)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, []wscutils.ErrorMessage{wscutils.BuildValidationError("invalid_req_body", "invalida_req_body")}))
+		c.JSON(http.StatusBadRequest, wscutils.ValidationErrResponse("invalid_req_body", "invalida_req_body"))
 		return
 	}
 
@@ -65,13 +68,13 @@ func createUser(c *gin.Context) {
 	// create user
 
 	// step 5: if there are no errors, send success response
-	c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, &user, []wscutils.ErrorMessage{}))
+	c.JSON(http.StatusOK, wscutils.SuccessResponse(&user))
 }
 
 // validate validates the request body
 func validate(user User) []wscutils.ErrorMessage {
 	// step 2.1: validate request body using standard validator
-	validationErrors := wscutils.WscValidate(user)
+	validationErrors := wscutils.WscValidate(user, user.getValsForUserError)
 
 	// step 2.2: add request-specific vals to validation errors
 	// NOTE: it mutates validationErrors
@@ -126,4 +129,23 @@ func addCustomValidationErrors(validationErrors []wscutils.ErrorMessage, user Us
 	}
 
 	return validationErrors
+}
+
+// getValsForUserError returns a slice of strings to be used as vals for a validation error.
+// The vals are determined based on the field and the validation rule that failed.
+func (user *User) getValsForUserError(err validator.FieldError) []string {
+	var vals []string
+	switch err.Field() {
+	case "Age":
+		switch err.Tag() {
+		case "min":
+			vals = append(vals, "10")                   // Minimum valid age is 10
+			vals = append(vals, strconv.Itoa(user.Age)) // provided value that failed validation
+		case "max":
+			vals = append(vals, "150")                  // Maximum valid age is 150
+			vals = append(vals, strconv.Itoa(user.Age)) // provided value that failed validation
+		}
+		// Add more cases as needed
+	}
+	return vals
 }
