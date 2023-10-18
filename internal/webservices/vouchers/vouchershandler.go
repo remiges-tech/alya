@@ -109,7 +109,7 @@ func (h *VoucherHandler) getVoucher(c *gin.Context) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// If there is no such voucher, we should return an empty JSON
-			c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, struct{}{}, nil))
+			c.JSON(http.StatusNotFound, wscutils.ValidationErrResponse("voucher_not_found", "The requested voucher could not be found."))
 		} else {
 			// If there is a different kind of error, return it
 			log.Printf("Error getting voucher: %v", err) // Add this line to log the error
