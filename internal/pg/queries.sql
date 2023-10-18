@@ -10,7 +10,7 @@ VALUES ($1, $2, $3)
 -- name: GetEmployee :one
 SELECT * FROM Employees WHERE employee_id=$1;
 
--- name: UpdateEmployee :one
+-- name: UpdateEmployee :exec
 UPDATE Employees SET name=$2, title=$3, department=$4 WHERE employee_id=$1
     RETURNING *;
 
@@ -30,9 +30,8 @@ VALUES ($1, $2, $3, $4)
 SELECT * FROM Vouchers WHERE voucher_id=$1;
 
 
--- name: UpdateVoucher :one
-UPDATE Vouchers SET employee_id=$2, date_of_claim=$3, amount=$4, description=$5 WHERE voucher_id=$1
-    RETURNING *;
+-- name: UpdateVoucher :exec
+UPDATE Vouchers SET employee_id=$2, date_of_claim=$3, amount=$4, description=$5 WHERE voucher_id=$1;
 
 -- name: DeleteVoucher :exec
 DELETE FROM Vouchers WHERE voucher_id=$1;

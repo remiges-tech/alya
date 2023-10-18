@@ -144,7 +144,7 @@ func (h *VoucherHandler) updateVoucher(c *gin.Context) {
 	voucher.VoucherID = int32(voucherIDInt)
 
 	// Step 2: Call the SQLC generated function to update the voucher
-	updatedVoucher, err := h.sqlq.UpdateVoucher(c, voucher)
+	err = h.sqlq.UpdateVoucher(c, voucher)
 
 	// Check the error and respond accordingly
 	if err != nil {
@@ -158,7 +158,7 @@ func (h *VoucherHandler) updateVoucher(c *gin.Context) {
 	}
 
 	// Step 3: Respond with the updated voucher details
-	c.JSON(http.StatusOK, wscutils.SuccessResponse(&updatedVoucher))
+	c.JSON(http.StatusOK, wscutils.SuccessResponse(struct{}{}))
 }
 
 func (h *VoucherHandler) deleteVoucher(c *gin.Context) {
