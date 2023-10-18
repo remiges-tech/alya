@@ -51,7 +51,7 @@ func createUser(c *gin.Context) {
 	// step 1: bind request body to struct
 	err := wscutils.BindJson(c, &user)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, wscutils.ValidationErrResponse("invalid_req_body", "invalida_req_body"))
+		c.JSON(http.StatusBadRequest, wscutils.NewErrorResponse("invalid_req_body", "invalida_req_body"))
 		return
 	}
 
@@ -68,7 +68,7 @@ func createUser(c *gin.Context) {
 	// create user
 
 	// step 5: if there are no errors, send success response
-	c.JSON(http.StatusOK, wscutils.SuccessResponse(&user))
+	c.JSON(http.StatusOK, wscutils.NewSuccessResponse(&user))
 }
 
 // validate validates the request body
@@ -123,7 +123,7 @@ func addVals(validationErrors []wscutils.ErrorMessage, user User) []wscutils.Err
 func addCustomValidationErrors(validationErrors []wscutils.ErrorMessage, user User) []wscutils.ErrorMessage {
 	// Example of a custom validation for email domain
 	if user.Email != "" && !strings.Contains(user.Email, "@domain.com") {
-		emailDomainError := wscutils.BuildValidationError(UserEmail, wscutils.EmailDomainErr)
+		emailDomainError := wscutils.BuildErrorMessage(UserEmail, wscutils.EmailDomainErr)
 		emailDomainError.Vals = []string{user.Email, "@domain.com"}
 		validationErrors = append(validationErrors, emailDomainError)
 	}

@@ -66,7 +66,7 @@ func WscValidate[T any](data T, getVals func(err validator.FieldError) []string)
 			for _, err := range validationErrs {
 				// We handle validation error creation for developers.
 				vals := getVals(err)
-				vErr := BuildValidationError(err.Field(), err.Tag(), vals...)
+				vErr := BuildErrorMessage(err.Field(), err.Tag(), vals...)
 				validationErrors = append(validationErrors, vErr)
 			}
 		}
@@ -74,16 +74,16 @@ func WscValidate[T any](data T, getVals func(err validator.FieldError) []string)
 	return validationErrors
 }
 
-// BuildValidationError generates a ErrorMessage which includes
+// BuildErrorMessage generates a ErrorMessage which includes
 // the required validation error information such as code, msgcode
 // It encapsulates the process of building an error message for consistency.
 // Examples:
 // Without vals
-// errorMessage := BuildValidationError("field1", "error1")
+// errorMessage := BuildErrorMessage("field1", "error1")
 //
 // With vals
-// errorMessage := BuildValidationError("field2", "error2", "val1", "val2")
-func BuildValidationError(fieldName, errorType string, vals ...string) ErrorMessage {
+// errorMessage := BuildErrorMessage("field2", "error2", "val1", "val2")
+func BuildErrorMessage(fieldName, errorType string, vals ...string) ErrorMessage {
 	errorMessage, exists := errorTypes[errorType]
 
 	// if the provided errorType doesn't exist, use attributes of "unknown" error type
@@ -117,25 +117,20 @@ func NewResponse(status string, data any, messages []ErrorMessage) *Response {
 func BindJson(c *gin.Context, data interface{}) error {
 	req := Request{Data: data}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		//invalidJsonError := BuildValidationError("", "invalid_json")
-		invalidJsonError := BuildValidationError("", InvalidJSON)
+		invalidJsonError := BuildErrorMessage("", InvalidJSON)
 		c.JSON(http.StatusBadRequest, NewResponse(ErrorStatus, nil, []ErrorMessage{invalidJsonError}))
 		return err
 	}
 	return nil
 }
 
-// SingleValidationError simplifies the process of creating an error message slice
-func SingleValidationError(field, message string) []ErrorMessage {
-	return []ErrorMessage{BuildValidationError(field, message)}
+// NewErrorResponse simplifies the process of creating a standard error response
+// with a single error message
+func NewErrorResponse(field, errType string) *Response {
+	return NewResponse(ErrorStatus, nil, []ErrorMessage{BuildErrorMessage(field, errType)})
 }
 
-// ValidationErrResponse simplifies the process of creating a standard error response
-func ValidationErrResponse(field, message string) *Response {
-	return NewResponse(ErrorStatus, nil, SingleValidationError(field, message))
-}
-
-// SuccessResponse simplifies the process of creating a standard success response
-func SuccessResponse(data interface{}) *Response {
+// NewSuccessResponse simplifies the process of creating a standard success response
+func NewSuccessResponse(data interface{}) *Response {
 	return NewResponse(SuccessStatus, data, nil)
 }

@@ -49,9 +49,9 @@ type TestUser struct {
 
 func TestWscValidate(t *testing.T) {
 	expectedErrors := []ErrorMessage{
-		BuildValidationError("Fullname", "required"),
-		BuildValidationError("Email", "email"),
-		BuildValidationError("Age", "outofrange", "5"),
+		BuildErrorMessage("Fullname", "required"),
+		BuildErrorMessage("Email", "email"),
+		BuildErrorMessage("Age", "outofrange", "5"),
 	}
 
 	resultErrors := WscValidate(testData, func(err validator.FieldError) []string { return []string{strconv.Itoa(testData.Age)} })
@@ -118,7 +118,7 @@ func TestBuildValidationError(t *testing.T) {
 	loadErrorTypes(errorTypesReader)
 
 	// Act
-	resultError := BuildValidationError(field, errType)
+	resultError := BuildErrorMessage(field, errType)
 
 	// Assert
 	if resultError.Field != "Age" {
