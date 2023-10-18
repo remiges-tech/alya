@@ -14,8 +14,8 @@ import (
 
 var (
 	clientID      = "account"
-	clientSecret  = "OFyNKbP4g6sYtR4nACtS4V30ILsruzY1"
-	keycloakURL   = "https://lemur-7.cloud-iam.com/auth/realms/cool5"
+	clientSecret  = "OFyNKbP1..."
+	keycloakURL   = "https://localhost/auth/realms/myrealm"
 	redisAddr     = "localhost:6379"
 	redisPassword = ""
 	redisDB       = 0
