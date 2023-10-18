@@ -32,4 +32,12 @@ Creating a new web service:
 
 ## Working with RDBMS
 
-We will use sqlc (https://sqlc.dev/). It is a tool that generates type-safe Go code from SQL queries. 
+- We will use sqlc (https://sqlc.dev/). It is a tool that generates type-safe Go code from SQL queries. 
+- We use tern for schema migrations (https://github.com/jackc/tern)
+
+- Database schema is present in `internal/pg/migrations/schema.sql`
+- Queries are present in `internal/pg/queries.sql`
+
+- To generate code from queries, run `make sqlc-generate`
+- To run schema migrations, run `make pg-migrate`
+
