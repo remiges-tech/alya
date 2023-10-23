@@ -11,8 +11,7 @@ VALUES ($1, $2, $3)
 SELECT * FROM Employees WHERE employee_id=$1;
 
 -- name: UpdateEmployee :exec
-UPDATE Employees SET name=$2, title=$3, department=$4 WHERE employee_id=$1
-    RETURNING *;
+UPDATE Employees SET name=$2, title=$3, department=$4 WHERE employee_id=$1;
 
 -- name: DeleteEmployee :exec
 DELETE FROM Employees WHERE employee_id=$1;

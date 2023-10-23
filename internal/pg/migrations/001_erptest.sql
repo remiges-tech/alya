@@ -15,7 +15,8 @@ CREATE TABLE Vouchers (
 CREATE TABLE schema (
                         id SERIAL PRIMARY KEY,
                         name VARCHAR(100) UNIQUE NOT NULL,
-                        current_version_id INT,
+                        active BOOLEAN DEFAULT TRUE,
+                        active_version_id INT,
                         description VARCHAR(1000),
                         tags JSONB,
                         created_by VARCHAR(100),
@@ -43,7 +44,8 @@ CREATE TABLE schema_versions (
 CREATE TABLE config (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) UNIQUE NOT NULL,
-    current_version_id INT,
+    active BOOLEAN DEFAULT TRUE,
+    active_version_id INT,
     description VARCHAR(1000),
     tags JSONB,
     created_by VARCHAR(255) NOT NULL,

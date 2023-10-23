@@ -159,7 +159,6 @@ func (q *Queries) GetVoucher(ctx context.Context, voucherID int32) (Voucher, err
 
 const updateEmployee = `-- name: UpdateEmployee :exec
 UPDATE Employees SET name=$2, title=$3, department=$4 WHERE employee_id=$1
-    RETURNING employee_id, name, title, department
 `
 
 type UpdateEmployeeParams struct {
