@@ -13,9 +13,8 @@ import (
 
 // Request represents the standard structure of a request to the web service.
 type Request struct {
-	Ver       int    `json:"ver" binding:"required"`
-	AuthToken string `json:"authtoken"`
-	Data      any    `json:"data" binding:"required"`
+	Ver  int `json:"ver" binding:"required"`
+	Data any `json:"data" binding:"required"`
 }
 
 // Response represents the standard structure of a response of the web service.
