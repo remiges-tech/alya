@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v3"
@@ -132,4 +134,19 @@ func NewErrorResponse(field, errType string) *Response {
 // NewSuccessResponse simplifies the process of creating a standard success response
 func NewSuccessResponse(data interface{}) *Response {
 	return NewResponse(SuccessStatus, data, nil)
+}
+
+// GetRequestUser extracts the requestUser from the gin context.
+func GetRequestUser(c *gin.Context) (string, error) {
+	requestUser, exists := c.Get("RequestUser")
+	if !exists {
+		return "", fmt.Errorf("missing_request_user")
+	}
+
+	requestUserStr, ok := requestUser.(string)
+	if !ok {
+		return "", fmt.Errorf("invalid_request_user")
+	}
+
+	return requestUserStr, nil
 }

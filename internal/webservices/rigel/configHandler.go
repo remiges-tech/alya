@@ -31,8 +31,15 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 	var config Config
 	var createConfigParams sqlc.CreateConfigParams
 
+	// Get the RequestUser from the gin context
+	requestUserStr, err := wscutils.GetRequestUser(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, wscutils.NewErrorResponse(err.Error(), err.Error()))
+		return
+	}
+
 	// step 1: bind request body to struct
-	err := wscutils.BindJson(c, &config)
+	err = wscutils.BindJson(c, &config)
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, wscutils.NewErrorResponse("invalid_req_body", "invalid_req_body"))
@@ -81,6 +88,8 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 			}(),
 			Valid: config.Active != nil,
 		},
+		CreatedBy: requestUserStr,
+		UpdatedBy: requestUserStr,
 	}
 
 	// Call the SQLC generated function to insert the voucher
