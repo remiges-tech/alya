@@ -10,3 +10,6 @@ pg-drop-all:
 	cd internal/pg/migrations; tern migrate --destination 0
 
 pg-reset-and-migrate: pg-drop-all pg-migrate
+
+run-main-for-dev:
+	docker compose up -d; go run main.go
