@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -26,12 +27,26 @@ type Tag struct {
 	Value string `json:"value"`
 }
 
+type ConfigResponse struct {
+	ID              int64     `json:"id"`
+	Name            string    `json:"name"`
+	Active          bool      `json:"active"`
+	ActiveVersionID int32     `json:"active_version_id,omitempty"`
+	Description     string    `json:"description,omitempty"`
+	Tags            []Tag     `json:"tags,omitempty"`
+	CreatedBy       string    `json:"created_by"`
+	UpdatedBy       string    `json:"updated_by"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 func (h *RigelHandler) createConfig(c *gin.Context) {
 	h.lh.Log("info", "createConfig called")
 	var config Config
 	var createConfigParams sqlc.CreateConfigParams
 
 	// Get the RequestUser from the gin context
+	c.Set("RequestUser", "test")
 	requestUserStr, err := wscutils.GetRequestUser(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, wscutils.NewErrorResponse(err.Error(), err.Error()))
@@ -93,7 +108,7 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 	}
 
 	// Call the SQLC generated function to insert the voucher
-	_, err = h.sqlq.CreateConfig(c, createConfigParams)
+	newConfig, err := h.sqlq.CreateConfig(c, createConfigParams)
 	if err != nil {
 		// log the error
 		h.lh.Log("error", "error creating voucher", err.Error())
@@ -103,13 +118,15 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 		return
 	}
 
+	configResponse := ConvertToConfigResponse(newConfig)
+
 	// step 5: if there are no errors, send success response
-	c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, &config, []wscutils.ErrorMessage{}))
+	c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, configResponse, []wscutils.ErrorMessage{}))
 }
 
 func validateConfigCreate(config Config) []wscutils.ErrorMessage {
 	// step 2.1: validate request body using standard validator
-	validationErrors := wscutils.WscValidate(config, config.getValsForUserError)
+	validationErrors := wscutils.WscValidate(config, config.getValsForConfigError)
 
 	// if there are standard validation errors, return
 	// do not execute custom validations
@@ -125,7 +142,7 @@ func validateConfigCreate(config Config) []wscutils.ErrorMessage {
 
 // getValsForUserError returns a slice of strings to be used as vals for a validation error.
 // The vals are determined based on the field and the validation rule that failed.
-func (c *Config) getValsForUserError(err validator.FieldError) []string {
+func (c *Config) getValsForConfigError(err validator.FieldError) []string {
 	var vals []string
 
 	// check fields (err.Field()) and its validation rule (err.Tag()) that failed
@@ -142,4 +159,23 @@ func (c *Config) getValsForUserError(err validator.FieldError) []string {
 		// Add more cases as needed
 	}
 	return vals
+}
+
+func ConvertToConfigResponse(config sqlc.Config) ConfigResponse {
+	var tags []Tag
+	if err := json.Unmarshal(config.Tags.RawMessage, &tags); err != nil {
+		log.Printf("Error unmarshalling tags: %v", err)
+	}
+	return ConfigResponse{
+		ID:              int64(config.ID),
+		Name:            config.Name,
+		Active:          config.Active.Bool,
+		ActiveVersionID: config.ActiveVersionID.Int32,
+		Description:     config.Description.String,
+		Tags:            tags,
+		CreatedBy:       config.CreatedBy,
+		UpdatedBy:       config.UpdatedBy,
+		CreatedAt:       config.CreatedAt.Time,
+		UpdatedAt:       config.UpdatedAt.Time,
+	}
 }
