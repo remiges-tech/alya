@@ -29,7 +29,7 @@ CREATE TABLE schema_versions (
                                  id SERIAL PRIMARY KEY,
                                  schema_id INT REFERENCES schema(id) ON DELETE CASCADE,
                                  version VARCHAR(50) NOT NULL,
-                                 details JSONB NOT NULL,
+                                 fields JSONB NOT NULL,
                                  created_by VARCHAR(255) NOT NULL,
                                  updated_by VARCHAR(255) NOT NULL,
                                  created_at TIMESTAMP DEFAULT NOW(),

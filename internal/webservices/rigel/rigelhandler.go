@@ -28,6 +28,7 @@ func NewHandler(sqlq *sqlc.Queries, lh *logharbour.LogHarbour) *RigelHandler {
 
 func (h *RigelHandler) RegisterHandlers(router *gin.Engine) {
 	router.POST("/rigel/schema", h.createSchema)
+	router.POST("/rigel/schema/:schema_id/version", h.createSchemaVersion)
 	router.POST("/rigel/config", h.createConfig)
 }
 
@@ -45,7 +46,6 @@ func (h *RigelHandler) createSchema(c *gin.Context) {
 
 	// step 1: bind request body to struct
 	err := wscutils.BindJson(c, &schema)
-
 	if err != nil {
 		c.JSON(http.StatusBadRequest, wscutils.NewErrorResponse("invalid_req_body", "invalid_req_body"))
 		return

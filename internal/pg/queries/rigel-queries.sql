@@ -7,3 +7,6 @@ RETURNING *;
 INSERT INTO config (name, description, active, tags, created_by, updated_by)
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
+
+-- name: CheckSchemaExists :one
+SELECT EXISTS(SELECT 1 FROM schema WHERE id=$1);

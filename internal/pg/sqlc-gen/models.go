@@ -61,7 +61,7 @@ type SchemaVersion struct {
 	ID        int32           `json:"id"`
 	SchemaID  sql.NullInt32   `json:"schema_id"`
 	Version   string          `json:"version"`
-	Details   json.RawMessage `json:"details"`
+	Fields    json.RawMessage `json:"fields"`
 	CreatedBy string          `json:"created_by"`
 	UpdatedBy string          `json:"updated_by"`
 	CreatedAt sql.NullTime    `json:"created_at"`

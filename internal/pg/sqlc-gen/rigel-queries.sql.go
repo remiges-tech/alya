@@ -12,6 +12,17 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+const checkSchemaExists = `-- name: CheckSchemaExists :one
+SELECT EXISTS(SELECT 1 FROM schema WHERE id=$1)
+`
+
+func (q *Queries) CheckSchemaExists(ctx context.Context, id int32) (bool, error) {
+	row := q.db.QueryRowContext(ctx, checkSchemaExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const createConfig = `-- name: CreateConfig :one
 INSERT INTO config (name, description, active, tags, created_by, updated_by)
 VALUES ($1, $2, $3, $4, $5, $6)
