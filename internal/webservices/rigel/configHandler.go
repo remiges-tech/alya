@@ -111,9 +111,14 @@ func validateConfigCreate(config Config) []wscutils.ErrorMessage {
 	// step 2.1: validate request body using standard validator
 	validationErrors := wscutils.WscValidate(config, config.getValsForUserError)
 
-	if config.Name == "" {
-		validationErrors = append(validationErrors, wscutils.BuildErrorMessage("name", "required"))
+	// if there are standard validation errors, return
+	// do not execute custom validations
+	if len(validationErrors) > 0 {
+		return validationErrors
 	}
+
+	// step 2.3: check request specific custom validations and add errors
+	// we do not need any custom validation for createConfig
 
 	return validationErrors
 }
