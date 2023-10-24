@@ -28,22 +28,14 @@ func NewHandler(sqlq *sqlc.Queries, lh *logharbour.LogHarbour) *RigelHandler {
 
 func (h *RigelHandler) RegisterHandlers(router *gin.Engine) {
 	router.POST("/rigel/schema", h.createSchema)
+	router.POST("/rigel/config", h.createConfig)
 }
 
 type Schema struct {
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Tags        []map[string]string `json:"tags"`
-	Active      bool                `json:"active"`
-	CreatedBy   string              `json:"created_by"`
-	UpdatedBy   string              `json:"updated_by"`
-	Fields      []Field             `json:"fields"`
-}
-
-type Field struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Name        string               `json:"name" binding:"required"`
+	Description *string              `json:"description"`
+	Tags        *[]map[string]string `json:"tags"`
+	Active      *bool                `json:"active"`
 }
 
 func (h *RigelHandler) createSchema(c *gin.Context) {
@@ -80,24 +72,26 @@ func (h *RigelHandler) createSchema(c *gin.Context) {
 	createSchemaParams = sqlc.CreateSchemaParams{
 		Name: schema.Name,
 		Description: sql.NullString{
-			String: schema.Description,
-			Valid:  schema.Description != "",
+			String: func() string {
+				if schema.Description != nil {
+					return *schema.Description
+				}
+				return ""
+			}(),
+			Valid: schema.Description != nil,
 		},
 		Tags: pqtype.NullRawMessage{
 			RawMessage: tagsJson,
-			Valid:      len(schema.Tags) > 0,
+			Valid:      len(tagsJson) > 0,
 		},
 		Active: sql.NullBool{
-			Bool:  schema.Active,
-			Valid: true,
-		},
-		CreatedBy: sql.NullString{
-			String: schema.CreatedBy,
-			Valid:  schema.CreatedBy != "",
-		},
-		UpdatedBy: sql.NullString{
-			String: schema.UpdatedBy,
-			Valid:  schema.UpdatedBy != "",
+			Bool: func() bool {
+				if schema.Active != nil {
+					return *schema.Active
+				}
+				return false
+			}(),
+			Valid: schema.Active != nil,
 		},
 	}
 
