@@ -12,6 +12,46 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+const createConfig = `-- name: CreateConfig :one
+INSERT INTO config (name, description, active, tags, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, name, active, active_version_id, description, tags, created_by, updated_by, created_at, updated_at
+`
+
+type CreateConfigParams struct {
+	Name        string                `json:"name"`
+	Description sql.NullString        `json:"description"`
+	Active      sql.NullBool          `json:"active"`
+	Tags        pqtype.NullRawMessage `json:"tags"`
+	CreatedBy   string                `json:"created_by"`
+	UpdatedBy   string                `json:"updated_by"`
+}
+
+func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
+	row := q.db.QueryRowContext(ctx, createConfig,
+		arg.Name,
+		arg.Description,
+		arg.Active,
+		arg.Tags,
+		arg.CreatedBy,
+		arg.UpdatedBy,
+	)
+	var i Config
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Active,
+		&i.ActiveVersionID,
+		&i.Description,
+		&i.Tags,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createSchema = `-- name: CreateSchema :one
 INSERT INTO schema (name, description, tags, active, active_version_id, created_by, updated_by, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
