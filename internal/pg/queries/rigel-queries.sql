@@ -13,3 +13,8 @@ SELECT EXISTS(SELECT 1 FROM schema WHERE id=$1);
 
 -- name: GetConfig :one
 SELECT * FROM config WHERE id=$1;
+
+-- name: GetConfigByNameAndSchema :one
+SELECT * FROM config
+WHERE config.name = @config_name AND schema_id = (SELECT id FROM schema WHERE schema.name = @schema_name LIMIT 1);
+

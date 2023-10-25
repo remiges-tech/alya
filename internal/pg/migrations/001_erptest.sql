@@ -30,7 +30,7 @@ CREATE TABLE config (
     name VARCHAR(255) NOT NULL,
     description VARCHAR(1000),
     active BOOLEAN DEFAULT TRUE,
-    schema_id INT REFERENCES schema(id),
+    schema_id INT REFERENCES schema(id) NOT NULL,
     values JSONB NOT NULL,
     tags JSONB,
     created_by VARCHAR(255) NOT NULL,

@@ -17,7 +17,7 @@ type Config struct {
 	Name        string                `json:"name"`
 	Description sql.NullString        `json:"description"`
 	Active      sql.NullBool          `json:"active"`
-	SchemaID    sql.NullInt32         `json:"schema_id"`
+	SchemaID    int32                 `json:"schema_id"`
 	Values      json.RawMessage       `json:"values"`
 	Tags        pqtype.NullRawMessage `json:"tags"`
 	CreatedBy   string                `json:"created_by"`
