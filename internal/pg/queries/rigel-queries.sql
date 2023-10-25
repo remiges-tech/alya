@@ -10,3 +10,8 @@ RETURNING *;
 
 -- name: CheckSchemaExists :one
 SELECT EXISTS(SELECT 1 FROM schema WHERE id=$1);
+
+-- name: CreateSchemaVersion :one
+INSERT INTO schema_versions (schema_id, version, fields, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING *;

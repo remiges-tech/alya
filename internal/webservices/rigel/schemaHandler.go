@@ -1,32 +1,58 @@
 package rigel
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
+	"go-framework/internal/pg/sqlc-gen"
 	"go-framework/internal/wscutils"
+	"log"
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 type CreateSchemaVersionRequest struct {
-	SchemaID int         `json:"schema_id" validate:"required"`
-	Version  string      `json:"version"  validate:"required,min=2,max=50"`
-	Fields   []FieldType `json:"fields"  validate:"required,dive"`
+	SchemaID int     `json:"schema_id" validate:"required"`
+	Version  string  `json:"version"  validate:"required,min=2,max=50"`
+	Fields   []Field `json:"fields"  validate:"required,dive"`
 }
 
-type FieldType struct {
+type Field struct {
 	Name        string `json:"name" validate:"required,min=2,max=50"`
 	Type        string `json:"type" validate:"required,oneof=string int float bool"`
 	Description string `json:"description" validate:"required,min=2,max=150"`
 }
 
+type SchemaVersionResponse struct {
+	ID        int64     `json:"id"`
+	SchemaID  int32     `json:"schema_id"`
+	Version   string    `json:"version"`
+	Fields    []Field   `json:"fields"`
+	CreatedBy string    `json:"created_by"`
+	UpdatedBy string    `json:"updated_by"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 func (h *RigelHandler) createSchemaVersion(c *gin.Context) {
 	h.lh.Log("info", "createSchemaVersion called")
+	// TODO: remove the following line. The value will be set by the auth middleware.
+	c.Set("RequestUser", "test")
+	requestUser, err := wscutils.GetRequestUser(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, wscutils.NewErrorResponse(err.Error(), err.Error()))
+		return
+	}
+
 	var schemaVersion CreateSchemaVersionRequest
 
 	// step 1: bind request body to struct
-	err := wscutils.BindJson(c, &schemaVersion)
+	err = wscutils.BindJson(c, &schemaVersion)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, wscutils.NewErrorResponse("invalid_req_body", "invalid_req_body"))
 		return
@@ -39,6 +65,38 @@ func (h *RigelHandler) createSchemaVersion(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, validationErrors))
 		return
 	}
+
+	// step 3: process request
+	// convert schemaVersion to sqlc.CreateSchemaVersionParams
+	// Convert the fields to JSON
+	fieldsJson, err := json.Marshal(schemaVersion.Fields)
+	if err != nil {
+		log.Printf("error marshalling fields: %v", err)
+	}
+
+	// Create the parameters for the CreateSchemaVersion function
+	createSchemaVersionParams := sqlc.CreateSchemaVersionParams{
+		SchemaID:  sql.NullInt32{Int32: int32(schemaVersion.SchemaID), Valid: true},
+		Version:   schemaVersion.Version,
+		Fields:    fieldsJson,
+		CreatedBy: requestUser,
+		UpdatedBy: requestUser,
+	}
+
+	// Call the CreateSchemaVersion function
+	ctx := context.TODO() // perhaps we should create one from the gin context
+	newSchemaVersion, err := h.sqlq.CreateSchemaVersion(ctx, createSchemaVersionParams)
+	if err != nil {
+		fmt.Println("error creating schema version", err)
+		c.JSON(http.StatusInternalServerError, wscutils.NewErrorResponse("internal_error", "internal_error"))
+		return
+	}
+
+	// Convert newSchemaVersion to SchemaVersionResponse
+	schemaVersionResponse := ConvertToSchemaVersionResponse(newSchemaVersion)
+
+	// step 4: send response
+	c.JSON(http.StatusOK, wscutils.NewSuccessResponse(schemaVersionResponse))
 }
 
 func (h *RigelHandler) validateCreateSchemaVersion(schemaVersion CreateSchemaVersionRequest, c *gin.Context) []wscutils.ErrorMessage {
@@ -94,4 +152,21 @@ func (sv *CreateSchemaVersionRequest) getValsForCreateSchemaVersionError(err val
 	}
 	return vals
 
+}
+
+func ConvertToSchemaVersionResponse(schemaVersion sqlc.SchemaVersion) SchemaVersionResponse {
+	var fields []Field
+	if err := json.Unmarshal(schemaVersion.Fields, &fields); err != nil {
+		log.Printf("Error unmarshalling fields: %v", err)
+	}
+	return SchemaVersionResponse{
+		ID:        int64(schemaVersion.ID),
+		SchemaID:  schemaVersion.SchemaID.Int32,
+		Version:   schemaVersion.Version,
+		Fields:    fields,
+		CreatedBy: schemaVersion.CreatedBy,
+		UpdatedBy: schemaVersion.UpdatedBy,
+		CreatedAt: schemaVersion.CreatedAt.Time,
+		UpdatedAt: schemaVersion.UpdatedAt.Time,
+	}
 }

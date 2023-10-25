@@ -8,6 +8,7 @@ package sqlc
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 
 	"github.com/sqlc-dev/pqtype"
 )
@@ -97,6 +98,42 @@ func (q *Queries) CreateSchema(ctx context.Context, arg CreateSchemaParams) (Sch
 		&i.ActiveVersionID,
 		&i.Description,
 		&i.Tags,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createSchemaVersion = `-- name: CreateSchemaVersion :one
+INSERT INTO schema_versions (schema_id, version, fields, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, schema_id, version, fields, created_by, updated_by, created_at, updated_at
+`
+
+type CreateSchemaVersionParams struct {
+	SchemaID  sql.NullInt32   `json:"schema_id"`
+	Version   string          `json:"version"`
+	Fields    json.RawMessage `json:"fields"`
+	CreatedBy string          `json:"created_by"`
+	UpdatedBy string          `json:"updated_by"`
+}
+
+func (q *Queries) CreateSchemaVersion(ctx context.Context, arg CreateSchemaVersionParams) (SchemaVersion, error) {
+	row := q.db.QueryRowContext(ctx, createSchemaVersion,
+		arg.SchemaID,
+		arg.Version,
+		arg.Fields,
+		arg.CreatedBy,
+		arg.UpdatedBy,
+	)
+	var i SchemaVersion
+	err := row.Scan(
+		&i.ID,
+		&i.SchemaID,
+		&i.Version,
+		&i.Fields,
 		&i.CreatedBy,
 		&i.UpdatedBy,
 		&i.CreatedAt,

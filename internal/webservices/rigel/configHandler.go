@@ -46,6 +46,7 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 	var createConfigParams sqlc.CreateConfigParams
 
 	// Get the RequestUser from the gin context
+	// TODO: remove the following line. The value will be set by the auth middleware.
 	c.Set("RequestUser", "test")
 	requestUserStr, err := wscutils.GetRequestUser(c)
 	if err != nil {
