@@ -25,18 +25,20 @@ func (q *Queries) CheckSchemaExists(ctx context.Context, id int32) (bool, error)
 }
 
 const createConfig = `-- name: CreateConfig :one
-INSERT INTO config (name, description, active, tags, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, name, active, active_version_id, description, tags, created_by, updated_by, created_at, updated_at
+INSERT INTO config (name, description, active, tags, schema_version_id, values, created_by, updated_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, name, active, description, tags, schema_version_id, values, created_by, updated_by, created_at, updated_at
 `
 
 type CreateConfigParams struct {
-	Name        string                `json:"name"`
-	Description sql.NullString        `json:"description"`
-	Active      sql.NullBool          `json:"active"`
-	Tags        pqtype.NullRawMessage `json:"tags"`
-	CreatedBy   string                `json:"created_by"`
-	UpdatedBy   string                `json:"updated_by"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	Active          sql.NullBool          `json:"active"`
+	Tags            pqtype.NullRawMessage `json:"tags"`
+	SchemaVersionID sql.NullInt32         `json:"schema_version_id"`
+	Values          json.RawMessage       `json:"values"`
+	CreatedBy       string                `json:"created_by"`
+	UpdatedBy       string                `json:"updated_by"`
 }
 
 func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
@@ -45,6 +47,8 @@ func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Con
 		arg.Description,
 		arg.Active,
 		arg.Tags,
+		arg.SchemaVersionID,
+		arg.Values,
 		arg.CreatedBy,
 		arg.UpdatedBy,
 	)
@@ -53,9 +57,10 @@ func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Con
 		&i.ID,
 		&i.Name,
 		&i.Active,
-		&i.ActiveVersionID,
 		&i.Description,
 		&i.Tags,
+		&i.SchemaVersionID,
+		&i.Values,
 		&i.CreatedBy,
 		&i.UpdatedBy,
 		&i.CreatedAt,

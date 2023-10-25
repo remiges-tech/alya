@@ -16,25 +16,14 @@ type Config struct {
 	ID              int32                 `json:"id"`
 	Name            string                `json:"name"`
 	Active          sql.NullBool          `json:"active"`
-	ActiveVersionID sql.NullInt32         `json:"active_version_id"`
 	Description     sql.NullString        `json:"description"`
 	Tags            pqtype.NullRawMessage `json:"tags"`
+	SchemaVersionID sql.NullInt32         `json:"schema_version_id"`
+	Values          json.RawMessage       `json:"values"`
 	CreatedBy       string                `json:"created_by"`
 	UpdatedBy       string                `json:"updated_by"`
 	CreatedAt       sql.NullTime          `json:"created_at"`
 	UpdatedAt       sql.NullTime          `json:"updated_at"`
-}
-
-type ConfigVersion struct {
-	ID              int32           `json:"id"`
-	ConfigID        sql.NullInt32   `json:"config_id"`
-	Version         string          `json:"version"`
-	SchemaVersionID sql.NullInt32   `json:"schema_version_id"`
-	Values          json.RawMessage `json:"values"`
-	CreatedBy       sql.NullString  `json:"created_by"`
-	UpdatedBy       sql.NullString  `json:"updated_by"`
-	CreatedAt       sql.NullTime    `json:"created_at"`
-	UpdatedAt       sql.NullTime    `json:"updated_at"`
 }
 
 type Employee struct {

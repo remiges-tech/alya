@@ -16,24 +16,32 @@ import (
 )
 
 type Config struct {
-	Name        string  `'json:"name" binding:"required" validate:"required,min=2,max=150"`
-	Description *string `validate:"omitempty,min=2,max=150"`
-	Active      *bool   `validate:"omitempty"`
-	Tags        *[]Tag  `validate:"omitempty"`
+	Name            string  `'json:"name" binding:"required" validate:"required,min=2,max=150"`
+	Description     *string `validate:"omitempty,min=2,max=150"`
+	Active          *bool   `validate:"omitempty"`
+	Tags            *[]Tag  `validate:"omitempty,dive"`
+	SchemaVersionID int32   `json:"schema_version_id" validate:"required"`
+	Values          []Value `json:"values" validate:"required,dive"` // Add this line
+}
+
+type Value struct {
+	Key   string `json:"key"`
+	Value any    `json:"value"`
 }
 
 type Tag struct {
 	Key   string `json:"key"`
-	Value string `json:"value"`
+	Value any    `json:"value"`
 }
 
 type ConfigResponse struct {
 	ID              int64     `json:"id"`
 	Name            string    `json:"name"`
+	SchemaVersionID int32     `json:"schema_version_id"`
 	Active          bool      `json:"active"`
-	ActiveVersionID int32     `json:"active_version_id,omitempty"`
 	Description     string    `json:"description,omitempty"`
 	Tags            []Tag     `json:"tags,omitempty"`
+	Values          []Value   `json:"values"`
 	CreatedBy       string    `json:"created_by"`
 	UpdatedBy       string    `json:"updated_by"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -79,6 +87,11 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 		log.Printf("Error marshalling tags: %v", err)
 	}
 
+	valuesJson, err := json.Marshal(config.Values)
+	if err != nil {
+		log.Printf("Error marshalling values: %v", err)
+	}
+
 	// Create and initialize createConfigParams with data from the voucher struct
 	createConfigParams = sqlc.CreateConfigParams{
 		Name: config.Name,
@@ -95,6 +108,7 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 			RawMessage: tagsJson,
 			Valid:      len(tagsJson) > 0,
 		},
+		Values: valuesJson,
 		Active: sql.NullBool{
 			Bool: func() bool {
 				if config.Active != nil {
@@ -167,16 +181,22 @@ func ConvertToConfigResponse(config sqlc.Config) ConfigResponse {
 	if err := json.Unmarshal(config.Tags.RawMessage, &tags); err != nil {
 		log.Printf("Error unmarshalling tags: %v", err)
 	}
+
+	var values []Value
+	if err := json.Unmarshal(config.Values, &values); err != nil {
+		log.Printf("Error unmarshalling values: %v", err)
+	}
+
 	return ConfigResponse{
-		ID:              int64(config.ID),
-		Name:            config.Name,
-		Active:          config.Active.Bool,
-		ActiveVersionID: config.ActiveVersionID.Int32,
-		Description:     config.Description.String,
-		Tags:            tags,
-		CreatedBy:       config.CreatedBy,
-		UpdatedBy:       config.UpdatedBy,
-		CreatedAt:       config.CreatedAt.Time,
-		UpdatedAt:       config.UpdatedAt.Time,
+		ID:          int64(config.ID),
+		Name:        config.Name,
+		Active:      config.Active.Bool,
+		Description: config.Description.String,
+		Tags:        tags,
+		Values:      values,
+		CreatedBy:   config.CreatedBy,
+		UpdatedBy:   config.UpdatedBy,
+		CreatedAt:   config.CreatedAt.Time,
+		UpdatedAt:   config.UpdatedAt.Time,
 	}
 }

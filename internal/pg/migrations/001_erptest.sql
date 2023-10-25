@@ -27,7 +27,7 @@ CREATE TABLE schema (
 
 CREATE TABLE schema_versions (
                                  id SERIAL PRIMARY KEY,
-                                 schema_id INT REFERENCES schema(id) ON DELETE CASCADE,
+                                 schema_id INT REFERENCES schema(id),
                                  version VARCHAR(50) NOT NULL,
                                  fields JSONB NOT NULL,
                                  created_by VARCHAR(255) NOT NULL,
@@ -43,30 +43,18 @@ CREATE TABLE schema_versions (
 -- Config table
 CREATE TABLE config (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
     active BOOLEAN DEFAULT TRUE,
-    active_version_id INT,
     description VARCHAR(1000),
     tags JSONB,
+    schema_version_id INT REFERENCES schema_versions(id),
+    values JSONB NOT NULL,
     created_by VARCHAR(255) NOT NULL,
     updated_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(name, schema_version_id)
 );
-
-CREATE TABLE config_versions (
-                                 id SERIAL PRIMARY KEY,
-                                 config_id INT REFERENCES config(id) ON DELETE CASCADE,
-                                 version VARCHAR(50) NOT NULL,
-                                 schema_version_id INT REFERENCES schema_versions(id),
-                                 values JSONB NOT NULL,
-                                 created_by VARCHAR(255),
-                                 updated_by VARCHAR(255),
-                                 created_at TIMESTAMP DEFAULT NOW(),
-                                 updated_at TIMESTAMP DEFAULT NOW(),
-                                 UNIQUE(config_id, version)
-);
-
 
 
 ---- create above / drop below ----
