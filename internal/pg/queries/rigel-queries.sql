@@ -10,3 +10,6 @@ RETURNING *;
 
 -- name: CheckSchemaExists :one
 SELECT EXISTS(SELECT 1 FROM schema WHERE id=$1);
+
+-- name: GetConfig :one
+SELECT * FROM config WHERE id=$1;

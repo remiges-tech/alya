@@ -27,7 +27,7 @@ func (q *Queries) CheckSchemaExists(ctx context.Context, id int32) (bool, error)
 const createConfig = `-- name: CreateConfig :one
 INSERT INTO config (name, description, active, tags, schema_id, values, created_by, updated_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, name, description, tags, schema_id, values, active, created_by, updated_by, created_at, updated_at
+RETURNING id, name, description, active, schema_id, values, tags, created_by, updated_by, created_at, updated_at
 `
 
 type CreateConfigParams struct {
@@ -57,10 +57,10 @@ func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Con
 		&i.ID,
 		&i.Name,
 		&i.Description,
-		&i.Tags,
+		&i.Active,
 		&i.SchemaID,
 		&i.Values,
-		&i.Active,
+		&i.Tags,
 		&i.CreatedBy,
 		&i.UpdatedBy,
 		&i.CreatedAt,
@@ -72,7 +72,7 @@ func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Con
 const createSchema = `-- name: CreateSchema :one
 INSERT INTO schema (name, description, tags, fields, created_by, updated_by, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-RETURNING id, name, description, tags, fields, created_by, updated_by, created_at, updated_at
+RETURNING id, name, description, fields, tags, created_by, updated_by, created_at, updated_at
 `
 
 type CreateSchemaParams struct {
@@ -98,8 +98,31 @@ func (q *Queries) CreateSchema(ctx context.Context, arg CreateSchemaParams) (Sch
 		&i.ID,
 		&i.Name,
 		&i.Description,
-		&i.Tags,
 		&i.Fields,
+		&i.Tags,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getConfig = `-- name: GetConfig :one
+SELECT id, name, description, active, schema_id, values, tags, created_by, updated_by, created_at, updated_at FROM config WHERE id=$1
+`
+
+func (q *Queries) GetConfig(ctx context.Context, id int32) (Config, error) {
+	row := q.db.QueryRowContext(ctx, getConfig, id)
+	var i Config
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.Active,
+		&i.SchemaID,
+		&i.Values,
+		&i.Tags,
 		&i.CreatedBy,
 		&i.UpdatedBy,
 		&i.CreatedAt,

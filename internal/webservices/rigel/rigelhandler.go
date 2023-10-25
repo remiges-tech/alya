@@ -21,4 +21,5 @@ func NewHandler(sqlq *sqlc.Queries, lh *logharbour.LogHarbour) *RigelHandler {
 func (h *RigelHandler) RegisterHandlers(router *gin.Engine) {
 	router.POST("/rigel/schema", h.createSchema)
 	router.POST("/rigel/config", h.createConfig)
+	router.GET("/rigel/config", h.getConfig)
 }

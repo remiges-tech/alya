@@ -2,6 +2,7 @@ package rigel
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"go-framework/internal/pg/sqlc-gen"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/sqlc-dev/pqtype"
 )
 
 type CreateSchemaRequest struct {
@@ -73,9 +75,28 @@ func (h *RigelHandler) createSchema(c *gin.Context) {
 		log.Printf("error marshalling fields: %v", err)
 	}
 
+	tagsJson, err := json.Marshal(schema.Tags)
+	if err != nil {
+		log.Printf("Error marshalling tags: %v", err)
+	}
+
 	// Create the parameters for the CreateSchema function
 	createSchemaParams := sqlc.CreateSchemaParams{
-		Fields:    fieldsJson,
+		Name: schema.Name,
+		Description: sql.NullString{
+			String: func() string {
+				if schema.Description != nil {
+					return *schema.Description
+				}
+				return ""
+			}(),
+			Valid: schema.Description != nil,
+		},
+		Fields: fieldsJson,
+		Tags: pqtype.NullRawMessage{
+			RawMessage: tagsJson,
+			Valid:      len(tagsJson) > 0,
+		},
 		CreatedBy: requestUser,
 		UpdatedBy: requestUser,
 	}

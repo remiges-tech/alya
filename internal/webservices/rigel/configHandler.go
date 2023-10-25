@@ -200,3 +200,31 @@ func ConvertToConfigResponse(config sqlc.Config) ConfigResponse {
 		UpdatedAt:   config.UpdatedAt.Time,
 	}
 }
+
+func (h *RigelHandler) getConfig(c *gin.Context) {
+	configID := c.Query("config_id")
+	// configName := c.Query("config_name")
+	// schemaName := c.Query("schema_name")
+
+	if configID != "" {
+		id, err := strconv.Atoi(configID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, wscutils.NewErrorResponse("invalid_config_id", "invalid_config_id"))
+			return
+		}
+		config, err := h.sqlq.GetConfig(c, int32(id))
+		// Check the error and respond accordingly
+		if err != nil {
+			if err == sql.ErrNoRows {
+				// If there is no such voucher, we should return an empty JSON
+				c.JSON(http.StatusNotFound, wscutils.NewErrorResponse("config_not_found", "The requested config could not be found."))
+			} else {
+				c.JSON(http.StatusInternalServerError, wscutils.NewErrorResponse("database_error", "error_getting_config"))
+			}
+			return
+		}
+		configResponse := ConvertToConfigResponse(config)
+		c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, configResponse, []wscutils.ErrorMessage{}))
+		return
+	}
+}

@@ -16,10 +16,10 @@ type Config struct {
 	ID          int32                 `json:"id"`
 	Name        string                `json:"name"`
 	Description sql.NullString        `json:"description"`
-	Tags        pqtype.NullRawMessage `json:"tags"`
+	Active      sql.NullBool          `json:"active"`
 	SchemaID    sql.NullInt32         `json:"schema_id"`
 	Values      json.RawMessage       `json:"values"`
-	Active      sql.NullBool          `json:"active"`
+	Tags        pqtype.NullRawMessage `json:"tags"`
 	CreatedBy   string                `json:"created_by"`
 	UpdatedBy   string                `json:"updated_by"`
 	CreatedAt   sql.NullTime          `json:"created_at"`
@@ -37,8 +37,8 @@ type Schema struct {
 	ID          int32                 `json:"id"`
 	Name        string                `json:"name"`
 	Description sql.NullString        `json:"description"`
-	Tags        pqtype.NullRawMessage `json:"tags"`
 	Fields      json.RawMessage       `json:"fields"`
+	Tags        pqtype.NullRawMessage `json:"tags"`
 	CreatedBy   string                `json:"created_by"`
 	UpdatedBy   string                `json:"updated_by"`
 	CreatedAt   sql.NullTime          `json:"created_at"`
