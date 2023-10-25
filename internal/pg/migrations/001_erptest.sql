@@ -15,45 +15,29 @@ CREATE TABLE Vouchers (
 CREATE TABLE schema (
                         id SERIAL PRIMARY KEY,
                         name VARCHAR(100) UNIQUE NOT NULL,
-                        active BOOLEAN DEFAULT TRUE,
-                        active_version_id INT,
                         description VARCHAR(1000),
+                        fields JSONB NOT NULL,
                         tags JSONB,
-                        created_by VARCHAR(100),
-                        updated_by VARCHAR(100),
+                        created_by VARCHAR(100) NOT NULL,
+                        updated_by VARCHAR(100) NOT NULL,
                         created_at TIMESTAMP DEFAULT NOW(),
                         updated_at TIMESTAMP DEFAULT NOW()
 );
-
-CREATE TABLE schema_versions (
-                                 id SERIAL PRIMARY KEY,
-                                 schema_id INT REFERENCES schema(id),
-                                 version VARCHAR(50) NOT NULL,
-                                 fields JSONB NOT NULL,
-                                 created_by VARCHAR(255) NOT NULL,
-                                 updated_by VARCHAR(255) NOT NULL,
-                                 created_at TIMESTAMP DEFAULT NOW(),
-                                 updated_at TIMESTAMP DEFAULT NOW(),
-                                 UNIQUE(schema_id, version)
-);
-
-
-
 
 -- Config table
 CREATE TABLE config (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    active BOOLEAN DEFAULT TRUE,
     description VARCHAR(1000),
-    tags JSONB,
-    schema_version_id INT REFERENCES schema_versions(id),
+    active BOOLEAN DEFAULT TRUE,
+    schema_id INT REFERENCES schema(id),
     values JSONB NOT NULL,
+    tags JSONB,
     created_by VARCHAR(255) NOT NULL,
     updated_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(name, schema_version_id)
+    UNIQUE(name, schema_id)
 );
 
 

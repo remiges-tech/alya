@@ -25,20 +25,20 @@ func (q *Queries) CheckSchemaExists(ctx context.Context, id int32) (bool, error)
 }
 
 const createConfig = `-- name: CreateConfig :one
-INSERT INTO config (name, description, active, tags, schema_version_id, values, created_by, updated_by)
+INSERT INTO config (name, description, active, tags, schema_id, values, created_by, updated_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, name, active, description, tags, schema_version_id, values, created_by, updated_by, created_at, updated_at
+RETURNING id, name, description, tags, schema_id, values, active, created_by, updated_by, created_at, updated_at
 `
 
 type CreateConfigParams struct {
-	Name            string                `json:"name"`
-	Description     sql.NullString        `json:"description"`
-	Active          sql.NullBool          `json:"active"`
-	Tags            pqtype.NullRawMessage `json:"tags"`
-	SchemaVersionID sql.NullInt32         `json:"schema_version_id"`
-	Values          json.RawMessage       `json:"values"`
-	CreatedBy       string                `json:"created_by"`
-	UpdatedBy       string                `json:"updated_by"`
+	Name        string                `json:"name"`
+	Description sql.NullString        `json:"description"`
+	Active      sql.NullBool          `json:"active"`
+	Tags        pqtype.NullRawMessage `json:"tags"`
+	SchemaID    sql.NullInt32         `json:"schema_id"`
+	Values      json.RawMessage       `json:"values"`
+	CreatedBy   string                `json:"created_by"`
+	UpdatedBy   string                `json:"updated_by"`
 }
 
 func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
@@ -47,7 +47,7 @@ func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Con
 		arg.Description,
 		arg.Active,
 		arg.Tags,
-		arg.SchemaVersionID,
+		arg.SchemaID,
 		arg.Values,
 		arg.CreatedBy,
 		arg.UpdatedBy,
@@ -56,11 +56,11 @@ func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Con
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Active,
 		&i.Description,
 		&i.Tags,
-		&i.SchemaVersionID,
+		&i.SchemaID,
 		&i.Values,
+		&i.Active,
 		&i.CreatedBy,
 		&i.UpdatedBy,
 		&i.CreatedAt,
@@ -70,19 +70,18 @@ func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Con
 }
 
 const createSchema = `-- name: CreateSchema :one
-INSERT INTO schema (name, description, tags, active, active_version_id, created_by, updated_by, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-RETURNING id, name, active, active_version_id, description, tags, created_by, updated_by, created_at, updated_at
+INSERT INTO schema (name, description, tags, fields, created_by, updated_by, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+RETURNING id, name, description, tags, fields, created_by, updated_by, created_at, updated_at
 `
 
 type CreateSchemaParams struct {
-	Name            string                `json:"name"`
-	Description     sql.NullString        `json:"description"`
-	Tags            pqtype.NullRawMessage `json:"tags"`
-	Active          sql.NullBool          `json:"active"`
-	ActiveVersionID sql.NullInt32         `json:"active_version_id"`
-	CreatedBy       sql.NullString        `json:"created_by"`
-	UpdatedBy       sql.NullString        `json:"updated_by"`
+	Name        string                `json:"name"`
+	Description sql.NullString        `json:"description"`
+	Tags        pqtype.NullRawMessage `json:"tags"`
+	Fields      json.RawMessage       `json:"fields"`
+	CreatedBy   string                `json:"created_by"`
+	UpdatedBy   string                `json:"updated_by"`
 }
 
 func (q *Queries) CreateSchema(ctx context.Context, arg CreateSchemaParams) (Schema, error) {
@@ -90,8 +89,7 @@ func (q *Queries) CreateSchema(ctx context.Context, arg CreateSchemaParams) (Sch
 		arg.Name,
 		arg.Description,
 		arg.Tags,
-		arg.Active,
-		arg.ActiveVersionID,
+		arg.Fields,
 		arg.CreatedBy,
 		arg.UpdatedBy,
 	)
@@ -99,45 +97,8 @@ func (q *Queries) CreateSchema(ctx context.Context, arg CreateSchemaParams) (Sch
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Active,
-		&i.ActiveVersionID,
 		&i.Description,
 		&i.Tags,
-		&i.CreatedBy,
-		&i.UpdatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const createSchemaVersion = `-- name: CreateSchemaVersion :one
-INSERT INTO schema_versions (schema_id, version, fields, created_by, updated_by)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, schema_id, version, fields, created_by, updated_by, created_at, updated_at
-`
-
-type CreateSchemaVersionParams struct {
-	SchemaID  sql.NullInt32   `json:"schema_id"`
-	Version   string          `json:"version"`
-	Fields    json.RawMessage `json:"fields"`
-	CreatedBy string          `json:"created_by"`
-	UpdatedBy string          `json:"updated_by"`
-}
-
-func (q *Queries) CreateSchemaVersion(ctx context.Context, arg CreateSchemaVersionParams) (SchemaVersion, error) {
-	row := q.db.QueryRowContext(ctx, createSchemaVersion,
-		arg.SchemaID,
-		arg.Version,
-		arg.Fields,
-		arg.CreatedBy,
-		arg.UpdatedBy,
-	)
-	var i SchemaVersion
-	err := row.Scan(
-		&i.ID,
-		&i.SchemaID,
-		&i.Version,
 		&i.Fields,
 		&i.CreatedBy,
 		&i.UpdatedBy,

@@ -16,12 +16,12 @@ import (
 )
 
 type Config struct {
-	Name            string  `'json:"name" binding:"required" validate:"required,min=2,max=150"`
-	Description     *string `validate:"omitempty,min=2,max=150"`
-	Active          *bool   `validate:"omitempty"`
-	Tags            *[]Tag  `validate:"omitempty,dive"`
-	SchemaVersionID int32   `json:"schema_version_id" validate:"required"`
-	Values          []Value `json:"values" validate:"required,dive"` // Add this line
+	Name        string  `'json:"name" binding:"required" validate:"required,min=2,max=150"`
+	Description *string `validate:"omitempty,min=2,max=150"`
+	Active      *bool   `validate:"omitempty"`
+	SchemaID    int32   `json:"schema_id" validate:"required"`
+	Values      []Value `json:"values" validate:"required,dive"` // Add this line
+	Tags        *[]Tag  `validate:"omitempty,dive"`
 }
 
 type Value struct {

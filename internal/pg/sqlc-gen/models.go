@@ -13,17 +13,17 @@ import (
 )
 
 type Config struct {
-	ID              int32                 `json:"id"`
-	Name            string                `json:"name"`
-	Active          sql.NullBool          `json:"active"`
-	Description     sql.NullString        `json:"description"`
-	Tags            pqtype.NullRawMessage `json:"tags"`
-	SchemaVersionID sql.NullInt32         `json:"schema_version_id"`
-	Values          json.RawMessage       `json:"values"`
-	CreatedBy       string                `json:"created_by"`
-	UpdatedBy       string                `json:"updated_by"`
-	CreatedAt       sql.NullTime          `json:"created_at"`
-	UpdatedAt       sql.NullTime          `json:"updated_at"`
+	ID          int32                 `json:"id"`
+	Name        string                `json:"name"`
+	Description sql.NullString        `json:"description"`
+	Tags        pqtype.NullRawMessage `json:"tags"`
+	SchemaID    sql.NullInt32         `json:"schema_id"`
+	Values      json.RawMessage       `json:"values"`
+	Active      sql.NullBool          `json:"active"`
+	CreatedBy   string                `json:"created_by"`
+	UpdatedBy   string                `json:"updated_by"`
+	CreatedAt   sql.NullTime          `json:"created_at"`
+	UpdatedAt   sql.NullTime          `json:"updated_at"`
 }
 
 type Employee struct {
@@ -34,27 +34,15 @@ type Employee struct {
 }
 
 type Schema struct {
-	ID              int32                 `json:"id"`
-	Name            string                `json:"name"`
-	Active          sql.NullBool          `json:"active"`
-	ActiveVersionID sql.NullInt32         `json:"active_version_id"`
-	Description     sql.NullString        `json:"description"`
-	Tags            pqtype.NullRawMessage `json:"tags"`
-	CreatedBy       sql.NullString        `json:"created_by"`
-	UpdatedBy       sql.NullString        `json:"updated_by"`
-	CreatedAt       sql.NullTime          `json:"created_at"`
-	UpdatedAt       sql.NullTime          `json:"updated_at"`
-}
-
-type SchemaVersion struct {
-	ID        int32           `json:"id"`
-	SchemaID  sql.NullInt32   `json:"schema_id"`
-	Version   string          `json:"version"`
-	Fields    json.RawMessage `json:"fields"`
-	CreatedBy string          `json:"created_by"`
-	UpdatedBy string          `json:"updated_by"`
-	CreatedAt sql.NullTime    `json:"created_at"`
-	UpdatedAt sql.NullTime    `json:"updated_at"`
+	ID          int32                 `json:"id"`
+	Name        string                `json:"name"`
+	Description sql.NullString        `json:"description"`
+	Tags        pqtype.NullRawMessage `json:"tags"`
+	Fields      json.RawMessage       `json:"fields"`
+	CreatedBy   string                `json:"created_by"`
+	UpdatedBy   string                `json:"updated_by"`
+	CreatedAt   sql.NullTime          `json:"created_at"`
+	UpdatedAt   sql.NullTime          `json:"updated_at"`
 }
 
 type Voucher struct {
