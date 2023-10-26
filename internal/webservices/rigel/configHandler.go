@@ -49,7 +49,7 @@ type ConfigResponse struct {
 }
 
 func (h *RigelHandler) createConfig(c *gin.Context) {
-	h.lh.Log("info", "createConfig called")
+	//h.lh.Log("info", "createConfig called")
 	var config Config
 	var createConfigParams sqlc.CreateConfigParams
 
@@ -75,7 +75,7 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 
 	// step 3: if there are validation errors, add them to response and send it
 	if len(validationErrors) > 0 {
-		h.lh.Log("error", "validation error", validationErrors)
+		//h.lh.Log("error", "validation error", validationErrors)
 		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, validationErrors))
 		return
 	}
@@ -127,7 +127,7 @@ func (h *RigelHandler) createConfig(c *gin.Context) {
 	newConfig, err := h.sqlq.CreateConfig(c, createConfigParams)
 	if err != nil {
 		// log the error
-		h.lh.Log("error", "error creating config", err.Error())
+		//h.lh.Log("error", "error creating config", err.Error())
 		// buildvalidationerror for something went wrong
 		c.JSON(http.StatusInternalServerError, wscutils.NewErrorResponse("database_error", "error_creating_config"))
 

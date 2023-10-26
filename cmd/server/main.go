@@ -1,22 +1,27 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/go-resty/resty/v2"
 	"go-framework/internal/infra"
 	"go-framework/internal/webservices/rigel"
-	"go-framework/internal/webservices/user"
-	voucher "go-framework/internal/webservices/vouchers"
 	"go-framework/pkg/rigelclient"
 	"log"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-resty/resty/v2"
+	"github.com/remiges-tech/logharbour/logHarbour"
 )
 
 func main() {
+	loggers := logHarbour.LogInit("app1", "module1", "system1")
 	// Create a new ConfigClient
 	client := rigelclient.ConfigClient{
 		BaseURL: "http://localhost:8080/rigel", // replace with your config service URL
 		Client:  resty.New(),
 	}
+
+	logHarbour.LogWrite(loggers.ActivityLogger, logHarbour.LevelInfo, "spanid1", "correlationid1", time.Now().AddDate(1, 0, 0), "bhavya", "127.0.0.1",
+		"newLog", "valueBeingUpdated", "id1", 1, "This is an activity logger info message", "somekey", "somevalue", "key2", "value2")
 
 	configName := "C3"
 	schemaName := "S1"
@@ -36,13 +41,9 @@ func main() {
 	r := gin.Default()
 
 	// Pass the Env to the handler functions to interact with database
-	voucherHandler := voucher.NewHandler(sqlq, lh)
-	userHandler := user.NewHandler(sqlq, lh)
 	rigelHandler := rigel.NewHandler(sqlq, lh)
 
 	// Register api handlers
-	voucherHandler.RegisterVoucherHandlers(r)
-	userHandler.RegisterUserHandlers(r)
 	rigelHandler.RegisterHandlers(r)
 
 	r.Run(":8080")

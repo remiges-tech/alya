@@ -2,16 +2,16 @@ package rigel
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/remiges-tech/logharbour/logHarbour"
 	"go-framework/internal/pg/sqlc-gen"
-	"go-framework/logharbour"
 )
 
 type RigelHandler struct {
 	sqlq *sqlc.Queries
-	lh   *logharbour.LogHarbour
+	lh   logHarbour.LogHandles
 }
 
-func NewHandler(sqlq *sqlc.Queries, lh *logharbour.LogHarbour) *RigelHandler {
+func NewHandler(sqlq *sqlc.Queries, lh logHarbour.LogHandles) *RigelHandler {
 	return &RigelHandler{
 		sqlq: sqlq,
 		lh:   lh,

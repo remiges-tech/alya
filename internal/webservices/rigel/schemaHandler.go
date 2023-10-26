@@ -42,7 +42,7 @@ type SchemaResponse struct {
 }
 
 func (h *RigelHandler) createSchema(c *gin.Context) {
-	h.lh.Log("info", "createSchema called")
+	//h.lh.Log("info", "createSchema called")
 	// TODO: remove the following line. The value will be set by the auth middleware.
 	c.Set("RequestUser", "test")
 	requestUser, err := wscutils.GetRequestUser(c)
@@ -63,7 +63,7 @@ func (h *RigelHandler) createSchema(c *gin.Context) {
 	// step 2: validate request body
 	validationErrors := h.validateCreateSchema(schema, c)
 	if len(validationErrors) > 0 {
-		h.lh.Log("error", "validation error", validationErrors)
+		//h.lh.Log("error", "validation error", validationErrors)
 		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, validationErrors))
 		return
 	}

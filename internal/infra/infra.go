@@ -2,13 +2,12 @@ package infra
 
 import (
 	"context"
-	db "go-framework/internal/pg"
-	middleware "go-framework/internal/wscutils"
-	"go-framework/logharbour"
-
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/remiges-tech/logharbour/logHarbour"
+	db "go-framework/internal/pg"
+	middleware "go-framework/internal/wscutils"
 )
 
 var (
@@ -32,7 +31,7 @@ type AppConfig struct {
 
 // initInfraServices sets up required infrastructure services. All the database connections,
 // logger, etc. are initialized here.
-func InitInfraServices(config AppConfig) (*db.Provider, *logharbour.LogHarbour, *redis.Client) {
+func InitInfraServices(config AppConfig) (*db.Provider, logHarbour.LogHandles, *redis.Client) {
 	//pgConfig := db.Config{
 	//	Host:     "localhost",
 	//	Port:     5432,
@@ -48,7 +47,7 @@ func InitInfraServices(config AppConfig) (*db.Provider, *logharbour.LogHarbour, 
 		DBName:   config.DBName,
 	}
 	dbProvider := db.NewProvider(pgConfig)
-	lh := logharbour.New()
+	lh := logHarbour.LogInit("app1", "module1", "system1")
 
 	// Set up Redis client
 	rdb := redis.NewClient(&redis.Options{
@@ -75,7 +74,7 @@ func setupMiddleware(rdb *redis.Client) gin.HandlerFunc {
 }
 
 // SetupRouter sets up the Gin router with middleware.
-func SetupRouter(lh *logharbour.LogHarbour, rdb *redis.Client) *gin.Engine {
+func SetupRouter(lh *logHarbour.LogHandles, rdb *redis.Client) *gin.Engine {
 	authMiddleware := setupMiddleware(rdb)
 	r := gin.Default()
 	r.Use(authMiddleware)
