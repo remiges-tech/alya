@@ -8,8 +8,3 @@ sql:
         package: "sqlc"
         out: "sqlc-gen"
         emit_json_tags: true
-        overrides:
-          - column: "employees.employee_id"
-            go_struct_tag: 'json:"employee_id" validate:"required"'
-          - column: "vouchers.voucher_id"
-            go_struct_tag: 'json:"voucherId"'
