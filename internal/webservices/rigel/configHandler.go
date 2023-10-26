@@ -223,9 +223,6 @@ func (h *RigelHandler) getConfig(c *gin.Context) {
 			SchemaName: schemaName,
 		}
 		config, qerr = h.sqlq.GetConfigByNameAndSchema(c, getConfigByNameAndSchemaParams)
-		configResponse := ConvertToConfigResponse(config)
-		c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, configResponse, []wscutils.ErrorMessage{}))
-		return
 	}
 
 	// Check the error and respond accordingly
@@ -241,5 +238,4 @@ func (h *RigelHandler) getConfig(c *gin.Context) {
 
 	configResponse := ConvertToConfigResponse(config)
 	c.JSON(http.StatusOK, wscutils.NewResponse(wscutils.SuccessStatus, configResponse, []wscutils.ErrorMessage{}))
-	return
 }
