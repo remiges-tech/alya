@@ -1,8 +1,9 @@
-package pg
+package db
 
 import (
 	"database/sql"
 	"fmt"
+	"go-framework/internal/pg/sqlc-gen"
 	"log"
 
 	_ "github.com/lib/pq" // PostgreSQL driver
@@ -17,7 +18,8 @@ type Config struct {
 }
 
 type Provider struct {
-	db *sql.DB
+	db      *sql.DB
+	queries *sqlc.Queries
 }
 
 func NewProvider(cfg Config) *Provider {
@@ -35,9 +37,15 @@ func NewProvider(cfg Config) *Provider {
 
 	log.Println("Successfully connected to the database")
 
-	return &Provider{db: db}
+	queries := sqlc.New(db)
+
+	return &Provider{db: db, queries: queries}
 }
 
 func (p *Provider) DB() *sql.DB {
 	return p.db
+}
+
+func (p *Provider) Queries() *sqlc.Queries {
+	return p.queries
 }

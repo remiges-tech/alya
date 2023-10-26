@@ -2,8 +2,7 @@ package infra
 
 import (
 	"context"
-	"go-framework/internal/pg"
-	"go-framework/internal/pg/sqlc-gen"
+	db "go-framework/internal/pg"
 	middleware "go-framework/internal/wscutils"
 	"go-framework/logharbour"
 
@@ -23,17 +22,15 @@ var (
 
 // initInfraServices sets up required infrastructure services. All the database connections,
 // logger, etc. are initialized here.
-func InitInfraServices() (*sqlc.Queries, *logharbour.LogHarbour, *redis.Client) {
-	// Establish Env -- connection connections, logger, etc.
-	pgConfig := pg.Config{
+func InitInfraServices() (*db.Provider, *logharbour.LogHarbour, *redis.Client) {
+	pgConfig := db.Config{
 		Host:     "localhost",
 		Port:     5432,
 		User:     "erptest",
 		Password: "erptest",
 		DBName:   "erptest",
 	}
-	pgProvider := pg.NewProvider(pgConfig)
-	sqlq := sqlc.New(pgProvider.DB())
+	dbProvider := db.NewProvider(pgConfig)
 	lh := logharbour.New()
 
 	// Set up Redis client
@@ -43,7 +40,7 @@ func InitInfraServices() (*sqlc.Queries, *logharbour.LogHarbour, *redis.Client) 
 		DB:       redisDB,
 	})
 
-	return sqlq, lh, rdb
+	return dbProvider, lh, rdb
 }
 
 func setupMiddleware(rdb *redis.Client) gin.HandlerFunc {

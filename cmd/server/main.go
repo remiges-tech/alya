@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
 	"go-framework/internal/infra"
 	"go-framework/internal/webservices/rigel"
 	"go-framework/internal/webservices/user"
 	voucher "go-framework/internal/webservices/vouchers"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Define your application's config struct
@@ -16,7 +17,8 @@ type AppConfig struct {
 
 func main() {
 	//sqlq, lh, rdb := infra.InitInfraServices()
-	sqlq, lh, _ := infra.InitInfraServices()
+	dbProvider, lh, _ := infra.InitInfraServices()
+	sqlq := dbProvider.Queries()
 	//r := infra.SetupRouter(lh, rdb)
 	r := gin.Default()
 
