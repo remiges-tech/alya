@@ -13,15 +13,15 @@ import (
 )
 
 func main() {
-	loggers := logHarbour.LogInit("app1", "module1", "system1")
+	loggers := logHarbour.LogInit("rigel", "main", "system1")
 	// Create a new ConfigClient
 	client := rigelclient.ConfigClient{
 		BaseURL: "http://localhost:8080/rigel", // replace with your config service URL
 		Client:  resty.New(),
 	}
 
-	logHarbour.LogWrite(loggers.ActivityLogger, logHarbour.LevelInfo, "spanid1", "correlationid1", time.Now().AddDate(1, 0, 0), "bhavya", "127.0.0.1",
-		"newLog", "valueBeingUpdated", "id1", 1, "This is an activity logger info message", "somekey", "somevalue", "key2", "value2")
+	logHarbour.LogWrite(loggers.ActivityLogger, logHarbour.LevelInfo, "na", "na", time.Now(), "na", "na",
+		"damonStart", "na", "na", 1, "Rigel server started")
 
 	configName := "C3"
 	schemaName := "S1"
@@ -34,6 +34,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
+	logHarbour.LogWrite(loggers.ActivityLogger, logHarbour.LevelInfo, "na", "na", time.Now(), "na", "na",
+		"load_appConfig", "na", "na", 1, "Appconfig loaded", "db_host", appConfig.DBHost)
 
 	//sqlq, lh, rdb := infra.InitInfraServices()
 	dbProvider, lh, _ := infra.InitInfraServices(appConfig)
