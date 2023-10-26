@@ -20,15 +20,32 @@ var (
 	redisDB       = 0
 )
 
+type AppConfig struct {
+	DatabaseURL string `json:"database_url"`
+	Port        int    `json:"port"`
+	DBHost      string `json:"db_host"`
+	DBPort      int    `json:"db_port"`
+	DBUser      string `json:"db_user"`
+	DBPassword  string `json:"db_password"`
+	DBName      string `json:"db_name"`
+}
+
 // initInfraServices sets up required infrastructure services. All the database connections,
 // logger, etc. are initialized here.
-func InitInfraServices() (*db.Provider, *logharbour.LogHarbour, *redis.Client) {
+func InitInfraServices(config AppConfig) (*db.Provider, *logharbour.LogHarbour, *redis.Client) {
+	//pgConfig := db.Config{
+	//	Host:     "localhost",
+	//	Port:     5432,
+	//	User:     "erptest",
+	//	Password: "erptest",
+	//	DBName:   "erptest",
+	//}
 	pgConfig := db.Config{
-		Host:     "localhost",
-		Port:     5432,
-		User:     "erptest",
-		Password: "erptest",
-		DBName:   "erptest",
+		Host:     config.DBHost,
+		Port:     config.DBPort,
+		User:     config.DBUser,
+		Password: config.DBPassword,
+		DBName:   config.DBName,
 	}
 	dbProvider := db.NewProvider(pgConfig)
 	lh := logharbour.New()

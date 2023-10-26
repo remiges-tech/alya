@@ -13,3 +13,6 @@ pg-reset-and-migrate: pg-drop-all pg-migrate
 
 run-server-for-dev:
 	docker compose up -d; go run cmd/server/main.go
+
+build-rigel-server:
+	go build -o ./bin/rigel-server ./cmd/server
