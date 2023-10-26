@@ -5,12 +5,7 @@ import (
 	"go-framework/pkg/rigelclient"
 	"log"
 
-	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
-	"go-framework/internal/infra"
-	"go-framework/internal/webservices/rigel"
-	"go-framework/internal/webservices/user"
-	voucher "go-framework/internal/webservices/vouchers"
 	_ "go-framework/pkg/rigelclient"
 )
 
@@ -21,20 +16,6 @@ type AppConfig struct {
 }
 
 func main() {
-	//sqlq, lh, rdb := infra.InitInfraServices()
-	sqlq, lh, _ := infra.InitInfraServices()
-	//r := infra.SetupRouter(lh, rdb)
-	r := gin.Default()
-
-	// Pass the Env to the handler functions to interact with database
-	voucherHandler := voucher.NewHandler(sqlq, lh)
-	userHandler := user.NewHandler(sqlq, lh)
-	rigelHandler := rigel.NewHandler(sqlq, lh)
-
-	// Register api handlers
-	voucherHandler.RegisterVoucherHandlers(r)
-	userHandler.RegisterUserHandlers(r)
-	rigelHandler.RegisterHandlers(r)
 
 	// Create a new ConfigClient
 	client := rigelclient.ConfigClient{
