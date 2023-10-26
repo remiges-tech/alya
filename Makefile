@@ -11,5 +11,5 @@ pg-drop-all:
 
 pg-reset-and-migrate: pg-drop-all pg-migrate
 
-run-main-for-dev:
-	docker compose up -d; go run main.go
+run-server-for-dev:
+	docker compose up -d; go run cmd/server/main.go
