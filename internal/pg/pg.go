@@ -3,29 +3,31 @@ package pg
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/lib/pq" // PostgreSQL driver
 	"log"
+
+	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
-const (
-	host     = "localhost"
-	port     = 5432
-	user     = "erptest"
-	password = "erptest"
-	dbname   = "erptest"
-)
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	DBName   string
+}
 
-func Connect() *sql.DB {
-	// Create the connection string
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+type Provider struct {
+	db *sql.DB
+}
 
-	// Open a connection to the database
+func NewProvider(cfg Config) *Provider {
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName)
+
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Check the connection
 	err = db.Ping()
 	if err != nil {
 		log.Fatal(err)
@@ -33,5 +35,9 @@ func Connect() *sql.DB {
 
 	log.Println("Successfully connected to the database")
 
-	return db
+	return &Provider{db: db}
+}
+
+func (p *Provider) DB() *sql.DB {
+	return p.db
 }

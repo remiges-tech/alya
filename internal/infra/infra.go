@@ -25,8 +25,15 @@ var (
 // logger, etc. are initialized here.
 func InitInfraServices() (*sqlc.Queries, *logharbour.LogHarbour, *redis.Client) {
 	// Establish Env -- connection connections, logger, etc.
-	pgClient := pg.Connect()
-	sqlq := sqlc.New(pgClient)
+	pgConfig := pg.Config{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "erptest",
+		Password: "erptest",
+		DBName:   "erptest",
+	}
+	pgProvider := pg.NewProvider(pgConfig)
+	sqlq := sqlc.New(pgProvider.DB())
 	lh := logharbour.New()
 
 	// Set up Redis client
