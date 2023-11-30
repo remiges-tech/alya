@@ -1,0 +1,12 @@
+"unknown": 0
+"invalid_request": 1
+"invalid_json": 2
+"database_error": 3
+"request_user_invalid": 4
+"missing": 101
+"invalid_email": 102
+"outofrange": 103
+"email": 105
+"token_missing": 106
+"token_verification_failed": 107
+"token_cache_failed": 108

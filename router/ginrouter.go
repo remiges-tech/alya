@@ -1,8 +1,9 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 // GinRouter implements the Router interface for Gin framework.
@@ -37,52 +38,6 @@ var authMiddleware gin.HandlerFunc = func(c *gin.Context) {
 var loggingMiddleware gin.HandlerFunc = func(c *gin.Context) {
 	// Logging logic would be implemented here
 	c.Next()
-}
-
-// convertHandlerFunc adapts a generic HandlerFunc to a gin.HandlerFunc.
-func convertHandlerFunc(handler HandlerFunc) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		handler(&GinContext{ginContext: c})
-	}
-}
-
-// GET defines a route for GET requests.
-func (gr *GinRouter) GET(path string, handler HandlerFunc) {
-	gr.engine.GET(path, convertHandlerFunc(handler))
-}
-
-// POST defines a route for POST requests.
-func (gr *GinRouter) POST(path string, handler HandlerFunc) {
-	gr.engine.POST(path, convertHandlerFunc(handler))
-}
-
-// PUT defines a route for PUT requests.
-func (gr *GinRouter) PUT(path string, handler HandlerFunc) {
-	gr.engine.PUT(path, convertHandlerFunc(handler))
-}
-
-// DELETE defines a route for DELETE requests.
-func (gr *GinRouter) DELETE(path string, handler HandlerFunc) {
-	gr.engine.DELETE(path, convertHandlerFunc(handler))
-}
-
-// Use applies middleware to the router.
-func (gr *GinRouter) Use(middleware MiddlewareFunc) {
-	gr.engine.Use(func(c *gin.Context) {
-		// Wrap the request in our generic Context interface
-		ctx := &GinContext{ginContext: c}
-
-		// following is equivalent to:
-		// middleware(ctx, func(ctx Context) { c.Next() })(ctx)
-		// basically, it passes func(ctx Context) { c.Next() } as the next parameter to the middleware
-		// which then returns its hanlderfunc which is then called immediately with ctx as the parameter
-		next := middleware(ctx, func(ctx Context) {
-			// it will be called when next() is called in the middleware
-			c.Next()
-		})
-		// Call the next middleware/handler in the chain
-		next(ctx)
-	})
 }
 
 // Serve starts the HTTP server at the specified address.

@@ -1,9 +1,9 @@
 package router
 
-import "net/http"
+/*
 
 // HandlerFunc defines the handler signature for our router.
-type HandlerFunc func(Context)
+type HandlerFunc func(*gin.Context)
 
 // MiddlewareFunc defines the middleware signature.
 // The HandlerFunc parameter represents the next function to be executed in the request handling chain.
@@ -11,7 +11,7 @@ type HandlerFunc func(Context)
 // By passing the next function as a parameter, the MiddlewareFunc has the ability to control the execution flow.
 // It can choose to all the next function immediately, delay its execution, or even not call it at all.
 // This is useful for implementing functionalities like error handling, request filtering.
-type MiddlewareFunc func(Context, HandlerFunc) HandlerFunc
+type MiddlewareFunc func(*gin.Context, HandlerFunc) HandlerFunc
 
 // Router is a generic interface that can be implemented by different web frameworks.
 type Router interface {
@@ -21,6 +21,7 @@ type Router interface {
 	DELETE(path string, handler HandlerFunc)
 	Use(middleware MiddlewareFunc)
 	Serve(address string) error
+	NewContext(rw http.ResponseWriter, req *http.Request) Context
 }
 
 // Context is a generic interface that abstracts the context provided by web frameworks.
@@ -37,3 +38,8 @@ type Context interface {
 	// This can be used to access details about the request, such as headers, query parameters, and the request method.
 	Request() *http.Request
 }
+
+// H is a shortcut for creating a map[string]any.
+type H map[string]any
+
+*/

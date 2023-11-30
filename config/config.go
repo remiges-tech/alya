@@ -1,13 +1,17 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
+
+	"github.com/remiges-tech/rigel"
 )
 
 // ConfigSource is an interface that represents a source from which application configuration can be loaded.
-type ConfigSource interface {
+type Config interface {
 	// LoadConfig reads config from the source and binds it to c.
 	LoadConfig(c any) error
 	// Check checks if the config source can be used. For example, a file config source would check
@@ -16,7 +20,7 @@ type ConfigSource interface {
 }
 
 // Load first ensures that the config system valid and accessible. Then it loads the config into c.
-func Load(cs ConfigSource, c any) error {
+func Load(cs Config, c any) error {
 	if err := cs.Check(); err != nil {
 		return err
 	}
@@ -37,6 +41,16 @@ func (f *File) Check() error {
 	return nil
 }
 
+func NewFile(configFilePath string) (*File, error) {
+	file := &File{ConfigFilePath: configFilePath}
+
+	if err := file.Check(); err != nil {
+		return nil, err
+	}
+
+	return file, nil
+}
+
 func (f *File) LoadConfig(appConfig any) error {
 	filePath := f.ConfigFilePath
 	file, err := os.Open(filePath)
@@ -50,30 +64,28 @@ func (f *File) LoadConfig(appConfig any) error {
 }
 
 // Rigel
-
 type Rigel struct {
-	ServerURL  string
-	ConfigName string
-	SchemaName string
-}
-
-func (r *Rigel) Check() error {
-	if r.ServerURL == "" {
-		return fmt.Errorf("ServerURL cannot be empty")
-	}
-
-	if r.ConfigName == "" {
-		return fmt.Errorf("ConfigName cannot be empty")
-	}
-
-	if r.SchemaName == "" {
-		return fmt.Errorf("SchemaName cannot be empty")
-	}
-
-	return nil
+	Client        *rigel.Rigel
+	SchemaName    string
+	SchemaVersion int
+	ConfigName    string
 }
 
 func (r *Rigel) LoadConfig(config any) error {
-	// use rigel client to load config
-	return nil
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return r.Client.LoadConfig(ctx, r.SchemaName, r.SchemaVersion, r.ConfigName, config)
+}
+
+type RigelWrapper struct {
+	Client        *rigel.Rigel
+	SchemaName    string
+	SchemaVersion int
+	ConfigName    string
+}
+
+func (rw *RigelWrapper) LoadConfig(c any) error {
+	ctx := context.Background() // Or pass this in through the RigelWrapper struct if needed
+	return rw.Client.LoadConfig(ctx, rw.SchemaName, rw.SchemaVersion, rw.ConfigName, c)
 }
