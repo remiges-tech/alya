@@ -8,7 +8,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// PrometheusMetrics implements the Metrics interface for Prometheus
+// PrometheusMetrics is a structure that implements the Metrics interface using Prometheus as the backend.
+// It stores mappings for different Prometheus metric types (Counter, Gauge, Histogram) and their vector counterparts.
 type PrometheusMetrics struct {
 	counters      map[string]prometheus.Counter
 	counterVecs   map[string]*prometheus.CounterVec // New map for CounterVec objects
@@ -19,7 +20,9 @@ type PrometheusMetrics struct {
 	customBuckets map[string][]float64 // Stores custom buckets for histograms
 }
 
-// NewPrometheusMetrics creates a new PrometheusMetrics instance
+// NewPrometheusMetrics creates and initializes a new instance of PrometheusMetrics.
+// This function sets up the internal maps used to store various types of Prometheus metrics,
+// including counters, gauges, histograms, and their labeled (vector) versions, as well as custom buckets for histograms.
 func NewPrometheusMetrics() *PrometheusMetrics {
 	return &PrometheusMetrics{
 		counters:      make(map[string]prometheus.Counter),
@@ -32,12 +35,17 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 	}
 }
 
-// SetCustomBuckets allows setting custom buckets for a specific histogram
+// SetCustomBuckets allows setting custom bucket sizes for histograms.
+// requiring finer or broader granularity. The 'name' parameter specifies the metric name, and 'buckets' is a slice
+// of float64 values defining the bucket thresholds.
 func (p *PrometheusMetrics) SetCustomBuckets(name string, buckets []float64) {
 	p.customBuckets[name] = buckets
 }
 
-// Register creates and registers a new Prometheus metric
+// Register creates and registers a new metric in the Prometheus registry based on the provided type.
+// Supported metric types include 'Counter', 'Gauge', and 'Histogram'.
+// The method takes the metric 'name', its 'metricType', and a 'help' string describing the metric.
+// For 'Histogram' types, it uses custom buckets if they have been set; otherwise, it falls back to default buckets.
 func (p *PrometheusMetrics) Register(name, metricType, help string) {
 	switch metricType {
 	case "Counter":
@@ -80,7 +88,10 @@ func (p *PrometheusMetrics) Register(name, metricType, help string) {
 	}
 }
 
-// Record updates the value of a Prometheus metric
+// Record updates the value of a Prometheus metric without labels.
+// It is used for recording values for counters, gauges, and histograms based on the metric 'name'.
+// The method identifies the correct metric type and performs the appropriate action: 'Add' for counters,
+// 'Set' for gauges, and 'Observe' for histograms. The 'value' parameter is the value to record.
 func (p *PrometheusMetrics) Record(name string, value float64) {
 	if counter, ok := p.counters[name]; ok {
 		counter.Add(value)
@@ -99,7 +110,10 @@ func (p *PrometheusMetrics) Record(name string, value float64) {
 
 }
 
-// RegisterWithLabels creates and registers a new Prometheus metric with labels
+// RegisterWithLabels creates and registers a new labeled metric.
+// This method is similar to 'Register' but for metrics with labels (like CounterVec, GaugeVec, HistogramVec).
+// It takes the metric 'name', 'metricType', a 'help' description, and a slice of 'labels' (the label keys).
+// For 'HistogramVec', it respects custom buckets if set for the given metric name.
 func (p *PrometheusMetrics) RegisterWithLabels(name, metricType, help string, labels []string) {
 	// Creating a new Counter metric with labels
 	switch metricType {
@@ -140,7 +154,10 @@ func (p *PrometheusMetrics) RegisterWithLabels(name, metricType, help string, la
 	}
 }
 
-// RecordWithLabels updates the value of a Prometheus metric with specific label values
+// RecordWithLabels updates the value of a labeled Prometheus metric.
+// This method is used for metrics that were registered with labels, such as those created via 'RegisterWithLabels'.
+// It finds the appropriate metric based on 'name' and updates it with the given 'value' and 'labelValues'.
+// The 'labelValues' are variadic parameters that should match the order and number of labels defined during registration.
 func (p *PrometheusMetrics) RecordWithLabels(name string, value float64, labelValues ...string) {
 	if counterVec, ok := p.counterVecs[name]; ok {
 		counterVec.WithLabelValues(labelValues...).Add(value)
@@ -158,7 +175,9 @@ func (p *PrometheusMetrics) RecordWithLabels(name string, value float64, labelVa
 	}
 }
 
-// StartMetricsServer starts an HTTP server for Prometheus to scrape
+// StartMetricsServer initializes and starts an HTTP server on the specified 'port' to expose Prometheus metrics.
+// This server provides an endpoint for Prometheus to scrape the collected metrics.
+// Typically it would be used to start a metrics server in a separate goroutine to keep it running independently.
 func (p *PrometheusMetrics) StartMetricsServer(port string) {
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(":"+port, nil)
