@@ -2,18 +2,13 @@ package router
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/remiges-tech/alya/logger"
 )
 
-type CustomLogger struct{}
-
-func (l *CustomLogger) Log(message string) {
-	// Implement your logging logic here
-	fmt.Println(message)
-}
-
-func CustomLoggerMiddleware(logger *CustomLogger) gin.HandlerFunc {
+func CustomLoggerMiddleware(logger logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Start timer
 		start := time.Now()
