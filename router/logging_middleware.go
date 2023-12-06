@@ -8,7 +8,7 @@ import (
 	"github.com/remiges-tech/alya/logger"
 )
 
-func CustomLoggerMiddleware(logger logger.Logger) gin.HandlerFunc {
+func RequestLoggerMiddleware(logger logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Start timer
 		start := time.Now()
