@@ -1,11 +1,14 @@
 package wscutils
 
 import (
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/assert/v2"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -85,4 +88,60 @@ func TestBuildErrorMessage(t *testing.T) {
 	if msg.ErrCode != unrecognizedErrCode || *msg.Field != fieldName || len(msg.Vals) != 0 {
 		t.Errorf("BuildErrorMessage() = %v; want ErrCode=%v, Field=%v, Vals=[]", msg, unrecognizedErrCode, fieldName)
 	}
+}
+
+func TestSendSuccessResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	test := struct {
+		name     string
+		response *Response
+		expected string
+	}{
+		name:     "Success response",
+		response: NewSuccessResponse("test data"),
+		expected: `{"status":"success","data":"test data","messages":null}`,
+	}
+
+	t.Run(test.name, func(t *testing.T) {
+		// Create a response recorder
+		w := httptest.NewRecorder()
+
+		// Create a gin context with the response recorder as the writer
+		c, _ := gin.CreateTestContext(w)
+
+		// Call the function with a test response
+		SendSuccessResponse(c, test.response)
+
+		// Assert that the response body was correctly set
+		assert.Equal(t, test.expected, w.Body.String())
+	})
+}
+
+func TestSendErrorResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	test := struct {
+		name     string
+		response *Response
+		expected string
+	}{
+		name:     "Error response",
+		response: NewErrorResponse(ErrcodeInvalidJson),
+		expected: `{"status":"error","data":null,"messages":[{"msgid":0,"errcode":"invalid_json"}]}`,
+	}
+
+	t.Run(test.name, func(t *testing.T) {
+		// Create a response recorder
+		w := httptest.NewRecorder()
+
+		// Create a gin context with the response recorder as the writer
+		c, _ := gin.CreateTestContext(w)
+
+		// Call the function with a test response
+		SendErrorResponse(c, test.response)
+
+		// Assert that the response body was correctly set
+		assert.Equal(t, test.expected, w.Body.String())
+	})
 }

@@ -154,3 +154,13 @@ func GetRequestUser(c *gin.Context) (string, error) {
 
 	return requestUserStr, nil
 }
+
+// SendSuccessResponse sends a JSON response.
+func SendSuccessResponse(c *gin.Context, response *Response) {
+	c.JSON(http.StatusOK, response)
+}
+
+// SendErrorResponse sends a JSON error response.
+func SendErrorResponse(c *gin.Context, response *Response) {
+	c.JSON(http.StatusBadRequest, response)
+}

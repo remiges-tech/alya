@@ -1,8 +1,6 @@
 package usersvc
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/go-playground/validator/v10"
@@ -34,8 +32,7 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 	// Validate request
 	validationErrors := wscutils.WscValidate(createUserReq, func(err validator.FieldError) []string { return []string{} })
 	if len(validationErrors) > 0 {
-		c.JSON(http.StatusBadRequest, wscutils.NewResponse(wscutils.ErrorStatus, nil, validationErrors))
-
+		wscutils.SendErrorResponse(c, wscutils.NewResponse(wscutils.ErrorStatus, nil, validationErrors))
 		return
 	}
 	s.Logger.LogActivity("CreateUser request validated", map[string]any{"username": createUserReq.Name})
@@ -46,11 +43,11 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 		Email: createUserReq.Email,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		wscutils.SendErrorResponse(c, wscutils.NewErrorResponse(wscutils.ErrcodeDatabaseError))
 		return
 	}
 	s.Logger.LogActivity("User created", map[string]any{"username": createUserReq.Name})
 
 	// Send response
-	c.JSON(http.StatusOK, user)
+	wscutils.SendSuccessResponse(c, wscutils.NewSuccessResponse(user))
 }
