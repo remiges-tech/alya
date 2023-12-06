@@ -11,6 +11,7 @@ import (
 // Logger is an interface that represents a logger.
 type Logger interface {
 	Log(message string)
+	LogDebug(message string)
 }
 
 // ConsoleLogger logs messages to the console.
