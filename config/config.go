@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
 	"github.com/remiges-tech/rigel"
+	"github.com/remiges-tech/rigel/etcd"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 // ConfigSource is an interface that represents a source from which application configuration can be loaded.
@@ -41,7 +44,7 @@ func (f *File) Check() error {
 	return nil
 }
 
-func NewFile(configFilePath string) (*File, error) {
+func newFile(configFilePath string) (*File, error) {
 	file := &File{ConfigFilePath: configFilePath}
 
 	if err := file.Check(); err != nil {
@@ -78,14 +81,18 @@ func (r *Rigel) LoadConfig(config any) error {
 	return r.Client.LoadConfig(ctx, r.SchemaName, r.SchemaVersion, r.ConfigName, config)
 }
 
-type RigelWrapper struct {
-	Client        *rigel.Rigel
-	SchemaName    string
-	SchemaVersion int
-	ConfigName    string
-}
+func NewRigelClient(etcdEndpoints string) (*rigel.Rigel, error) {
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{etcdEndpoints},
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		log.Fatalf("Failed to create etcd client: %v", err)
+		return nil, err
+	}
 
-func (rw *RigelWrapper) LoadConfig(c any) error {
-	ctx := context.Background() // Or pass this in through the RigelWrapper struct if needed
-	return rw.Client.LoadConfig(ctx, rw.SchemaName, rw.SchemaVersion, rw.ConfigName, c)
+	etcdStorage := &etcd.EtcdStorage{Client: cli}
+	rigelClient := rigel.New(etcdStorage)
+
+	return rigelClient, nil
 }

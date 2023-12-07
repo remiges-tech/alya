@@ -13,7 +13,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/remiges-tech/alya/config"
+	"github.com/remiges-tech/alya/logger"
 	"github.com/remiges-tech/logharbour/logharbour"
+	"github.com/remiges-tech/rigel"
 )
 
 // Dependencies is a map to hold arbitrary dependencies.
@@ -40,8 +42,10 @@ type Dependencies map[string]any
 //	s := NewService(router).WithLogger(logger).WithDatabase(db)
 type Service struct {
 	Config       config.Config
+	RigelConfig  *rigel.Rigel
 	Router       *gin.Engine
-	Logger       *logharbour.Logger
+	Logger       logger.Logger
+	LogHarbour   *logharbour.Logger
 	Database     any
 	Dependencies Dependencies
 }
@@ -51,6 +55,18 @@ func NewService(r *gin.Engine) *Service {
 	s := &Service{
 		Router: r,
 	}
+	return s
+}
+
+// WithConfig is a method to inject a alya.Config dependency into the Service.
+func (s *Service) WithConfig(c config.Config) *Service {
+	s.Config = c
+	return s
+}
+
+// WithConfig is a method to inject a rigel (github.com/remiges-tech/rigel) dependency into the Service.
+func (s *Service) WithRigelConfig(c *rigel.Rigel) *Service {
+	s.RigelConfig = c
 	return s
 }
 
@@ -64,8 +80,15 @@ func (s *Service) WithDependency(key string, value any) *Service {
 }
 
 // WithLogger is a method to inject a logger dependency into the Service.
-func (s *Service) WithLogger(l *logharbour.Logger) *Service {
+func (s *Service) WithLogger(l logger.Logger) *Service {
 	s.Logger = l
+	return s
+}
+
+// WithLogHarbour is a method to inject a logharbour (github.com/remiges-tech/logharbour)
+// dependency into the Service.
+func (s *Service) WithLogHarbour(l *logharbour.Logger) *Service {
+	s.LogHarbour = l
 	return s
 }
 

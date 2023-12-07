@@ -11,8 +11,9 @@ require (
 	github.com/prometheus/client_golang v1.11.1
 	github.com/redis/go-redis/v9 v9.3.0
 	github.com/remiges-tech/logharbour v0.6.0
-	github.com/remiges-tech/rigel v0.6.0
+	github.com/remiges-tech/rigel v0.8.0
 	github.com/stretchr/testify v1.8.3
+	go.etcd.io/etcd/client/v3 v3.5.10
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -50,7 +51,6 @@ require (
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.10 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.10 // indirect
-	go.etcd.io/etcd/client/v3 v3.5.10 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect

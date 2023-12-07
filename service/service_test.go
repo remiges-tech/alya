@@ -1,4 +1,31 @@
-package service
+package service_test
+
+import (
+	"testing"
+
+	"github.com/remiges-tech/alya/service"
+)
+
+type MockConfig struct{}
+
+func (mc *MockConfig) LoadConfig(c any) error {
+	return nil
+}
+
+func (mc *MockConfig) Check() error {
+	return nil
+}
+func TestWithConfig(t *testing.T) {
+	cfg := &MockConfig{} // Create a mock config
+
+	s := service.NewService(nil) // Create a new service with nil router
+
+	s.WithConfig(cfg) // Call WithConfig method
+
+	if s.Config != cfg { // Check if Config field is correctly set
+		t.Errorf("WithConfig() = %v, want %v", s.Config, cfg)
+	}
+}
 
 // Example demonstrates how to create a new service and register routes.
 func Example() {

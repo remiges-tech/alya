@@ -13,6 +13,7 @@ import (
 	"github.com/remiges-tech/alya/config"
 	"github.com/remiges-tech/alya/examples/pg"
 	usersvc "github.com/remiges-tech/alya/examples/userservice"
+	"github.com/remiges-tech/alya/logger"
 	"github.com/remiges-tech/alya/router"
 	"github.com/remiges-tech/alya/service"
 	"github.com/remiges-tech/alya/wscutils"
@@ -71,20 +72,21 @@ func main() {
 
 	// logger
 	fallbackWriter := logharbour.NewFallbackWriter(os.Stdout, os.Stdout)
-	l := logharbour.NewLogger("MyApp", fallbackWriter)
-	l.WithPriority(logharbour.Debug2)
+	lh := logharbour.NewLogger("MyApp", fallbackWriter)
+	lh.WithPriority(logharbour.Debug2)
+	fl := logger.NewFileLogger("/tmp/idshield.log")
 
 	// auth middleware
 
 	cache := router.NewRedisTokenCache("localhost:6379", "", 0, 0)
-	authMiddleware, err := router.LoadAuthMiddleware("alyatest", "http://localhost/oidc/issuer", cache, l)
+	authMiddleware, err := router.LoadAuthMiddleware("alyatest", "https://lemur-7.cloud-iam.com/auth/realms/cool5", cache, fl)
 	if err != nil {
 		log.Fatalf("Failed to create new auth middleware: %v", err)
 	}
 
 	// router
 
-	r, err := router.SetupRouter(true, l, authMiddleware)
+	r, err := router.SetupRouter(true, fl, authMiddleware)
 	if err != nil {
 		log.Fatalf("Failed to setup router: %v", err)
 	}
@@ -99,12 +101,12 @@ func main() {
 	})
 
 	// Create a new service for /hello
-	helloService := service.NewService(r).WithLogger(l)
+	helloService := service.NewService(r).WithLogHarbour(lh)
 
 	// Define the handler function
 	handleHelloRequest := func(c *gin.Context, s *service.Service) {
 		// Use s.Logger.Log to log a message
-		helloService.Logger.LogActivity("Processing /hello request", nil)
+		helloService.LogHarbour.LogActivity("Processing /hello request", nil)
 
 		// Process the request
 		c.JSON(http.StatusOK, gin.H{
@@ -116,7 +118,7 @@ func main() {
 	helloService.RegisterRoute(http.MethodGet, "/hello", handleHelloRequest)
 
 	// Create a new service for /users
-	userService := service.NewService(r).WithLogger(l)
+	userService := service.NewService(r).WithLogHarbour(lh)
 
 	// set up database connection
 	pgConfig := pg.Config{

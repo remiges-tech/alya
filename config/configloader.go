@@ -11,7 +11,7 @@ import (
 )
 
 func LoadConfigFromFile(filePath string, appConfig any) error {
-	configSource, err := NewFile(filePath)
+	configSource, err := newFile(filePath)
 	if err != nil {
 		log.Fatalf("Failed to create File config source: %v", err)
 	}
