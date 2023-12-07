@@ -172,6 +172,8 @@ github.com/redis/go-redis/v9 v9.3.0 h1:RiVDjmig62jIWp7Kk4XVLs0hzV6pI3PyTnnL0cnn0
 github.com/redis/go-redis/v9 v9.3.0/go.mod h1:hdY0cQFCN4fnSYT6TkisLufl/4W5UIXyv0b/CLO2V2M=
 github.com/remiges-tech/logharbour v0.5.0 h1:pS2fCFJGwURQas/85CDNUr3BH+SjKUfIPCcA0hUz1Mc=
 github.com/remiges-tech/logharbour v0.5.0/go.mod h1:XiWZ0YH0sK7wixXVukMSon6vsOv3EW3Zos1rxA75JNc=
+github.com/remiges-tech/logharbour v0.6.0 h1:7+FclLKv/HZhN0YTPiK0B33rvUchNifa2nfAuL2h+yI=
+github.com/remiges-tech/logharbour v0.6.0/go.mod h1:XiWZ0YH0sK7wixXVukMSon6vsOv3EW3Zos1rxA75JNc=
 github.com/remiges-tech/rigel v0.6.0 h1:fp4GUwG1e2zY82cv1WZfgzWB86zMXpaNqvtNGN08rro=
 github.com/remiges-tech/rigel v0.6.0/go.mod h1:K5CG/AXJuuzTJxGlniWF0TZfNBn+pA6lHxWF14mqEo4=
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
