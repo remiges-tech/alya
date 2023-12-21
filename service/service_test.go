@@ -1,8 +1,10 @@
 package service_test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/remiges-tech/alya/config"
 	"github.com/remiges-tech/alya/service"
 )
 
@@ -15,6 +17,15 @@ func (mc *MockConfig) LoadConfig(c any) error {
 func (mc *MockConfig) Check() error {
 	return nil
 }
+
+func (mc *MockConfig) Get(key string) (string, error) {
+	return "dummy", nil
+}
+
+func (mc *MockConfig) Watch(ctx context.Context, key string, events chan<- config.Event) error {
+	return nil
+}
+
 func TestWithConfig(t *testing.T) {
 	cfg := &MockConfig{} // Create a mock config
 

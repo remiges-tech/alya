@@ -13,13 +13,24 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-// ConfigSource is an interface that represents a source from which application configuration can be loaded.
+// Config is an interface that represents a source from which application configuration can be loaded.
 type Config interface {
-	// LoadConfig reads config from the source and binds it to c.
 	LoadConfig(c any) error
-	// Check checks if the config source can be used. For example, a file config source would check
-	// if the file exists. A Rigel config source would check if the Rigel server is available.
 	Check() error
+	Get(key string) (string, error)
+
+	// Watch watches for changes to a key in the storage and sends the events to the provided channel.
+	// The events includes the key and the updated value.
+	// events is the channel to send events when the key's value changes
+	Watch(ctx context.Context, key string, events chan<- Event) error
+}
+
+// Event represents a change to a key in the storage.
+// Key is the key that was changed
+// Value is the new value of the key
+type Event struct {
+	Key   string
+	Value string
 }
 
 // Load first ensures that the config system valid and accessible. Then it loads the config into c.
@@ -34,6 +45,7 @@ func Load(cs Config, c any) error {
 
 type File struct {
 	ConfigFilePath string
+	Config         map[string]interface{}
 }
 
 func (f *File) Check() error {
@@ -66,6 +78,43 @@ func (f *File) LoadConfig(appConfig any) error {
 	return decoder.Decode(appConfig)
 }
 
+type ValueNotStringError struct {
+	Key   string
+	Value interface{}
+}
+
+func (e *ValueNotStringError) Error() string {
+	return fmt.Sprintf("value for key %s is not a string: %v", e.Key, e.Value)
+}
+
+type KeyNotFoundError struct {
+	Key string
+}
+
+func (e *KeyNotFoundError) Error() string {
+	return fmt.Sprintf("key %s not found in config", e.Key)
+}
+
+// Get retrieves a value from the configuration based on the provided key.
+// If the value is a string, it is returned as is. If the value is not a string,
+// it is converted to a string using fmt.Sprintf and returned along with the error ValueNotStringError.
+// If the key is not found in the configuration, an error of type KeyNotFoundError is returned.
+func (f *File) Get(key string) (string, error) {
+	value, ok := f.Config[key]
+	if !ok {
+		return "", &KeyNotFoundError{Key: key}
+	}
+
+	strValue := fmt.Sprintf("%v", value)
+
+	strValueAsserted, ok := value.(string)
+	if !ok {
+		return strValue, &ValueNotStringError{Key: key, Value: value}
+	}
+
+	return strValueAsserted, nil
+}
+
 // Rigel
 type Rigel struct {
 	Client        *rigel.Rigel
@@ -95,4 +144,14 @@ func NewRigelClient(etcdEndpoints string) (*rigel.Rigel, error) {
 	rigelClient := rigel.New(etcdStorage)
 
 	return rigelClient, nil
+}
+
+func (f *File) Watch(ctx context.Context, key string, events chan<- Event) error {
+	// TODO: Implement the method
+	return nil
+}
+
+func (r *Rigel) Watch(ctx context.Context, key string, events chan<- Event) error {
+	// TODO: Implement the method
+	return nil
 }
