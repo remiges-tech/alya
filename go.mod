@@ -1,4 +1,4 @@
-module github.com/remiges-tech/alya
+module github.com/remiges-kanchan/alya
 
 go 1.21.3
 
@@ -10,6 +10,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.11.1
 	github.com/redis/go-redis/v9 v9.3.0
+	github.com/remiges-tech/alya v0.6.0
 	github.com/remiges-tech/logharbour v0.6.0
 	github.com/remiges-tech/rigel v0.11.0
 	github.com/stretchr/testify v1.8.3
