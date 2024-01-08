@@ -32,7 +32,9 @@ func LoadConfigFromRigel(etcdEndpoints, configName, schemaName string, appConfig
 	}
 
 	// Create a new Rigel instance
-	rigelClient := rigel.New(etcdStorage)
+	//rigelClient := rigel.New(etcdStorage)
+	//<<<<<<<<< changed New with NewWithStorage method of rigel>>>>>>>>>>>>>>>
+	rigelClient := rigel.NewWithStorage(etcdStorage)
 
 	// Create a context with a timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -40,7 +42,9 @@ func LoadConfigFromRigel(etcdEndpoints, configName, schemaName string, appConfig
 
 	// Load the config
 	var configSource Config
-	err = rigelClient.LoadConfig(ctx, configName, 1, schemaName, &configSource)
+	//err = rigelClient.LoadConfig(ctx, configName, 1, schemaName, &configSource)
+	//<<<<<<<<< removed unnecessary arguments>>>>>>>>>>>>>>>>>>>>>
+	err = rigelClient.LoadConfig(ctx, &configSource)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
