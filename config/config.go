@@ -127,8 +127,6 @@ func (r *Rigel) LoadConfig(config any) error {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	//return r.Client.LoadConfig(ctx, r.SchemaName, r.SchemaVersion, r.ConfigName, config)
-	// <<<<<<<<<<<<removed unnnecessary parameters>>>>>>>>>>>>>>>>>>>>>>>.
 	return r.Client.LoadConfig(ctx, config)
 }
 
@@ -143,8 +141,6 @@ func NewRigelClient(etcdEndpoints string) (*rigel.Rigel, error) {
 	}
 
 	etcdStorage := &etcd.EtcdStorage{Client: cli}
-	//rigelClient := rigel.New(etcdStorage)
-	//<<<<<<<<<<changed method from New to NewWithStorage>>>>>>>>>>>>>>>>
 	rigelClient := rigel.NewWithStorage(etcdStorage)
 
 	return rigelClient, nil
