@@ -151,6 +151,26 @@ func (g *RouteGroup) RegisterRoute(method, path string, handler gin.HandlerFunc)
 	}
 }
 
+// RegisterRouteWithGroup registers a route with a given RouteGroup.
+func (s *Service) RegisterRouteWithGroup(group *gin.RouterGroup, method, path string, handler HandlerFunc) {
+	wrappedHandler := func(c *gin.Context) {
+		handler(c, s)
+	}
+	switch method {
+	case http.MethodGet:
+		group.GET(path, wrappedHandler)
+	case http.MethodPost:
+		group.POST(path, wrappedHandler)
+	case http.MethodPut:
+		group.PUT(path, wrappedHandler)
+	case http.MethodDelete:
+		group.DELETE(path, wrappedHandler)
+	default:
+		// Handle unsupported methods
+		log.Printf("Unsupported method: %s", method)
+	}
+}
+
 // CreateSubGroup creates a new sub-group within the current group.
 func (g *RouteGroup) CreateSubGroup(path string) *RouteGroup {
 	return &RouteGroup{
