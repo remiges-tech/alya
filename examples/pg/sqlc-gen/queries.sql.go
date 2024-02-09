@@ -7,25 +7,37 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
     name,
-    email
+    email,
+    username,
+    created_at,
+    updated_at,
+    phone_number
 ) VALUES (
-    $1, $2
-) RETURNING id, name, email
+    $1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $4
+) RETURNING id
 `
 
 type CreateUserParams struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name        string         `json:"name"`
+	Email       string         `json:"email"`
+	Username    string         `json:"username"`
+	PhoneNumber sql.NullString `json:"phone_number"`
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser, arg.Name, arg.Email)
-	var i User
-	err := row.Scan(&i.ID, &i.Name, &i.Email)
-	return i, err
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, createUser,
+		arg.Name,
+		arg.Email,
+		arg.Username,
+		arg.PhoneNumber,
+	)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
 }

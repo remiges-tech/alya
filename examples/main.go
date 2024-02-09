@@ -13,8 +13,6 @@ import (
 	"github.com/remiges-tech/alya/config"
 	"github.com/remiges-tech/alya/examples/pg"
 	usersvc "github.com/remiges-tech/alya/examples/userservice"
-	"github.com/remiges-tech/alya/logger"
-	"github.com/remiges-tech/alya/router"
 	"github.com/remiges-tech/alya/service"
 	"github.com/remiges-tech/alya/wscutils"
 	"github.com/remiges-tech/logharbour/logharbour"
@@ -60,33 +58,44 @@ func main() {
 
 	fmt.Printf("Loaded configuration: %+v\n", appConfig)
 
-	// Open the error types file
-	file, err := os.Open("./errortypes.yaml")
-	if err != nil {
-		log.Fatalf("Failed to open error types file: %v", err)
+	// Define a custom validation tag-to-message ID map
+	customValidationMap := map[string]int{
+		"required": 101,
+		"email":    102,
+		"min":      103,
 	}
-	defer file.Close()
+	// Custom validation tag-to-error code map
+	customErrCodeMap := map[string]string{
+		"required": "missing_field",
+		"email":    "invalid_email",
+		"min":      "too_short",
+	}
+	// Register the custom map with wscutils
+	wscutils.SetValidationTagToMsgIDMap(customValidationMap)
+	wscutils.SetValidationTagToErrCodeMap(customErrCodeMap)
 
-	// Load the error types
-	wscutils.LoadErrorTypes(file)
+	// Set default message ID and error code if needed
+	wscutils.SetDefaultMsgID(1000) // Assuming you have implemented this function
+	wscutils.SetDefaultErrCode("validation_error")
 
 	// logger
 	fallbackWriter := logharbour.NewFallbackWriter(os.Stdout, os.Stdout)
 	lh := logharbour.NewLogger("MyApp", fallbackWriter)
 	lh.WithPriority(logharbour.Debug2)
-	fl := logger.NewFileLogger("/tmp/idshield.log")
+	// fl := logger.NewFileLogger("/tmp/idshield.log")
 
 	// auth middleware
 
-	cache := router.NewRedisTokenCache("localhost:6379", "", 0, 0)
-	authMiddleware, err := router.LoadAuthMiddleware("alyatest", "https://lemur-7.cloud-iam.com/auth/realms/cool5", cache, fl)
-	if err != nil {
-		log.Fatalf("Failed to create new auth middleware: %v", err)
-	}
+	// cache := router.NewRedisTokenCache("localhost:6379", "", 0, 0)
+	// authMiddleware, err := router.LoadAuthMiddleware("alyatest", "https://lemur-7.cloud-iam.com/auth/realms/cool5", cache, fl)
+	// if err != nil {
+	// 	log.Fatalf("Failed to create new auth middleware: %v", err)
+	// }
 
 	// router
 
-	r, err := router.SetupRouter(true, fl, authMiddleware)
+	// r, err := router.SetupRouter(true, fl, authMiddleware)
+	r := gin.Default()
 	if err != nil {
 		log.Fatalf("Failed to setup router: %v", err)
 	}

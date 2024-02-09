@@ -2,28 +2,22 @@ package wscutils
 
 import (
 	"errors"
-	"io"
-	"log"
 	"net/http"
 
 	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-	"gopkg.in/yaml.v3"
 )
 
-// loadErrorTypes is used for loading predefined error types
-func LoadErrorTypes(r io.Reader) {
-	byteValue, err := io.ReadAll(r)
-	if err != nil {
-		log.Fatalf("Failed to read error types: %v", err)
-	}
+const MSG_CODE_VALIDATION_FAILED = "invalid"
 
-	err = yaml.Unmarshal(byteValue, &errorTypes)
-	if err != nil {
-		log.Panic(err)
-	}
+var validationTagToMsgID map[string]int
+var validationTagToErrCode map[string]string
+
+// SetValidationTagToMsgIDMap updates the internal mapping of validation tags to message IDs.
+func SetValidationTagToMsgIDMap(customMap map[string]int) {
+	validationTagToMsgID = customMap
 }
 
 // Request represents the standard structure of a request to the web service.
@@ -47,30 +41,57 @@ type ErrorMessage struct {
 	Vals    []string `json:"vals,omitempty"`  // omit if Vals is empty
 }
 
-// errorTypes is a map from error type to its corresponding attributes.
-var errorTypes map[string]int
-
 // WscValidate is a generic function that accepts any data structure,
 // validates it according to struct tag-provided validation rules
 // and returns a slice of ErrorMessage in case of validation errors.
 // This function will not add `vals` that's required as per the specifications
 // because it does not know the request-specific values.
 // `vals` will be added to ErrorMessage by the caller.
+// func WscValidate[T any](data T, getVals func(err validator.FieldError) []string) []ErrorMessage {
+// 	var validationErrors []ErrorMessage
+
+// 	validate := validator.New()
+
+//		err := validate.Struct(data)
+//		if err != nil {
+//			var validationErrs validator.ValidationErrors
+//			if errors.As(err, &validationErrs) {
+//				for _, err := range validationErrs {
+//					vals := getVals(err)
+//					field := err.Field()
+//					msgid, exists := validationTagToMsgID[err.Tag()]
+//					if !exists {
+//						msgid = DefaultMsgID // Assume DefaultMsgID is defined somewhere
+//					}
+//					// Use MSG_CODE_VALIDATION_FAILED as the default error code
+//					vErr := BuildErrorMessage(msgid, MSG_CODE_VALIDATION_FAILED, &field, vals...)
+//					validationErrors = append(validationErrors, vErr)
+//				}
+//			}
+//		}
+//		return validationErrors
+//	}
 func WscValidate[T any](data T, getVals func(err validator.FieldError) []string) []ErrorMessage {
 	var validationErrors []ErrorMessage
 
 	validate := validator.New()
 
 	err := validate.Struct(data)
-
 	if err != nil {
 		var validationErrs validator.ValidationErrors
 		if errors.As(err, &validationErrs) {
 			for _, err := range validationErrs {
-				// We handle validation error creation for developers.
 				vals := getVals(err)
 				field := err.Field()
-				vErr := BuildErrorMessage(err.Tag(), &field, vals...)
+				msgid, exists := validationTagToMsgID[err.Tag()]
+				if !exists {
+					msgid = defaultMsgID
+				}
+				errcode, codeExists := validationTagToErrCode[err.Tag()]
+				if !codeExists {
+					errcode = DefaultErrCode
+				}
+				vErr := BuildErrorMessage(msgid, errcode, &field, vals...)
 				validationErrors = append(validationErrors, vErr)
 			}
 		}
@@ -87,15 +108,12 @@ func WscValidate[T any](data T, getVals func(err validator.FieldError) []string)
 //
 // With vals
 // errorMessage := BuildErrorMessage("field2", "error2", "val1", "val2")
-func BuildErrorMessage(errcode string, fieldName *string, vals ...string) ErrorMessage {
-	msgid, exists := errorTypes[errcode]
-
-	// if the provided errid doesn't exist, use attributes of "unknown" error type
-	if !exists {
-		log.Printf("Unrecognized errcode: %s", errcode)
-		msgid = errorTypes[ErrcodeUnknown] // assuming 0 is the errid for "unknown"
-	}
-
+//
+// TODO:
+// NEW COMMENT:
+// BuildErrorMessage generates an ErrorMessage which includes
+// the required validation error information such as code, msgid, and optionally field names and values.
+func BuildErrorMessage(msgid int, errcode string, fieldName *string, vals ...string) ErrorMessage {
 	errorMessage := ErrorMessage{
 		MsgID:   msgid,
 		ErrCode: errcode,
@@ -119,10 +137,13 @@ func NewResponse(status string, data any, messages []ErrorMessage) *Response {
 
 // BindJson provides a standard way of binding incoming JSON data to a
 // given request data structure. It incorporates error handling .
+// BindJson provides a standard way of binding incoming JSON data to a
+// given request data structure. It incorporates error handling.
 func BindJSON(c *gin.Context, data any) error {
 	req := Request{Data: data}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		invalidJsonError := BuildErrorMessage(ErrcodeInvalidJson, nil)
+		// Example msgid for ErrcodeInvalidJson is 1001. Replace 1001 with the actual msgid you intend to use.
+		invalidJsonError := BuildErrorMessage(ErrMsgIDInvalidJson, ErrcodeInvalidJson, nil)
 		c.JSON(http.StatusBadRequest, NewResponse(ErrorStatus, nil, []ErrorMessage{invalidJsonError}))
 		return err
 	}
@@ -130,9 +151,12 @@ func BindJSON(c *gin.Context, data any) error {
 }
 
 // NewErrorResponse simplifies the process of creating a standard error response
-// with a single error message
-func NewErrorResponse(errcode string) *Response {
-	return NewResponse(ErrorStatus, nil, []ErrorMessage{BuildErrorMessage(errcode, nil)})
+// with a single error message. Now updated to include a msgid.
+func NewErrorResponse(msgid int, errcode string) *Response {
+	// Assuming `DefaultMsgID` is a suitable default message ID for general errors.
+	// If `msgid` should be variable, pass it as a parameter to `NewErrorResponse`.
+	errorMessage := BuildErrorMessage(msgid, errcode, nil) // Assuming `nil` is acceptable for the field name in this context.
+	return NewResponse(ErrorStatus, nil, []ErrorMessage{errorMessage})
 }
 
 // NewSuccessResponse simplifies the process of creating a standard success response
@@ -163,4 +187,27 @@ func SendSuccessResponse(c *gin.Context, response *Response) {
 // SendErrorResponse sends a JSON error response.
 func SendErrorResponse(c *gin.Context, response *Response) {
 	c.JSON(http.StatusBadRequest, response)
+}
+
+// SetValidationTagToErrCodeMap updates the internal mapping of validation tags to error codes.
+func SetValidationTagToErrCodeMap(customMap map[string]string) {
+	validationTagToErrCode = customMap
+}
+
+// DefaultErrCode holds the default error code for validation errors.
+// Its value can be set using the SetDefaultErrCode function.
+var DefaultErrCode string
+
+// SetDefaultErrCode allows external code to set a custom default error code.
+func SetDefaultErrCode(errCode string) {
+	DefaultErrCode = errCode
+}
+
+// defaultMsgID holds the default message ID for validation errors.
+// Its value can be set using the SetDefaultMsgID function.
+var defaultMsgID int
+
+// SetDefaultMsgID allows external code to set a custom default message ID.
+func SetDefaultMsgID(msgID int) {
+	defaultMsgID = msgID
 }
