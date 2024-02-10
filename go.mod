@@ -13,6 +13,7 @@ require (
 	github.com/remiges-tech/logharbour v0.6.0
 	github.com/remiges-tech/rigel v0.12.0
 	github.com/stretchr/testify v1.8.3
+	github.com/ttacon/libphonenumber v1.2.1
 	go.etcd.io/etcd/client/v3 v3.5.10
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -47,6 +48,7 @@ require (
 	github.com/prometheus/common v0.26.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
+	github.com/ttacon/builder v0.0.0-20170518171403-c099f663e1c2 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.10 // indirect
