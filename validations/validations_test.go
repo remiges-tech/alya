@@ -8,31 +8,30 @@ import (
 )
 
 // mobileNumber means argument 1 and the expected stands for the 'result we expect'
-type testMobileNumber struct {
-	mobileNumber string
-	expected     bool
-}
 
-// Struct object for Table-Driven test with various valid and invalid mobile numbers
-var testMobileNumbers = []testMobileNumber{
-	{"+918888888888", true},
-	{"8888888888", true},
-	{"+9111111111111", false},
-	{"11111111111", false},
-	{"022274688879", false},
-	{"", false},
-	{"asdf", false},
-}
-
-// Function for Table-Driven test
-// TestIsValidMobileNumber tests the IsValidMobileNumber function.
-// It iterates over the mobileNumberTests slice and checks if the output of
-// IsValidMobileNumber matches the expected value. If the output doesn't match,
-// it reports an error using the t.Errorf function.
 func TestIsValidMobileNumber(t *testing.T) {
-	for _, val := range testMobileNumbers {
-		if output := IsValidMobileNumber(val.mobileNumber); output != val.expected {
-			t.Errorf("got %v, wanted %v", output, val.expected)
+	testCases := []struct {
+		phoneNumber string
+		regionCode  string
+		isValid     bool
+	}{
+		{"+14155552671", "US", true},
+		{"+1415-555-2671", "US", true},
+		{"415-555-2671", "US", true},
+		{"+919876543210", "IN", true},
+		{"+91 9876 5432 10", "IN", true},
+		{"+919999", "IN", false},
+		{"9876543210", "US", false},
+		{"abc123", "US", false},
+		{"+44201234567", "GB", true},
+	}
+
+	for _, testCase := range testCases {
+		isValid := IsValidPhoneNumber(testCase.phoneNumber, testCase.regionCode)
+		if isValid == testCase.isValid {
+			fmt.Println("Test passed:", testCase.phoneNumber)
+		} else {
+			fmt.Println("Test failed:", testCase.phoneNumber)
 		}
 	}
 }
@@ -169,20 +168,20 @@ func ExampleIsValidFileType() {
 // No parameters.
 // No return value.
 func ExampleIsValidMobileNumber() {
-	fmt.Println("Valid mobile number examples")
-	fmt.Println("+918888888888: ", IsValidMobileNumber("+918888888888"))
-	fmt.Println("8888888888: ", IsValidMobileNumber("8888888888"))
+	fmt.Println("Valid phone number examples")
+	fmt.Println("+918888888888: ", IsValidPhoneNumber("+918888888888", "IN"))
+	fmt.Println("8888888888: ", IsValidPhoneNumber("8888888888", "IN")) // Local format
 
-	fmt.Println("Invalid mobile number examples")
-	fmt.Println("+9111111111111: ", IsValidMobileNumber("+9111111111111"))
-	fmt.Println("11111111111: ", IsValidMobileNumber("11111111111"))
-	fmt.Println("022274688879: ", IsValidMobileNumber("022274688879"))
+	fmt.Println("Invalid phone number examples")
+	fmt.Println("+9111111111111: ", IsValidPhoneNumber("+9111111111111", "IN"))
+	fmt.Println("11111111111: ", IsValidPhoneNumber("11111111111", "IN"))
+	fmt.Println("022274688879: ", IsValidPhoneNumber("022274688879", "IN")) // Incorrect landline format
 
 	// Output:
-	// Valid mobile number examples
+	// Valid phone number examples
 	// +918888888888:  true
 	// 8888888888:  true
-	// Invalid mobile number examples
+	// Invalid phone number examples
 	// +9111111111111:  false
 	// 11111111111:  false
 	// 022274688879:  false

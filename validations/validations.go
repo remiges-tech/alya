@@ -2,12 +2,11 @@
 package validations
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/ttacon/libphonenumber"
+	"github.com/nyaruka/phonenumbers"
 )
 
 var (
@@ -86,20 +85,14 @@ func IsValidPanNumber(val string) bool {
 	return regexPanNumber.MatchString(val)
 }
 
-// IsValidMobileNumber checks if a given string is a valid mobile number.
-// val: the string to be checked as a mobile number, which represents the mobile number to be validated.
-// returns: a boolean value indicating whether the given number is valid.
-func IsValidMobileNumber(val string) bool {
-	num, err := libphonenumber.Parse(val, DEFAULT_COUNTRY_CODE)
-	//fmt.Printf("%T\n", num)
+// IsValidPhoneNumber checks if a phone number is considered valid for a specific region.
+// regionCode must be a two-character uppercase ISO 3166-1 alpha-2 country code (e.g., "US" for United States, "IN" for India, "GB" for United Kingdom).
+func IsValidPhoneNumber(phoneNumber string, regionCode string) bool {
+	num, err := phonenumbers.Parse(phoneNumber, regionCode)
 	if err != nil {
-		fmt.Println("Err:", err)
 		return false
 	}
-	if libphonenumber.IsValidNumberForRegion(num, DEFAULT_COUNTRY_CODE) && libphonenumber.GetNumberType(num) == NUMBER_TYPE_MOBILE {
-		return true
-	}
-	return false
+	return phonenumbers.IsValidNumber(num)
 }
 
 // CalculateAge calculates the precise age in years from a given birthdate to the current date,
