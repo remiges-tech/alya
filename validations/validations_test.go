@@ -52,9 +52,9 @@ var testFileTypes = []testFileType{
 	{"text", []string{"doc", "docx", "png"}, false},
 }
 
-func TestIsValidFileType(t *testing.T) {
+func TestIsFileTypeAllowed(t *testing.T) {
 	for _, val := range testFileTypes {
-		if output := IsValidFileType(val.filename, val.allowedExts); output != val.expected {
+		if output := IsFileTypeAllowed(val.filename, val.allowedExts); output != val.expected {
 			t.Errorf("IsValidFileType(%q, %v) = %v, wanted %v", val.filename, val.allowedExts, output, val.expected)
 		}
 	}
@@ -144,17 +144,17 @@ func ExampleIsValidDateOfBirth() {
 	// text:  false
 }
 
-// ExampleIsValidFileType generates examples of valid and invalid file names and prints the results.
+// ExampleIsFileTypeAllowed generates examples of valid and invalid file names and prints the results.
 // No parameters.
 // No return value.
 func ExampleIsValidFileType() {
 	fmt.Println("Valid file type examples")
-	fmt.Println("text.doc: ", IsValidFileType("text.doc", []string{"doc", "docx", "png"}))
-	fmt.Println("text.png: ", IsValidFileType("text.png", []string{"doc", "docx", "png"}))
+	fmt.Println("text.doc: ", IsFileTypeAllowed("text.doc", []string{"doc", "docx", "png"}))
+	fmt.Println("text.png: ", IsFileTypeAllowed("text.png", []string{"doc", "docx", "png"}))
 
 	fmt.Println("Invalid file type examples")
-	fmt.Println("text.txt: ", IsValidFileType("text.txt", []string{"doc", "docx", "png"}))
-	fmt.Println("text: ", IsValidFileType("text", []string{"doc", "docx", "png"}))
+	fmt.Println("text.txt: ", IsFileTypeAllowed("text.txt", []string{"doc", "docx", "png"}))
+	fmt.Println("text: ", IsFileTypeAllowed("text", []string{"doc", "docx", "png"}))
 	// Output:
 	// Valid file type examples
 	// text.doc:  true
