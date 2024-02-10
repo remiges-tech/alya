@@ -34,8 +34,6 @@ const NUMBER_TYPE_FIXED_LINE = 0
 // Variable to hold allowed set of file extensions
 var FILE_EXT = []string{"doc", "docx", "png"}
 
-const DATE_FORMAT = "2006-01-02"
-
 // IsValidIndiaZip checks if a given string is a valid India zip code.
 // val: the string to be validated as a zip code.
 // returns: a boolean indicating whether the string is a valid India zip code.
@@ -104,18 +102,51 @@ func IsValidMobileNumber(val string) bool {
 	return false
 }
 
-// Write a function to validate the date of birth based on maximum age and minimum age passesed in the function
-func IsValidDateOfBirth(val string, minAge float64, maxAge float64) bool {
-	// convert val in date format
-	date, err := time.Parse(DATE_FORMAT, val)
-	if err == nil {
-		age := time.Since(date).Hours() / 24 / 365
-		if age >= minAge && age <= maxAge {
-			return true
-		} else {
-			return false
-		}
-	} else {
+// CalculateAge calculates the precise age in years from a given birthdate to the current date,
+// accurately accounting for leap years and the exact number of days in each month.
+//
+// Parameters:
+// - birthDate: The birthdate as a time.Time object.
+//
+// Returns: The age in years as an integer.
+func CalculateAge(birthDate time.Time) int {
+	now := time.Now().UTC()
+	years := now.Year() - birthDate.Year()
+
+	// After subtracting the years, if the current date is before the birthdate this year, subtract one year.
+	beforeBirthdayThisYear := now.Month() < birthDate.Month() || (now.Month() == birthDate.Month() && now.Day() < birthDate.Day())
+	if beforeBirthdayThisYear {
+		years--
+	}
+
+	return years
+}
+
+const DATE_INPUT_FORMAT = "2006-01-02" // used for time.Parse()
+
+// IsValidDateOfBirth validates the date of birth based on optional maximum and minimum age constraints,
+// ensuring consistency across different time zones by using UTC for all calculations.
+// This function leverages CalculateAge for precise age calculation.
+//
+// Parameters:
+// - yyyymmddVal: the date of birth in string format, expected to be in "YYYY-MM-DD" format.
+// - minAge: pointer to an int representing the minimum age constraint, or nil if no minimum age constraint is applied.
+// - maxAge: pointer to an int representing the maximum age constraint, or nil if no maximum age constraint is applied.
+//
+// Returns: a boolean indicating whether the date of birth satisfies the specified age constraints.
+func IsValidDateOfBirth(yyyymmddVal string, minAge, maxAge *int) bool {
+	birthDate, err := time.ParseInLocation(DATE_INPUT_FORMAT, yyyymmddVal, time.UTC)
+	if err != nil {
 		return false
 	}
+
+	age := CalculateAge(birthDate)
+
+	if minAge != nil && age < *minAge {
+		return false
+	}
+	if maxAge != nil && age > *maxAge {
+		return false
+	}
+	return true
 }

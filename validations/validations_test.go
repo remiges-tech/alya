@@ -2,6 +2,7 @@ package validations
 
 import (
 	"fmt"
+	"time"
 
 	"testing"
 )
@@ -60,48 +61,80 @@ func TestIsValidFileType(t *testing.T) {
 	}
 }
 
-const MIN_AGE = 18
-const MAX_AGE = 65
+func TestCalculateAge(t *testing.T) {
+	// Assume the current year for the test is 2024
+	assumedCurrentYear := 2024
+	actualCurrentYear := time.Now().Year()
+	yearDifference := actualCurrentYear - assumedCurrentYear
 
-// dob means argument 1 and the expected stands for the 'result we expect'
-type testDOB struct {
-	dob      string
-	expected bool
-}
+	// Define test cases
+	var tests = []struct {
+		name      string
+		birthDate time.Time
+		expected  int
+	}{
+		{"Age 30", time.Date(1990, 10, 10, 0, 0, 0, 0, time.UTC), 33},
+		{"Born Today", time.Now().UTC(), 0},
+		{"Leap Year", time.Date(2000, 2, 29, 0, 0, 0, 0, time.UTC), 23},
+	}
 
-// Struct object for Table-Driven test with various valid and invalid DOBs
-var testDOBs = []testDOB{
-	{"1999-05-05", true},
-	{"2000-05-05", true},
-	{"2012-05-05", false},
-	{"2006-05-05", false},
-	{"2006-13-05", false},
-}
+	// Run test cases
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.expected += yearDifference // Adjust the expected age
 
-// Function for Table-Driven test
-// TestIsValidDateOfBirth tests the IsValidDateOfBirth function.
-// It iterates over the testDOBs slice and checks if the output of
-// IsValidDateOfBirth matches the expected value. If the output doesn't match,
-// it reports an error using the t.Errorf function.
-func TestIsValidDateOfBirth(t *testing.T) {
-	for _, val := range testDOBs {
-		if output := IsValidDateOfBirth(val.dob, MIN_AGE, MAX_AGE); output != val.expected {
-			t.Errorf("got %v, wanted %v", output, val.expected)
-		}
+			if got := CalculateAge(tt.birthDate); got != tt.expected {
+				t.Errorf("CalculateAge(%v) = %v, want %v", tt.birthDate, got, tt.expected)
+			}
+		})
 	}
 }
+
+func TestIsValidDateOfBirth(t *testing.T) {
+	// Define test cases
+	var tests = []struct {
+		name     string
+		val      string
+		minAge   *int
+		maxAge   *int
+		expected bool
+	}{
+		{"Valid Age Within Range", "1990-10-10", intPointer(18), intPointer(40), true},
+		{"Too Young", "2010-01-01", intPointer(18), intPointer(40), false},
+		{"Too Old", "1950-01-01", intPointer(18), intPointer(40), false},
+		{"Only Min Age", "2005-01-01", intPointer(18), nil, true},
+		{"Only Max Age", "2005-01-01", nil, intPointer(15), false},
+	}
+
+	// Run test cases
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsValidDateOfBirth(tt.val, tt.minAge, tt.maxAge); got != tt.expected {
+				t.Errorf("IsValidDateOfBirth(%v, %v, %v) = %v, want %v", tt.val, tt.minAge, tt.maxAge, got, tt.expected)
+			}
+		})
+	}
+}
+
+// intPointer is a helper function to create pointers for int values in test cases.
+func intPointer(value int) *int {
+	return &value
+}
+
+const MIN_AGE = 18
+const MAX_AGE = 65
 
 // ExampleIsValidDateOfBirth generates examples of valid and invalid file names and prints the results.
 // No parameters.
 // No return value.
 func ExampleIsValidDateOfBirth() {
 	fmt.Println("Valid DOB examples")
-	fmt.Println("1999-05-05: ", IsValidDateOfBirth("1999-05-05", MIN_AGE, MAX_AGE))
-	fmt.Println("2000-05-05: ", IsValidDateOfBirth("2000-05-05", MIN_AGE, MAX_AGE))
+	fmt.Println("1999-05-05: ", IsValidDateOfBirth("1999-05-05", intPointer(MIN_AGE), intPointer(MAX_AGE)))
+	fmt.Println("2000-05-05: ", IsValidDateOfBirth("2000-05-05", intPointer(MIN_AGE), intPointer(MAX_AGE)))
 
 	fmt.Println("Invalid DOB examples")
-	fmt.Println("2012-05-05: ", IsValidDateOfBirth("2012-05-05", MIN_AGE, MAX_AGE))
-	fmt.Println("text: ", IsValidDateOfBirth("2006-09-02", MIN_AGE, MAX_AGE))
+	fmt.Println("2012-05-05: ", IsValidDateOfBirth("2012-05-05", intPointer(MIN_AGE), intPointer(MAX_AGE)))
+	fmt.Println("text: ", IsValidDateOfBirth("2006-09-02", intPointer(MIN_AGE), intPointer(MAX_AGE)))
 
 	// Output:
 	// Valid DOB examples
