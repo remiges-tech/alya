@@ -10,6 +10,17 @@ import (
 	"github.com/ttacon/libphonenumber"
 )
 
+var (
+	// Compile regex pattern for India Zip validation
+	regexIndiaZip = regexp.MustCompile(`^[1-9][0-9]{5}$`)
+
+	// Compile regex pattern for Aadhaar number validation
+	regexAadhaarNumber = regexp.MustCompile(`^[1-9]{4}[ -]?[0-9]{4}[ -]?[0-9]{4}$`)
+
+	// Compile regex pattern for PAN number validation
+	regexPanNumber = regexp.MustCompile(`[A-Z]{5}[0-9]{4}[A-Z]{1}`)
+)
+
 // Default country code is set as IN
 const DEFAULT_COUNTRY_CODE = "IN"
 const DEFAULT_COUNTRY_CODE_3C = "IND"
@@ -29,7 +40,7 @@ const DATE_FORMAT = "2006-01-02"
 // val: the string to be validated as a zip code.
 // returns: a boolean indicating whether the string is a valid India zip code.
 func IsValidIndiaZip(val string) bool {
-	return regexp.MustCompile(`^[1-9][0-9]{5}$`).MatchString(val)
+	return regexIndiaZip.MatchString(val)
 }
 
 // IsValidCountryCode2 checks if the provided country code is valid and is of 2 Character.
@@ -66,14 +77,14 @@ func IsValidFileType(val string) bool {
 // val: The string to be checked.
 // returns: a boolean indicating whether the given aadhaar number is valid.
 func IsValidAadhaarNumber(val string) bool {
-	return regexp.MustCompile(`^[1-9]{4}[ -]?[0-9]{4}[ -]?[0-9]{4}$`).MatchString(val)
+	return regexAadhaarNumber.MatchString(val)
 }
 
 // IsValidPanNumber checks if the given value is a valid PAN number.
 // val: a string representing the PAN number.
 // returns: a boolean indicating whether the given PAN number is valid.
 func IsValidPanNumber(val string) bool {
-	return regexp.MustCompile(`[A-Z]{5}[0-9]{4}[A-Z]{1}`).MatchString(val)
+	return regexPanNumber.MatchString(val)
 }
 
 // IsValidMobileNumber checks if a given string is a valid mobile number.
