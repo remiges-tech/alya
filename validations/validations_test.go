@@ -36,32 +36,26 @@ func TestIsValidMobileNumber(t *testing.T) {
 	}
 }
 
-// filename means argument 1 and the expected stands for the 'result we expect'
 type testFileType struct {
-	filename string
-	expected bool
+	filename    string
+	allowedExts []string
+	expected    bool
 }
 
-// Struct object for Table-Driven test with various valid and invalid file names
 var testFileTypes = []testFileType{
-	{"text.doc", true},
-	{"text.docx", true},
-	{"text.txt", false},
-	{"text.jpg", false},
-	{"text.png", true},
-	{"", false},
-	{"text", false},
+	{"text.doc", []string{"doc", "docx", "png"}, true},
+	{"text.docx", []string{"doc", "docx", "png"}, true},
+	{"text.txt", []string{"doc", "docx", "png"}, false},
+	{"text.jpg", []string{"doc", "docx", "png"}, false},
+	{"text.png", []string{"doc", "docx", "png"}, true},
+	{"", []string{"doc", "docx", "png"}, false},
+	{"text", []string{"doc", "docx", "png"}, false},
 }
 
-// Function for Table-Driven test
-// TestIsValidFileType tests the IsValidFileType function.
-// It iterates over the testFileTypes slice and checks if the output of
-// IsValidFileType matches the expected value. If the output doesn't match,
-// it reports an error using the t.Errorf function.
 func TestIsValidFileType(t *testing.T) {
 	for _, val := range testFileTypes {
-		if output := IsValidFileType(val.filename); output != val.expected {
-			t.Errorf("got %v, wanted %v", output, val.expected)
+		if output := IsValidFileType(val.filename, val.allowedExts); output != val.expected {
+			t.Errorf("IsValidFileType(%q, %v) = %v, wanted %v", val.filename, val.allowedExts, output, val.expected)
 		}
 	}
 }
@@ -123,13 +117,12 @@ func ExampleIsValidDateOfBirth() {
 // No return value.
 func ExampleIsValidFileType() {
 	fmt.Println("Valid file type examples")
-	fmt.Println("text.doc: ", IsValidFileType("text.doc"))
-	fmt.Println("text.png: ", IsValidFileType("text.png"))
+	fmt.Println("text.doc: ", IsValidFileType("text.doc", []string{"doc", "docx", "png"}))
+	fmt.Println("text.png: ", IsValidFileType("text.png", []string{"doc", "docx", "png"}))
 
 	fmt.Println("Invalid file type examples")
-	fmt.Println("text.txt: ", IsValidFileType("text.txt"))
-	fmt.Println("text: ", IsValidFileType("text"))
-
+	fmt.Println("text.txt: ", IsValidFileType("text.txt", []string{"doc", "docx", "png"}))
+	fmt.Println("text: ", IsValidFileType("text", []string{"doc", "docx", "png"}))
 	// Output:
 	// Valid file type examples
 	// text.doc:  true

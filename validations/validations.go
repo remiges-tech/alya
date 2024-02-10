@@ -61,12 +61,13 @@ func IsValidCountryCode3(val string) bool {
 
 }
 
-// IsValidFileType checks if the given value is a valid file type.
+// IsValidFileType checks if the given value is a valid file type based on a list of allowed extensions.
 // val: the string value representing the file name.
+// allowedExts: a slice of strings representing allowed file extensions.
 // returns: a boolean indicating whether the file type is valid.
-func IsValidFileType(val string) bool {
-	for _, ext := range FILE_EXT {
-		if strings.HasSuffix(val, ext) {
+func IsValidFileType(val string, allowedExts []string) bool {
+	for _, ext := range allowedExts {
+		if strings.HasSuffix(strings.ToLower(val), "."+strings.ToLower(ext)) {
 			return true
 		}
 	}
