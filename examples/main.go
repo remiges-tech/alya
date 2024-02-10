@@ -66,17 +66,20 @@ func main() {
 	}
 	// Custom validation tag-to-error code map
 	customErrCodeMap := map[string]string{
-		"required": "missing_field",
+		"required": "required",
 		"email":    "invalid_email",
-		"min":      "too_short",
 	}
 	// Register the custom map with wscutils
 	wscutils.SetValidationTagToMsgIDMap(customValidationMap)
 	wscutils.SetValidationTagToErrCodeMap(customErrCodeMap)
 
 	// Set default message ID and error code if needed
-	wscutils.SetDefaultMsgID(1000) // Assuming you have implemented this function
-	wscutils.SetDefaultErrCode("validation_error")
+	wscutils.SetDefaultMsgID(100)
+	wscutils.SetDefaultErrCode("validation_err")
+
+	// Set custom message ID and error code for invalid JSON errors
+	wscutils.SetMsgIDInvalidJson(1000)
+	wscutils.SetErrCodeInvalidJson("invalid_json")
 
 	// logger
 	fallbackWriter := logharbour.NewFallbackWriter(os.Stdout, os.Stdout)
@@ -96,9 +99,9 @@ func main() {
 
 	// r, err := router.SetupRouter(true, fl, authMiddleware)
 	r := gin.Default()
-	if err != nil {
-		log.Fatalf("Failed to setup router: %v", err)
-	}
+	// if err != nil {
+	// 	log.Fatalf("Failed to setup router: %v", err)
+	// }
 
 	// Logging middleware
 	r.Use(func(c *gin.Context) {

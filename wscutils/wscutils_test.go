@@ -117,6 +117,8 @@ func getVals(err validator.FieldError) []string {
 	return []string{err.Field()}
 }
 
+const DefaultMsgID = 9999
+
 func TestWscValidate(t *testing.T) {
 	// Define test cases
 	tests := []struct {

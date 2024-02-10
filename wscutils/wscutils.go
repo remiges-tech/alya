@@ -10,10 +10,10 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-const MSG_CODE_VALIDATION_FAILED = "invalid"
-
 var validationTagToMsgID map[string]int
 var validationTagToErrCode map[string]string
+var msgIdInvalidJson int
+var errCodeInvalidJson string
 
 // SetValidationTagToMsgIDMap updates the internal mapping of validation tags to message IDs.
 func SetValidationTagToMsgIDMap(customMap map[string]int) {
@@ -104,15 +104,10 @@ func WscValidate[T any](data T, getVals func(err validator.FieldError) []string)
 // It encapsulates the process of building an error message for consistency.
 // Examples:
 // Without vals
-// errorMessage := BuildErrorMessage("field1", "error1")
+// errorMessage := BuildErrorMessage(1001, "retry", "field1", "error1")
 //
 // With vals
-// errorMessage := BuildErrorMessage("field2", "error2", "val1", "val2")
-//
-// TODO:
-// NEW COMMENT:
-// BuildErrorMessage generates an ErrorMessage which includes
-// the required validation error information such as code, msgid, and optionally field names and values.
+// errorMessage := BuildErrorMessage(1000, "invalid", "field2", "error2", "val1", "val2")
 func BuildErrorMessage(msgid int, errcode string, fieldName *string, vals ...string) ErrorMessage {
 	errorMessage := ErrorMessage{
 		MsgID:   msgid,
@@ -137,13 +132,11 @@ func NewResponse(status string, data any, messages []ErrorMessage) *Response {
 
 // BindJson provides a standard way of binding incoming JSON data to a
 // given request data structure. It incorporates error handling .
-// BindJson provides a standard way of binding incoming JSON data to a
-// given request data structure. It incorporates error handling.
 func BindJSON(c *gin.Context, data any) error {
 	req := Request{Data: data}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// Example msgid for ErrcodeInvalidJson is 1001. Replace 1001 with the actual msgid you intend to use.
-		invalidJsonError := BuildErrorMessage(ErrMsgIDInvalidJson, ErrcodeInvalidJson, nil)
+		invalidJsonError := BuildErrorMessage(MsgIDInvalidJson, ErrCodeInvalidJson, nil)
 		c.JSON(http.StatusBadRequest, NewResponse(ErrorStatus, nil, []ErrorMessage{invalidJsonError}))
 		return err
 	}
@@ -210,4 +203,14 @@ var defaultMsgID int
 // SetDefaultMsgID allows external code to set a custom default message ID.
 func SetDefaultMsgID(msgID int) {
 	defaultMsgID = msgID
+}
+
+// SetMsgIDInvalidJson allows external code to set a custom message ID for invalid JSON errors.
+func SetMsgIDInvalidJson(msgID int) {
+	msgIdInvalidJson = msgID
+}
+
+// SetErrCodeInvalidJson allows external code to set a custom error code for invalid JSON errors.
+func SetErrCodeInvalidJson(errCode string) {
+	errCodeInvalidJson = errCode
 }
