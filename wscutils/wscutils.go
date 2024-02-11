@@ -10,16 +10,6 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-var validationTagToMsgID map[string]int
-var validationTagToErrCode map[string]string
-var msgIDInvalidJSON int
-var errCodeInvalidJSON string
-
-// SetValidationTagToMsgIDMap updates the internal mapping of validation tags to message IDs.
-func SetValidationTagToMsgIDMap(customMap map[string]int) {
-	validationTagToMsgID = customMap
-}
-
 // Request represents the standard structure of a request to the web service.
 type Request struct {
 	Data any `json:"data" binding:"required"`
@@ -47,30 +37,6 @@ type ErrorMessage struct {
 // This function will not add `vals` that's required as per the specifications
 // because it does not know the request-specific values.
 // `vals` will be added to ErrorMessage by the caller.
-// func WscValidate[T any](data T, getVals func(err validator.FieldError) []string) []ErrorMessage {
-// 	var validationErrors []ErrorMessage
-
-// 	validate := validator.New()
-
-//		err := validate.Struct(data)
-//		if err != nil {
-//			var validationErrs validator.ValidationErrors
-//			if errors.As(err, &validationErrs) {
-//				for _, err := range validationErrs {
-//					vals := getVals(err)
-//					field := err.Field()
-//					msgid, exists := validationTagToMsgID[err.Tag()]
-//					if !exists {
-//						msgid = DefaultMsgID // Assume DefaultMsgID is defined somewhere
-//					}
-//					// Use MSG_CODE_VALIDATION_FAILED as the default error code
-//					vErr := BuildErrorMessage(msgid, MSG_CODE_VALIDATION_FAILED, &field, vals...)
-//					validationErrors = append(validationErrors, vErr)
-//				}
-//			}
-//		}
-//		return validationErrors
-//	}
 func WscValidate[T any](data T, getVals func(err validator.FieldError) []string) []ErrorMessage {
 	var validationErrors []ErrorMessage
 
@@ -182,7 +148,26 @@ func SendErrorResponse(c *gin.Context, response *Response) {
 	c.JSON(http.StatusBadRequest, response)
 }
 
+// validation specific error codes and msg IDs
+
+var validationTagToMsgID map[string]int
+var validationTagToErrCode map[string]string
+var msgIDInvalidJSON int
+var errCodeInvalidJSON string
+
+// SetValidationTagToMsgIDMap updates the internal mapping of validation tags to message IDs.
+// This function allows for the customization of message IDs associated with specific validation
+// errors.
+// The customMap parameter should contain a mapping of validation tags (e.g., "required", "email")
+// to their corresponding message IDs.
+func SetValidationTagToMsgIDMap(customMap map[string]int) {
+	validationTagToMsgID = customMap
+}
+
 // SetValidationTagToErrCodeMap updates the internal mapping of validation tags to error codes.
+// Similar to SetValidationTagToMsgIDMap, this function customizes the error codes returned in
+// the response for specific validation errors. The customMap parameter should contain a mapping
+// of validation tags to their corresponding error codes.
 func SetValidationTagToErrCodeMap(customMap map[string]string) {
 	validationTagToErrCode = customMap
 }
@@ -191,26 +176,30 @@ func SetValidationTagToErrCodeMap(customMap map[string]string) {
 // Its value can be set using the SetDefaultErrCode function.
 var DefaultErrCode string
 
-// SetDefaultErrCode allows external code to set a custom default error code.
-func SetDefaultErrCode(errCode string) {
-	DefaultErrCode = errCode
-}
-
 // defaultMsgID holds the default message ID for validation errors.
 // Its value can be set using the SetDefaultMsgID function.
 var defaultMsgID int
 
-// SetDefaultMsgID allows external code to set a custom default message ID.
+// SetDefaultMsgID allows external code to set a custom default message ID for validation errors.
+// This ID is used as a fallback when a specific validation error does not have a message ID
+// registered via SetValidationTagToMsgIDMap.
 func SetDefaultMsgID(msgID int) {
 	defaultMsgID = msgID
 }
 
-// SetMsgIDInvalidJSON allows external code to set a custom message ID for invalid JSON errors.
+// SetDefaultErrCode allows external code to set a custom default error code for validation errors.
+// Similar to SetDefaultMsgID, this function sets a fallback error code to be used when a specific
+// validation error does not have an error code registered.
+func SetDefaultErrCode(errCode string) {
+	DefaultErrCode = errCode
+}
+
+// SetMsgIDInvalidJSON allows external code to set a custom message ID for errors related to invalid JSON.
 func SetMsgIDInvalidJSON(msgID int) {
 	msgIDInvalidJSON = msgID
 }
 
-// SetErrCodeInvalidJSON allows external code to set a custom error code for invalid JSON errors.
+// SetErrCodeInvalidJSON allows external code to set a custom error code for errors related to invalid JSON.
 func SetErrCodeInvalidJSON(errCode string) {
 	errCodeInvalidJSON = errCode
 }

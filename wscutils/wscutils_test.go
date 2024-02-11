@@ -7,7 +7,6 @@ import (
 	"os"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -15,33 +14,43 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type TestUser struct {
-	Fullname string `validate:"required"`
-	Email    string `validate:"required,email"`
-	Age      int    `validate:"min=10,max=150"`
-}
+func setup() {
+	// Set default message ID and error code for validation errors
+	SetDefaultMsgID(9999)
+	SetDefaultErrCode("default_error")
 
-var testData = TestUser{
-	Email: "invalid email",
-	Age:   5,
+	// Set a custom message ID for invalid JSON errors
+	SetMsgIDInvalidJSON(1001)
+	SetErrCodeInvalidJSON("invalid_json")
+
+	// Register any other necessary mappings for validation tags to message IDs and error codes
+	customValidationMap := map[string]int{
+		"required": 1001,
+		"email":    1002,
+		"min":      1003,
+		"max":      1004,
+	}
+	SetValidationTagToMsgIDMap(customValidationMap)
+
+	customErrCodeMap := map[string]string{
+		"required": "required",
+		"email":    "email",
+		"min":      "min",
+		"max":      "max",
+	}
+	SetValidationTagToErrCodeMap(customErrCodeMap)
 }
 
 func TestMain(m *testing.M) {
-	// Setup
-	testErrorTypes := `
-    required: 45
-    email: 50
-    min: 55
-    `
-	errorTypesReader := strings.NewReader(testErrorTypes)
-	LoadErrorTypes(errorTypesReader)
-
-	// Run tests
+	setup()
 	code := m.Run()
-
-	// Teardown if necessary
-
 	os.Exit(code)
+}
+
+type TestUser struct {
+	Name  string `validate:"required"`
+	Email string `validate:"required,email"`
+	Age   int    `validate:"min=18,max=150"`
 }
 
 func TestSendSuccessResponse(t *testing.T) {
@@ -76,7 +85,7 @@ func TestSendErrorResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	// Assuming ErrMsgIDInvalidJson is defined and represents the message ID for invalid JSON errors.
-	msgID := ErrMsgIDInvalidJson // Use the appropriate message ID for the error being tested.
+	msgID := msgIDInvalidJSON
 
 	test := struct {
 		name     string
@@ -104,15 +113,10 @@ func TestSendErrorResponse(t *testing.T) {
 	})
 }
 
-type Person struct {
-	Name  string `validate:"required"`
-	Email string `validate:"required,email"`
-}
-
 // Adjusted getVals to return multiple values for a hypothetical "MultiValField".
 func getVals(err validator.FieldError) []string {
-	if err.Field() == "MultiValField" {
-		return []string{"Value1", "Value2"}
+	if err.Field() == "Age" {
+		return []string{"10", "18-65"}
 	}
 	return []string{err.Field()}
 }
@@ -123,38 +127,38 @@ func TestWscValidate(t *testing.T) {
 	// Define test cases
 	tests := []struct {
 		name    string
-		input   Person
+		input   TestUser
 		wantErr bool
 		errMsgs []ErrorMessage // Expected error messages
 	}{
 		{
 			name:    "Valid input",
-			input:   Person{Name: "John Doe", Email: "john@example.com"},
+			input:   TestUser{Name: "John Doe", Email: "john@example.com", Age: 18},
 			wantErr: false,
 			errMsgs: nil,
 		},
 		{
 			name:    "Missing name",
-			input:   Person{Email: "john@example.com"},
+			input:   TestUser{Email: "john@example.com", Age: 20},
 			wantErr: true,
-			errMsgs: []ErrorMessage{{MsgID: DefaultMsgID, ErrCode: "required", Field: pointerToString("Name"), Vals: []string{"Name"}}},
+			errMsgs: []ErrorMessage{{MsgID: 1001, ErrCode: "required", Field: pointerToString("Name"), Vals: []string{"Name"}}},
 		},
 		{
 			name:    "Invalid email",
-			input:   Person{Name: "John Doe", Email: "not-an-email"},
+			input:   TestUser{Name: "John Doe", Email: "not-an-email", Age: 20},
 			wantErr: true,
-			errMsgs: []ErrorMessage{{MsgID: DefaultMsgID, ErrCode: "email", Field: pointerToString("Email"), Vals: []string{"Email"}}},
+			errMsgs: []ErrorMessage{{MsgID: 1002, ErrCode: "email", Field: pointerToString("Email"), Vals: []string{"Email"}}},
 		},
 		{
 			name:    "Field with multiple values",
-			input:   Person{Name: "MultiValField", Email: "john@example.com"}, // Hypothetical scenario
+			input:   TestUser{Name: "MultiValField", Email: "john@example.com", Age: 10},
 			wantErr: true,
 			errMsgs: []ErrorMessage{
 				{
-					MsgID:   DefaultMsgID,    // Assuming DefaultMsgID is defined
-					ErrCode: "multiValError", // Hypothetical error code
-					Field:   pointerToString("MultiValField"),
-					Vals:    []string{"Value1", "Value2"},
+					MsgID:   1003,
+					ErrCode: "min",
+					Field:   pointerToString("Age"),
+					Vals:    []string{"10", "18-65"},
 				},
 			},
 		},

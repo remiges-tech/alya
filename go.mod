@@ -13,7 +13,6 @@ require (
 	github.com/remiges-tech/rigel v0.12.0
 	github.com/stretchr/testify v1.8.3
 	go.etcd.io/etcd/client/v3 v3.5.10
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -65,4 +64,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230711160842-782d3b101e98 // indirect
 	google.golang.org/grpc v1.58.3 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
