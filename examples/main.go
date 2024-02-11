@@ -13,10 +13,11 @@ import (
 	"github.com/remiges-tech/alya/config"
 	"github.com/remiges-tech/alya/examples/pg"
 	usersvc "github.com/remiges-tech/alya/examples/userservice"
+	"github.com/remiges-tech/alya/logger"
+	"github.com/remiges-tech/alya/router"
 	"github.com/remiges-tech/alya/service"
 	"github.com/remiges-tech/alya/wscutils"
 	"github.com/remiges-tech/logharbour/logharbour"
-	// Import the rigel client library
 )
 
 type AppConfig struct {
@@ -78,30 +79,30 @@ func main() {
 	wscutils.SetDefaultErrCode("validation_err")
 
 	// Set custom message ID and error code for invalid JSON errors
-	wscutils.SetMsgIDInvalidJson(1000)
-	wscutils.SetErrCodeInvalidJson("invalid_json")
+	wscutils.SetMsgIDInvalidJSON(1000)
+	wscutils.SetErrCodeInvalidJSON("invalid_json")
 
 	// logger
 	fallbackWriter := logharbour.NewFallbackWriter(os.Stdout, os.Stdout)
 	lh := logharbour.NewLogger("MyApp", fallbackWriter)
 	lh.WithPriority(logharbour.Debug2)
-	// fl := logger.NewFileLogger("/tmp/idshield.log")
+	fl := logger.NewFileLogger("/tmp/idshield.log")
 
 	// auth middleware
 
-	// cache := router.NewRedisTokenCache("localhost:6379", "", 0, 0)
-	// authMiddleware, err := router.LoadAuthMiddleware("alyatest", "https://lemur-7.cloud-iam.com/auth/realms/cool5", cache, fl)
-	// if err != nil {
-	// 	log.Fatalf("Failed to create new auth middleware: %v", err)
-	// }
+	cache := router.NewRedisTokenCache("localhost:6379", "", 0, 0)
+	authMiddleware, err := router.LoadAuthMiddleware("alyatest", "https://lemur-7.cloud-iam.com/auth/realms/cool5", cache, fl)
+	if err != nil {
+		log.Fatalf("Failed to create new auth middleware: %v", err)
+	}
 
 	// router
 
-	// r, err := router.SetupRouter(true, fl, authMiddleware)
-	r := gin.Default()
-	// if err != nil {
-	// 	log.Fatalf("Failed to setup router: %v", err)
-	// }
+	r, err := router.SetupRouter(true, fl, authMiddleware)
+	// r := gin.Default()
+	if err != nil {
+		log.Fatalf("Failed to setup router: %v", err)
+	}
 
 	// Logging middleware
 	r.Use(func(c *gin.Context) {

@@ -12,8 +12,8 @@ import (
 
 var validationTagToMsgID map[string]int
 var validationTagToErrCode map[string]string
-var msgIdInvalidJson int
-var errCodeInvalidJson string
+var msgIDInvalidJSON int
+var errCodeInvalidJSON string
 
 // SetValidationTagToMsgIDMap updates the internal mapping of validation tags to message IDs.
 func SetValidationTagToMsgIDMap(customMap map[string]int) {
@@ -136,7 +136,7 @@ func BindJSON(c *gin.Context, data any) error {
 	req := Request{Data: data}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// Example msgid for ErrcodeInvalidJson is 1001. Replace 1001 with the actual msgid you intend to use.
-		invalidJsonError := BuildErrorMessage(MsgIDInvalidJson, ErrCodeInvalidJson, nil)
+		invalidJsonError := BuildErrorMessage(msgIDInvalidJSON, errCodeInvalidJSON, nil)
 		c.JSON(http.StatusBadRequest, NewResponse(ErrorStatus, nil, []ErrorMessage{invalidJsonError}))
 		return err
 	}
@@ -205,12 +205,12 @@ func SetDefaultMsgID(msgID int) {
 	defaultMsgID = msgID
 }
 
-// SetMsgIDInvalidJson allows external code to set a custom message ID for invalid JSON errors.
-func SetMsgIDInvalidJson(msgID int) {
-	msgIdInvalidJson = msgID
+// SetMsgIDInvalidJSON allows external code to set a custom message ID for invalid JSON errors.
+func SetMsgIDInvalidJSON(msgID int) {
+	msgIDInvalidJSON = msgID
 }
 
-// SetErrCodeInvalidJson allows external code to set a custom error code for invalid JSON errors.
-func SetErrCodeInvalidJson(errCode string) {
-	errCodeInvalidJson = errCode
+// SetErrCodeInvalidJSON allows external code to set a custom error code for invalid JSON errors.
+func SetErrCodeInvalidJSON(errCode string) {
+	errCodeInvalidJSON = errCode
 }
