@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
@@ -19,7 +20,13 @@ func SetupRouter(useOIDCAuth bool, l logger.Logger, authMiddleware *AuthMiddlewa
 }
 
 func LoadAuthMiddleware(clientID string, providerURL string, cache TokenCache, l logger.Logger) (*AuthMiddleware, error) {
-	ctx := context.Background()
+	// Define a timeout duration
+	timeout := 5 * time.Second
+
+	// Create a context with the specified timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	provider, err := oidc.NewProvider(ctx, providerURL)
 	if err != nil {
 		return nil, err

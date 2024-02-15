@@ -4,8 +4,16 @@
 
 package sqlc
 
+import (
+	"database/sql"
+)
+
 type User struct {
-	ID    int32  `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	ID          int32          `json:"id"`
+	Name        string         `json:"name"`
+	Email       string         `json:"email"`
+	Username    string         `json:"username"`
+	PhoneNumber sql.NullString `json:"phone_number"`
+	CreatedAt   sql.NullTime   `json:"created_at"`
+	UpdatedAt   sql.NullTime   `json:"updated_at"`
 }

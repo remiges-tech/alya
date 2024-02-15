@@ -84,33 +84,114 @@ func NewAuthMiddleware(clientID string, provider *oidc.Provider, cache TokenCach
 	}, nil
 }
 
+// AuthErrorScenario defines a set of constants representing different error scenarios
+// that can occur within the AuthMiddleware. These scenarios are used to map specific
+// error conditions to message IDs and error codes.
+type AuthErrorScenario string
+
+const (
+	// TokenMissing indicates an error scenario where the expected authentication token is missing from the request.
+	TokenMissing AuthErrorScenario = "TokenMissing"
+	// TokenCacheFailed indicates an error scenario where an operation related to caching the token fails.
+	TokenCacheFailed AuthErrorScenario = "TokenCacheFailed"
+	// TokenVerificationFailed indicates an error scenario where the authentication token fails verification.
+	TokenVerificationFailed AuthErrorScenario = "TokenVerificationFailed"
+)
+
+// scenarioToMsgID maps specific AuthErrorScenarios to message IDs.
+var scenarioToMsgID = make(map[AuthErrorScenario]int)
+
+// scenarioToErrCode maps specific AuthErrorScenarios to error codes.
+var scenarioToErrCode = make(map[AuthErrorScenario]string)
+
+// RegisterAuthMsgID allows the registration of a message ID for a specific AuthErrorScenario.
+func RegisterAuthMsgID(scenario AuthErrorScenario, msgID int) {
+	scenarioToMsgID[scenario] = msgID
+}
+
+// RegisterAuthErrCode allows the registration of an error code for a specific AuthErrorScenario.
+func RegisterAuthErrCode(scenario AuthErrorScenario, errCode string) {
+	scenarioToErrCode[scenario] = errCode
+}
+
+// defaultMsgID holds the default message ID to be used in error responses when an error scenario
+// does not have a specifically registered message ID. This provides a fallback mechanism to ensure
+// that error responses always have a message ID.
+var defaultMsgID int
+
+// defaultErrCode holds the default error code to be used in error responses when an error scenario
+// does not have a specifically registered error code. This default code serves as a generic indicator
+// of an error in the absence of a more specific code.
+var defaultErrCode string = "ROUTER_ERROR"
+
+// SetDefaultMsgID allows external code to set a custom default message ID.
+func SetDefaultMsgID(msgID int) {
+	defaultMsgID = msgID
+}
+
+// SetDefaultErrCode allows external code to set a custom default error code.
+func SetDefaultErrCode(errCode string) {
+	defaultErrCode = errCode
+}
+
 // MiddlewareFunc returns a gin.HandlerFunc (middleware) that checks for a valid token.
 func (a *AuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawIDToken, err := ExtractToken(c.Request.Header.Get("Authorization"))
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(wscutils.ErrcodeTokenMissing))
+			msgID, ok := scenarioToMsgID[TokenMissing]
+			if !ok {
+				msgID = defaultMsgID // Fallback to a default message ID if not registered
+			}
+			errCode, ok := scenarioToErrCode[TokenMissing]
+			if !ok {
+				errCode = defaultErrCode
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(msgID, errCode))
 			return
 		}
 
 		isCached, err := a.Cache.Get(rawIDToken)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, wscutils.NewErrorResponse(wscutils.ErrcodeTokenCacheFailed))
+			msgID, ok := scenarioToMsgID[TokenCacheFailed]
+			if !ok {
+				msgID = defaultMsgID
+			}
+			errCode, ok := scenarioToErrCode[TokenCacheFailed]
+			if !ok {
+				errCode = "DEFAULT_ERROR_CODE"
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, wscutils.NewErrorResponse(msgID, errCode))
 			return
 		}
 
 		if !isCached {
 			_, err := a.Verifier.Verify(context.Background(), rawIDToken)
 			if err != nil {
-				a.Logger.Log(fmt.Sprintf("Auth error: %v", err)) // Use the logger for logging
-				c.Set("auth_error", err)                         // Set the error in the context
-				c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(wscutils.ErrcodeTokenVerificationFailed))
+				msgID, ok := scenarioToMsgID[TokenVerificationFailed]
+				if !ok {
+					msgID = defaultMsgID
+				}
+				errCode, ok := scenarioToErrCode[TokenVerificationFailed]
+				if !ok {
+					errCode = "DEFAULT_ERROR_CODE"
+				}
+				c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(msgID, errCode))
 				return
 			}
 
 			err = a.Cache.Set(rawIDToken)
 			if err != nil {
-				c.AbortWithStatusJSON(http.StatusInternalServerError, wscutils.NewErrorResponse(wscutils.ErrcodeTokenCacheFailed))
+				// Assuming there's a scenario for cache set failure, or reuse TokenCacheFailed
+				msgID, ok := scenarioToMsgID[TokenCacheFailed]
+				if !ok {
+					msgID = defaultMsgID
+				}
+				errCode, ok := scenarioToErrCode[TokenCacheFailed]
+				if !ok {
+					errCode = "DEFAULT_ERROR_CODE"
+				}
+				c.AbortWithStatusJSON(http.StatusInternalServerError, wscutils.NewErrorResponse(msgID, errCode))
 				return
 			}
 		}
