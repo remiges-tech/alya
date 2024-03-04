@@ -21,13 +21,13 @@ type SlowQuery struct {
 	RedisClient *redis.Client
 }
 
-type JSONStr string
+type JSONstr string
 
 // Assuming sqlc generated the following methods in the db package:
 // - InsertIntoBatches(ctx context.Context, arg db.InsertIntoBatchesParams) (db.Batch, error)
 // - InsertIntoBatchRows(ctx context.Context, arg db.InsertIntoBatchRowsParams) error
 
-func (s SlowQuery) Submit(app, op string, inputContext, input JSONStr) (reqID string, err error) {
+func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID string, err error) {
 	// Previous validation code remains unchanged
 
 	// Generate a unique request ID
@@ -79,7 +79,7 @@ const (
 	BatchAborted
 )
 
-func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONStr, messages []wscutils.ErrorMessage, err error) {
+func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, err error) {
 	// Check REDIS for the status
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
 	statusVal, err := s.RedisClient.Get(redisKey).Result()
@@ -98,7 +98,7 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONStr, mes
 		// Based on batchStatus, decide the next steps
 		switch batchStatus {
 		case "success", "failed", "aborted":
-			var result JSONStr
+			var result JSONstr
 			var messages []wscutils.ErrorMessage
 
 			// Fetch data from batchrows if status is success or failed
@@ -108,14 +108,14 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONStr, mes
 					return BatchTryLater, "", nil, err
 				}
 
-				// Assuming you want to convert rowsData to JSONStr
+				// Assuming you want to convert rowsData to JSONstr
 				// This requires rowsData to be serializable to JSON
 				jsonData, err := json.Marshal(rowsData)
 				if err != nil {
 					// Handle JSON marshaling error
 					return BatchTryLater, "", nil, fmt.Errorf("error marshaling rows data to JSON: %v", err)
 				}
-				result = JSONStr(jsonData)
+				result = JSONstr(jsonData)
 			}
 
 			// Determine the BatchStatus_t based on batchStatus
