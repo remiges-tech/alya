@@ -33,7 +33,7 @@ type SlowQueryProcessor interface {
 }
 
 type BatchProcessor interface {
-	DoBatchJob(InitBlock any, context JSONstr, line int, input JSONstr) (status BatchStatus_t, result JSONstr, messages []ErrorMessage, blobRows map[string]string, err error)
+	DoBatchJob(InitBlock any, context JSONstr, line int, input JSONstr) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error)
 }
 
 // Assuming global variables are defined elsewhere

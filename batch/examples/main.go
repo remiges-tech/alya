@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
 	"github.com/remiges-tech/alya/batch"
-	"github.com/remiges-tech/alya/batch/pg/sqlc"
+	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	queries := sqlc.New(pool)
+	queries := batchsqlc.New(pool)
 
 	// Initialize SlowQuery
 	slowQuery := batch.SlowQuery{

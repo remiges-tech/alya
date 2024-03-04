@@ -5,8 +5,8 @@ sql:
     schema: "migrations"
     gen:
       go:
-        package: "sqlc"
+        package: "batchsqlc"
         sql_package: "pgx/v5"
-        out: "sqlc"
+        out: "batchsqlc"
         emit_json_tags: true
         emit_interface: true

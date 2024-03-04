@@ -8,8 +8,9 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/remiges-tech/alya/batch/pg/sqlc"
+	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
 
@@ -17,7 +18,7 @@ const ALYA_BATCHSTATUS_CACHEDUR_SEC = 100
 
 type SlowQuery struct {
 	Db          *pgxpool.Pool
-	Queries     sqlc.Querier
+	Queries     batchsqlc.Querier
 	RedisClient *redis.Client
 }
 
@@ -43,8 +44,8 @@ func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID st
 	ctx := context.Background()
 
 	// Use sqlc generated function to insert into batches table
-	_, err = s.Queries.InsertIntoBatches(ctx, sqlc.InsertIntoBatchesParams{
-		App:     sqlc.AppEnum(app),
+	_, err = s.Queries.InsertIntoBatches(ctx, batchsqlc.InsertIntoBatchesParams{
+		App:     batchsqlc.AppEnum(app),
 		Op:      op,
 		Context: json.RawMessage(inputContext),
 	})
@@ -53,7 +54,7 @@ func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID st
 	}
 
 	// Use sqlc generated function to insert into batchrows table
-	err = s.Queries.InsertIntoBatchRows(ctx, sqlc.InsertIntoBatchRowsParams{
+	err = s.Queries.InsertIntoBatchRows(ctx, batchsqlc.InsertIntoBatchRowsParams{
 		Line:  1,
 		Input: json.RawMessage(input),
 	})
@@ -85,7 +86,9 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 	statusVal, err := s.RedisClient.Get(redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
-		reqUUID, err := uuid.Parse(reqID)
+		// generate pgtype uuid
+		reqUUID := pgtype.UUID{}
+		fmt.Printf("reqUUID: %v", reqUUID)
 		if err != nil {
 			// Handle error if the string is not a valid UUID
 			return BatchTryLater, "", nil, fmt.Errorf("invalid request ID: %v", err)
