@@ -6,9 +6,10 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
-	"github.com/remiges-tech/alya/batch/pg"
+	"github.com/remiges-tech/alya/batch"
+	"github.com/remiges-tech/alya/batch/pg/sqlc"
 )
 
 func main() {
@@ -19,25 +20,21 @@ func main() {
 	dbPassword := "alyatest"
 	dbName := "alyatest"
 
-	ctx := context.Background()
 	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
-	// connStr := appConfig.DBConnURL
-	conn, err := pgx.Connect(ctx, connStr)
+
+	pool, err := pgxpool.New(context.Background(), connStr)
 	if err != nil {
 		log.Fatal("error connecting db")
 	}
-	defer conn.Close(ctx)
-	// sqlc
-	querier := pg.NewProvider(connStr)
+	defer pool.Close()
 
-	// // Database connection
-	// connURL := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
-	// connPool, err := pg.NewProvider(connURL)
-	// if err != nil {
-	// 	log.Fatalln("Failed to establishes a connection with database", err)
-	// }
-	// queries := sqlc.New(connPool)
-	// slowQuery := batch.SlowQuery{Queries: queries, Db: connPool}
+	queries := sqlc.New(pool)
+
+	// Initialize SlowQuery
+	slowQuery := batch.SlowQuery{
+		Db:      pool,
+		Queries: queries,
+	}
 	fmt.Println(slowQuery.Queries) // just to make compiler happy while I'm developing slowquery module
 
 	r := gin.Default()

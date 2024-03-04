@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch/pg/sqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
@@ -17,7 +17,7 @@ const ALYA_BATCHSTATUS_CACHEDUR_SEC = 100
 
 type SlowQuery struct {
 	Db          *pgxpool.Pool
-	Queries     *sqlc.Queries
+	Queries     sqlc.Querier
 	RedisClient *redis.Client
 }
 

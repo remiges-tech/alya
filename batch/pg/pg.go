@@ -5,9 +5,10 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/remiges-tech/alya/batch/pg/sqlc"
 )
 
-func NewProvider(connString string) sqlc.DBQuerier {
+func NewProvider(connString string) sqlc.Querier {
 	ctx := context.Background()
 	db, err := pgxpool.New(ctx, connString)
 	if err != nil {
