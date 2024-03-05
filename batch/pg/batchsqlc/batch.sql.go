@@ -61,6 +61,55 @@ func (q *Queries) FetchBatchRowsData(ctx context.Context, batch pgtype.UUID) ([]
 	return items, nil
 }
 
+const fetchBlockOfRows = `-- name: FetchBlockOfRows :many
+SELECT batches.app, batches.op, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
+FROM batchrows
+INNER JOIN batches ON batchrows.batch = batches.id
+WHERE batchrows.status = $1
+LIMIT $2
+`
+
+type FetchBlockOfRowsParams struct {
+	Status StatusEnum `json:"status"`
+	Limit  int32      `json:"limit"`
+}
+
+type FetchBlockOfRowsRow struct {
+	App   AppEnum     `json:"app"`
+	Op    string      `json:"op"`
+	Batch pgtype.UUID `json:"batch"`
+	Rowid int32       `json:"rowid"`
+	Line  int32       `json:"line"`
+	Input []byte      `json:"input"`
+}
+
+func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error) {
+	rows, err := q.db.Query(ctx, fetchBlockOfRows, arg.Status, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FetchBlockOfRowsRow
+	for rows.Next() {
+		var i FetchBlockOfRowsRow
+		if err := rows.Scan(
+			&i.App,
+			&i.Op,
+			&i.Batch,
+			&i.Rowid,
+			&i.Line,
+			&i.Input,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getBatchStatus = `-- name: GetBatchStatus :one
 SELECT status
 FROM batches
@@ -113,4 +162,92 @@ func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesPa
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const updateBatchOutputFiles = `-- name: UpdateBatchOutputFiles :exec
+UPDATE batches
+SET outputfiles = $2
+WHERE id = $1
+`
+
+type UpdateBatchOutputFilesParams struct {
+	ID          pgtype.UUID `json:"id"`
+	Outputfiles []byte      `json:"outputfiles"`
+}
+
+func (q *Queries) UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error {
+	_, err := q.db.Exec(ctx, updateBatchOutputFiles, arg.ID, arg.Outputfiles)
+	return err
+}
+
+const updateBatchRowsBatchJob = `-- name: UpdateBatchRowsBatchJob :exec
+UPDATE batchrows
+SET status = $2, doneat = $3, res = $4, blobrows = $5, messages = $6, doneby = $7
+WHERE rowid = $1
+`
+
+type UpdateBatchRowsBatchJobParams struct {
+	Rowid    int32            `json:"rowid"`
+	Status   StatusEnum       `json:"status"`
+	Doneat   pgtype.Timestamp `json:"doneat"`
+	Res      []byte           `json:"res"`
+	Blobrows []byte           `json:"blobrows"`
+	Messages []byte           `json:"messages"`
+	Doneby   pgtype.Text      `json:"doneby"`
+}
+
+func (q *Queries) UpdateBatchRowsBatchJob(ctx context.Context, arg UpdateBatchRowsBatchJobParams) error {
+	_, err := q.db.Exec(ctx, updateBatchRowsBatchJob,
+		arg.Rowid,
+		arg.Status,
+		arg.Doneat,
+		arg.Res,
+		arg.Blobrows,
+		arg.Messages,
+		arg.Doneby,
+	)
+	return err
+}
+
+const updateBatchRowsSlowQuery = `-- name: UpdateBatchRowsSlowQuery :exec
+UPDATE batchrows
+SET status = $2, doneat = $3, res = $4, messages = $5, doneby = $6
+WHERE rowid = $1
+`
+
+type UpdateBatchRowsSlowQueryParams struct {
+	Rowid    int32            `json:"rowid"`
+	Status   StatusEnum       `json:"status"`
+	Doneat   pgtype.Timestamp `json:"doneat"`
+	Res      []byte           `json:"res"`
+	Messages []byte           `json:"messages"`
+	Doneby   pgtype.Text      `json:"doneby"`
+}
+
+func (q *Queries) UpdateBatchRowsSlowQuery(ctx context.Context, arg UpdateBatchRowsSlowQueryParams) error {
+	_, err := q.db.Exec(ctx, updateBatchRowsSlowQuery,
+		arg.Rowid,
+		arg.Status,
+		arg.Doneat,
+		arg.Res,
+		arg.Messages,
+		arg.Doneby,
+	)
+	return err
+}
+
+const updateBatchRowsStatus = `-- name: UpdateBatchRowsStatus :exec
+UPDATE batchrows
+SET status = $1
+WHERE rowid = ANY($2::int[])
+`
+
+type UpdateBatchRowsStatusParams struct {
+	Status  StatusEnum `json:"status"`
+	Column2 []int32    `json:"column_2"`
+}
+
+func (q *Queries) UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRowsStatusParams) error {
+	_, err := q.db.Exec(ctx, updateBatchRowsStatus, arg.Status, arg.Column2)
+	return err
 }

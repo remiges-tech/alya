@@ -1,10 +1,15 @@
 package main
 
+import (
+	"github.com/remiges-tech/alya/batch"
+	"github.com/remiges-tech/alya/wscutils"
+)
+
 type SIPBatchProcessor struct {
 	// Add any fields necessary for processing SIP transactions.
 }
 
-func (p *SIPBatchProcessor) DoBatchJob(initBlock any, context JSONstr, line int, input JSONstr) (status BatchStatus_t, result JSONstr, messages []ErrorMessage, blobRows map[string]string, err error) {
+func (p *SIPBatchProcessor) DoBatchJob(initBlock any, context batch.JSONstr, line int, input batch.JSONstr) (status batch.BatchStatus_t, result batch.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
 	// Implement the processing logic for each SIP transaction here.
 	// Use the initBlock for any pre-initialized resources.
 	return
@@ -21,7 +26,7 @@ func (ib *SIPInitBlock) Close() error {
 
 type SIPInitializer struct{}
 
-func (si *SIPInitializer) Init(app string) (InitBlock, error) {
+func (si *SIPInitializer) Init(app string) (batch.InitBlock, error) {
 	// Initialize resources for SIP batch processing
 	return &SIPInitBlock{}, nil
 }
@@ -30,11 +35,11 @@ func RegisterSIPBatchProcessor() error {
 	processor := &SIPBatchProcessor{}
 
 	// Register the initializer
-	err := RegisterInitializer("SIPApp", initializer)
+	err := batch.RegisterInitializer("SIPApp", initializer)
 	if err != nil {
 		return err
 	}
 
 	// Register the batch processor
-	return RegisterProcessor("SIPApp", "processSIPTransactions", processor)
+	return batch.RegisterProcessor("SIPApp", "processSIPTransactions", processor)
 }
