@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 
@@ -50,7 +51,7 @@ var (
 	slowqueryprocessorfuncs map[string]SlowQueryProcessor
 	batchprocessorfuncs     map[string]BatchProcessor
 	mu                      sync.Mutex // Ensures thread-safe access to the initfuncs map
-
+	doneBy                  pgtype.Text
 )
 
 // RegisterInitializer registers an initializer for a specific application.
@@ -314,7 +315,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row BatchJob_t, status BatchSt
 		Doneat:   pgtype.Timestamp{Time: time.Now()},
 		Res:      []byte(result),
 		Messages: messagesJSON,
-		Doneby:   pgtype.Text(getHostname()),
+		Doneby:   doneBy,
 	})
 	if err != nil {
 		return err
@@ -383,7 +384,7 @@ func updateBatchJobResult(db *batchsqlc.Queries, row BatchJob_t, status BatchSta
 		Res:      []byte(result),
 		Blobrows: blobRowsJSON,
 		Messages: messagesJSON,
-		Doneby:   pgtype.Text(getHostname()),
+		Doneby:   doneBy,
 	})
 	if err != nil {
 		return err
@@ -404,8 +405,23 @@ func encodeJSONMap(m map[string]string) []byte {
 	return jsonData
 }
 
+func getHostname() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		// Handle the error appropriately (e.g., log it, return a default value)
+		fmt.Println("Failed to get hostname:", err)
+		return "unknown"
+	}
+	return hostname
+}
+
 func main() {
 	// Assume db is a *sql.DB connected to your database
 	var db *sql.DB
+	doneBy := pgtype.Text{}
+	err := doneBy.Scan(getHostname())
+	if err != nil {
+		log.Fatal(err)
+	}
 	JobManager(db)
 }
