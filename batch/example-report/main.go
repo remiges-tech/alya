@@ -10,9 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
+	"github.com/remiges-tech/alya/wscutils"
 )
 
-func main() {
+func getDb() *pgxpool.Pool {
 	dbHost := "localhost"
 	dbPort := 5432
 	dbUser := "alyatest"
@@ -25,7 +26,41 @@ func main() {
 	if err != nil {
 		log.Fatal("error connecting db")
 	}
-	defer pool.Close()
+	return pool
+}
+
+// create mock solr client with open, close and query functions. use interface
+type SolrClient interface {
+	Open() error
+	Close() error
+	Query(query string) (string, error)
+}
+
+type mockSolrClient struct {
+}
+
+func (c *mockSolrClient) Open() error {
+	return nil
+}
+
+func (c *mockSolrClient) Close() error {
+	return nil
+}
+
+func (c *mockSolrClient) Query(query string) (string, error) {
+	return "mock solr result", nil
+}
+
+type MyAppInitializer struct{}
+
+func (i *MyAppInitializer) Init(app string) (InitBlock, error) {
+	solrClient := mockSolrClient{}
+	initBlock := InitBlock{SolrClient: &solrClient}
+	return initBlock, nil
+}
+
+func main() {
+	pool := getDb()
 
 	queries := batchsqlc.New(pool)
 
@@ -37,7 +72,7 @@ func main() {
 	fmt.Println(slowQuery.Queries) // just to make compiler happy while I'm developing slowquery module
 
 	// Register the SlowQueryProcessor for the long-running report
-	err = slowQuery.RegisterProcessor("LongRunningReportApp", "generateReport", &ReportProcessor{})
+	err := slowQuery.RegisterProcessor("broadside", "bounceReport", &BounceReportProcessor{})
 	if err != nil {
 		fmt.Println("Failed to register SlowQueryProcessor:", err)
 		return
@@ -83,9 +118,20 @@ func main() {
 }
 
 // ReportProcessor implements the SlowQueryProcessor interface
-type ReportProcessor struct{}
+type BounceReportProcessor struct{}
 
-func (p *ReportProcessor) DoSlowQuery(initBlock any, context batch.JSONstr, input batch.JSONstr) (status batch.BatchStatus_t, result batch.JSONstr, messages []batch.ErrorMessage, outputFiles map[string]string, err error) {
+type InitBlock struct {
+	// Add fields for resources like database connections
+	SolrClient SolrClient
+}
+
+func (ib *InitBlock) Close() error {
+	// Clean up resources
+	ib.SolrClient.Close()
+	return nil
+}
+
+func (p *BounceReportProcessor) DoSlowQuery(initBlock any, context batch.JSONstr, input batch.JSONstr) (status batch.BatchStatus_t, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
 	// Parse the context and input JSON
 	var contextData struct {
 		UserID     int    `json:"userId"`
