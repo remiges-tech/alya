@@ -38,7 +38,7 @@ type Initializer interface {
 }
 
 type SlowQueryProcessor interface {
-	DoSlowQuery(InitBlock any, context JSONstr, input JSONstr) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error)
+	DoSlowQuery(InitBlock InitBlock, context JSONstr, input JSONstr) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error)
 }
 
 type BatchProcessor interface {
@@ -545,13 +545,13 @@ func getHostname() string {
 	return hostname
 }
 
-func main() {
-	// Assume db is a *sql.DB connected to your database
-	var db *sql.DB
-	doneBy := pgtype.Text{}
-	err := doneBy.Scan(getHostname())
-	if err != nil {
-		log.Fatal(err)
-	}
-	JobManager(db)
-}
+// func main() {
+// 	// Assume db is a *sql.DB connected to your database
+// 	var db *sql.DB
+// 	doneBy := pgtype.Text{}
+// 	err := doneBy.Scan(getHostname())
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	JobManager(db)
+// }

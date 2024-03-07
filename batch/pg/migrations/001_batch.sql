@@ -1,9 +1,8 @@
-CREATE TYPE app_enum AS ENUM ('app1', 'app2', 'app3'); 
 CREATE TYPE status_enum AS ENUM ('queued', 'inprog', 'success', 'failed', 'aborted', 'wait');
 
 CREATE TABLE batches (
     id UUID NOT NULL PRIMARY KEY,
-    app app_enum NOT NULL,
+    app VARCHAR(255) NOT NULL,
     op VARCHAR(255) NOT NULL CHECK (op = LOWER(op)), 
     context JSONB NOT NULL,
     inputfile VARCHAR(255),

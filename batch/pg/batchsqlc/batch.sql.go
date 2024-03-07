@@ -75,7 +75,7 @@ type FetchBlockOfRowsParams struct {
 }
 
 type FetchBlockOfRowsRow struct {
-	App     AppEnum     `json:"app"`
+	App     string      `json:"app"`
 	Op      string      `json:"op"`
 	Context []byte      `json:"context"`
 	Batch   pgtype.UUID `json:"batch"`
@@ -302,7 +302,7 @@ RETURNING id
 
 type InsertIntoBatchesParams struct {
 	ID      pgtype.UUID `json:"id"`
-	App     AppEnum     `json:"app"`
+	App     string      `json:"app"`
 	Op      string      `json:"op"`
 	Context []byte      `json:"context"`
 }

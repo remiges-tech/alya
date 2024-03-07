@@ -11,49 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type AppEnum string
-
-const (
-	AppEnumApp1 AppEnum = "app1"
-	AppEnumApp2 AppEnum = "app2"
-	AppEnumApp3 AppEnum = "app3"
-)
-
-func (e *AppEnum) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = AppEnum(s)
-	case string:
-		*e = AppEnum(s)
-	default:
-		return fmt.Errorf("unsupported scan type for AppEnum: %T", src)
-	}
-	return nil
-}
-
-type NullAppEnum struct {
-	AppEnum AppEnum `json:"app_enum"`
-	Valid   bool    `json:"valid"` // Valid is true if AppEnum is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullAppEnum) Scan(value interface{}) error {
-	if value == nil {
-		ns.AppEnum, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.AppEnum.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullAppEnum) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.AppEnum), nil
-}
-
 type StatusEnum string
 
 const (
@@ -102,7 +59,7 @@ func (ns NullStatusEnum) Value() (driver.Value, error) {
 
 type Batch struct {
 	ID          pgtype.UUID      `json:"id"`
-	App         AppEnum          `json:"app"`
+	App         string           `json:"app"`
 	Op          string           `json:"op"`
 	Context     []byte           `json:"context"`
 	Inputfile   pgtype.Text      `json:"inputfile"`

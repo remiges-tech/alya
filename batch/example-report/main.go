@@ -51,11 +51,11 @@ func (c *mockSolrClient) Query(query string) (string, error) {
 	return "mock solr result", nil
 }
 
-type MyAppInitializer struct{}
+type BroadsideInitializer struct{}
 
-func (i *MyAppInitializer) Init(app string) (InitBlock, error) {
+func (i *BroadsideInitializer) Init(app string) (batch.InitBlock, error) {
 	solrClient := mockSolrClient{}
-	initBlock := InitBlock{SolrClient: &solrClient}
+	initBlock := &InitBlock{SolrClient: &solrClient}
 	return initBlock, nil
 }
 
@@ -76,6 +76,14 @@ func main() {
 	if err != nil {
 		fmt.Println("Failed to register SlowQueryProcessor:", err)
 		return
+	}
+
+	bi := BroadsideInitializer{}
+
+	// Register the initializer for your application
+	err = batch.RegisterInitializer("example-report", &bi)
+	if err != nil {
+		// Handle the error
 	}
 
 	// Submit a slow query request
