@@ -13,13 +13,18 @@ import (
 type Querier interface {
 	FetchBatchRowsData(ctx context.Context, batch pgtype.UUID) ([]FetchBatchRowsDataRow, error)
 	FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error)
+	GetBatchByID(ctx context.Context, id pgtype.UUID) (Batch, error)
+	GetBatchRowsByBatchIDSorted(ctx context.Context, batch pgtype.UUID) ([]GetBatchRowsByBatchIDSortedRow, error)
 	GetBatchStatus(ctx context.Context, id pgtype.UUID) (StatusEnum, error)
+	GetCompletedBatches(ctx context.Context) ([]pgtype.UUID, error)
+	GetPendingBatchRows(ctx context.Context, batch pgtype.UUID) ([]GetPendingBatchRowsRow, error)
 	InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRowsParams) error
 	InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (pgtype.UUID, error)
 	UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error
 	UpdateBatchRowsBatchJob(ctx context.Context, arg UpdateBatchRowsBatchJobParams) error
 	UpdateBatchRowsSlowQuery(ctx context.Context, arg UpdateBatchRowsSlowQueryParams) error
 	UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRowsStatusParams) error
+	UpdateBatchSummary(ctx context.Context, arg UpdateBatchSummaryParams) error
 }
 
 var _ Querier = (*Queries)(nil)

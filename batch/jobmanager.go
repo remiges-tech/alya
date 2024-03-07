@@ -15,12 +15,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/spf13/viper"
 )
 
 type BatchJob_t struct {
 	App     string
 	Op      string
-	Batch   string
+	Batch   uuid.UUID
 	RowID   int
 	Context JSONstr
 	Line    int
@@ -99,10 +100,13 @@ func getOrCreateInitBlock(app string) (InitBlock, error) {
 }
 
 // JobManager is responsible for pulling queued jobs, processing them, and updating records accordingly
-func JobManager(db *sql.DB) {
+func JobManager(db *batchsqlc.Queries) {
 	for {
 		// Fetch a block of rows from the database
-		blockOfRows, err := fetchBlockOfRows(db)
+		blockOfRows, err := db.FetchBlockOfRows(context.Background(), batchsqlc.FetchBlockOfRowsParams{
+			Status: batchsqlc.StatusEnumQueued,
+			Limit:  int32(viper.GetInt("ALYA_BATCHCHUNK_NROWS")),
+		})
 		if err != nil {
 			log.Println("Error fetching block of rows:", err)
 			time.Sleep(getRandomSleepDuration())
@@ -134,16 +138,10 @@ func JobManager(db *sql.DB) {
 }
 
 func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
-	// Begin a transaction
 	ctx := context.Background()
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
 
 	// Fetch a block of rows with status "queued"
-	rows, err := tx.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
+	rows, err := db.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
 		Status: batchsqlc.StatusEnumQueued,
 		Limit:  100,
 	})
@@ -152,48 +150,41 @@ func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
 	}
 
 	var blockOfRows []BatchJob_t
+	var rowIDs []int32
+
 	for _, row := range rows {
 		job := BatchJob_t{
 			App:   string(row.App),
 			Op:    row.Op,
-			Batch: row.Batch.String(),
+			Batch: row.Batch.Bytes,
 			RowID: int(row.Rowid),
 			Line:  int(row.Line),
-			Input: row.Input,
+			Input: JSONstr(string(row.Input)),
 		}
 		blockOfRows = append(blockOfRows, job)
+		rowIDs = append(rowIDs, int32(job.RowID))
 	}
 
 	// Update the fetched rows' status to "inprog"
-	rowIDs := make([]int32, len(blockOfRows))
-	for i, job := range blockOfRows {
-		rowIDs[i] = int32(job.RowID)
-	}
-
-	err = tx.UpdateBatchRowsStatus(ctx, batchsqlc.UpdateBatchRowsStatusParams{
-		Status: batchsqlc.StatusEnumInprog,
-		Rowids: rowIDs,
+	err = db.UpdateBatchRowsStatus(ctx, batchsqlc.UpdateBatchRowsStatusParams{
+		Status:  batchsqlc.StatusEnumInprog,
+		Column2: rowIDs,
 	})
 	if err != nil {
-		return nil, err
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 
 	return blockOfRows, nil
 }
 
-func processRow(db *sql.DB, row BatchJob_t) error {
+func processRow(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) error {
 	// Check if the row is valid for processing
 	if row.Line == -1 {
 		return nil
 	}
 
 	// Get or create the initblock for the app
-	initBlock, err := getOrCreateInitBlock(row.App)
+	initBlock, err := getOrCreateInitBlock(string(row.App))
 	if err != nil {
 		return err
 	}
@@ -212,7 +203,7 @@ func processRow(db *sql.DB, row BatchJob_t) error {
 	return nil
 }
 
-func summarizeCompletedBatches(db *sql.DB) error {
+func summarizeCompletedBatches(db *batchsqlc.Queries) error {
 	// Retrieve completed batches
 	completedBatches, err := getCompletedBatches(db)
 	if err != nil {
@@ -227,6 +218,126 @@ func summarizeCompletedBatches(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
+	ctx := context.Background()
+
+	batchPgUUID := pgtype.UUID{}
+	batchPgUUID.Scan(batchID)
+
+	// Fetch the batch record
+	batch, err := db.GetBatchByID(ctx, batchPgUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get batch by ID: %v", err)
+	}
+
+	// Check if the batch is already summarized
+	if !batch.Doneat.Time.IsZero() {
+		return nil
+	}
+
+	// Fetch pending batchrows records for the batch with status "queued" or "inprog"
+	pendingRows, err := db.GetPendingBatchRows(ctx, batchPgUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get pending batch rows: %v", err)
+	}
+
+	// If there are pending rows, the batch is not yet complete
+	if len(pendingRows) > 0 {
+		return nil
+	}
+
+	// Fetch all batchrows records for the batch, sorted by "line"
+	batchRows, err := db.GetBatchRowsByBatchIDSorted(ctx, batchPgUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get batch rows sorted: %v", err)
+	}
+
+	// Create temporary files for each unique logical file in blobrows
+	tmpFiles := make(map[string]*os.File)
+	for _, row := range batchRows {
+		var blobRows map[string]string
+		if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
+			return fmt.Errorf("failed to unmarshal blobrows: %v", err)
+		}
+
+		for logicalFile := range blobRows {
+			if _, exists := tmpFiles[logicalFile]; !exists {
+				file, err := os.CreateTemp("", logicalFile)
+				if err != nil {
+					return fmt.Errorf("failed to create temporary file: %v", err)
+				}
+				tmpFiles[logicalFile] = file
+			}
+		}
+	}
+
+	// Append blobrows strings to the appropriate temporary files
+	for _, row := range batchRows {
+		var blobRows map[string]string
+		if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
+			return fmt.Errorf("failed to unmarshal blobrows: %v", err)
+		}
+
+		for logicalFile, content := range blobRows {
+			if _, err := tmpFiles[logicalFile].WriteString(content + "\n"); err != nil {
+				return fmt.Errorf("failed to write to temporary file: %v", err)
+			}
+		}
+	}
+
+	// Close all temporary files
+	for _, file := range tmpFiles {
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed to close temporary file: %v", err)
+		}
+	}
+
+	// Move temporary files to the object store and update outputfiles
+	outputFiles := make(map[string]string)
+	for logicalFile, file := range tmpFiles {
+		objectID, err := moveToObjectStore(file.Name())
+		if err != nil {
+			return fmt.Errorf("failed to move file to object store: %v", err)
+		}
+		outputFiles[logicalFile] = objectID
+	}
+
+	// Update the batches record with summarized information
+	outputFilesJSON, err := json.Marshal(outputFiles)
+	if err != nil {
+		return fmt.Errorf("failed to marshal output files: %v", err)
+	}
+
+	status := batchsqlc.StatusEnumSuccess
+	if batch.Nfailed > 0 {
+		status = batchsqlc.StatusEnumFailed
+	}
+
+	err = db.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
+		ID:          batchID,
+		Status:      status,
+		Doneat:      pgtype.Timestamp{Time: time.Now()},
+		Outputfiles: outputFilesJSON,
+		Nsuccess:    batch.Nsuccess,
+		Nfailed:     batch.Nfailed,
+		Naborted:    batch.Naborted,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update batch summary: %v", err)
+	}
+
+	return nil
+}
+
+func moveToObjectStore(filePath string) (string, error) {
+	// Implement the logic to move the file to the object store
+	// and return the object ID
+	// For example, you can use a cloud storage library like AWS S3 or Google Cloud Storage
+	// to upload the file and retrieve the object ID
+	// This function is left as a placeholder for you to implement based on your object store setup
+	return "", fmt.Errorf("moveToObjectStore not implemented")
 }
 
 func closeInitBlocks() {
@@ -255,15 +366,15 @@ func fetchJobs(tx *sql.Tx) []BatchJob_t {
 	return []BatchJob_t{}
 }
 
-func processSlowQuery(db *batchsqlc.Queries, row BatchJob_t, initBlock InitBlock) error {
+func processSlowQuery(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) error {
 	// Retrieve the SlowQueryProcessor for the app and op
-	processor, exists := slowqueryprocessorfuncs[row.App+row.Op]
+	processor, exists := slowqueryprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
 		return fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
 	}
 
 	// Process the slow query using the registered processor
-	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, row.Context, row.Input)
+	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, JSONstr(string(row.Input)), JSONstr(string(row.Input)))
 	if err != nil {
 		return fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 	}
@@ -276,15 +387,15 @@ func processSlowQuery(db *batchsqlc.Queries, row BatchJob_t, initBlock InitBlock
 	return nil
 }
 
-func processBatchJob(db *batchsqlc.Queries, row BatchJob_t, initBlock InitBlock) error {
+func processBatchJob(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) error {
 	// Retrieve the BatchProcessor for the app and op
-	processor, exists := batchprocessorfuncs[row.App+row.Op]
+	processor, exists := batchprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
 		return fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
 	}
 
 	// Process the batch job using the registered processor
-	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, JSONstr(row.Context), row.Line, JSONstr(row.Input))
+	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, JSONstr(string(row.Context)), int(row.Line), JSONstr(string(row.Input)))
 	if err != nil {
 		return fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 	}
@@ -297,7 +408,7 @@ func processBatchJob(db *batchsqlc.Queries, row BatchJob_t, initBlock InitBlock)
 	return nil
 }
 
-func updateSlowQueryResult(db *batchsqlc.Queries, row BatchJob_t, status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
+func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
 	if len(messages) > 0 {
@@ -310,7 +421,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row BatchJob_t, status BatchSt
 
 	// Update the batchrows record with the results
 	err := db.UpdateBatchRowsSlowQuery(context.Background(), batchsqlc.UpdateBatchRowsSlowQueryParams{
-		Rowid:    int32(row.RowID),
+		Rowid:    int32(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
 		Doneat:   pgtype.Timestamp{Time: time.Now()},
 		Res:      []byte(result),
@@ -319,19 +430,6 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row BatchJob_t, status BatchSt
 	})
 	if err != nil {
 		return err
-	}
-
-	// Parse the row.Batch string as a UUID
-	batchUUID, err := uuid.Parse(row.Batch)
-	if err != nil {
-		return fmt.Errorf("invalid batch UUID: %v", err)
-	}
-
-	// Convert uuid.UUID to pgtype.UUID
-	var pgtypeUUID pgtype.UUID
-	err = pgtypeUUID.Scan(batchUUID)
-	if err != nil {
-		return fmt.Errorf("failed to convert UUID: %v", err)
 	}
 
 	// Marshal outputFiles to JSON
@@ -345,7 +443,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row BatchJob_t, status BatchSt
 
 	// Update the batches record with the output files
 	err = db.UpdateBatchOutputFiles(context.Background(), batchsqlc.UpdateBatchOutputFilesParams{
-		ID:          pgtypeUUID,
+		ID:          row.Batch, //pgtypeUUID,
 		Outputfiles: outputFilesJSON,
 	})
 	if err != nil {
@@ -355,7 +453,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row BatchJob_t, status BatchSt
 	return nil
 }
 
-func updateBatchJobResult(db *batchsqlc.Queries, row BatchJob_t, status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
+func updateBatchJobResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
 	if len(messages) > 0 {
@@ -378,7 +476,7 @@ func updateBatchJobResult(db *batchsqlc.Queries, row BatchJob_t, status BatchSta
 
 	// Update the batchrows record with the results
 	err := db.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
-		Rowid:    int32(row.RowID),
+		Rowid:    int32(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
 		Doneat:   pgtype.Timestamp{Time: time.Now()},
 		Res:      []byte(result),
@@ -403,6 +501,24 @@ func encodeJSONMap(m map[string]string) []byte {
 		return nil
 	}
 	return jsonData
+}
+
+func getCompletedBatches(db *batchsqlc.Queries) ([]uuid.UUID, error) {
+	ctx := context.Background()
+
+	// Retrieve batches with status "success", "failed", or "aborted"
+	batches, err := db.GetCompletedBatches(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract the batch IDs from the retrieved batches
+	var completedBatches []uuid.UUID
+	for _, batch := range batches {
+		completedBatches = append(completedBatches, batch.Bytes)
+	}
+
+	return completedBatches, nil
 }
 
 func getHostname() string {

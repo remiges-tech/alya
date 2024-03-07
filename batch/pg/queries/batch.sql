@@ -34,7 +34,7 @@ WHERE rowid = $1;
 
 
 -- name: FetchBlockOfRows :many
-SELECT batches.app, batches.op, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
+SELECT batches.app, batches.op, batches.context, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
 FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1
@@ -45,3 +45,29 @@ LIMIT $2;
 UPDATE batchrows
 SET status = $1
 WHERE rowid = ANY($2::int[]);
+
+-- name: GetCompletedBatches :many
+SELECT id
+FROM batches
+WHERE status IN ('success', 'failed', 'aborted');
+
+-- name: GetBatchByID :one
+SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted
+FROM batches
+WHERE id = $1;
+
+-- name: GetPendingBatchRows :many
+SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
+FROM batchrows
+WHERE batch = $1 AND status IN ('queued', 'inprog');
+
+-- name: GetBatchRowsByBatchIDSorted :many
+SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
+FROM batchrows
+WHERE batch = $1
+ORDER BY line;
+
+-- name: UpdateBatchSummary :exec
+UPDATE batches
+SET status = $2, doneat = $3, outputfiles = $4, nsuccess = $5, nfailed = $6, naborted = $7
+WHERE id = $1;

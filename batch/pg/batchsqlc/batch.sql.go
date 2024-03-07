@@ -62,7 +62,7 @@ func (q *Queries) FetchBatchRowsData(ctx context.Context, batch pgtype.UUID) ([]
 }
 
 const fetchBlockOfRows = `-- name: FetchBlockOfRows :many
-SELECT batches.app, batches.op, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
+SELECT batches.app, batches.op, batches.context, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
 FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1
@@ -75,12 +75,13 @@ type FetchBlockOfRowsParams struct {
 }
 
 type FetchBlockOfRowsRow struct {
-	App   AppEnum     `json:"app"`
-	Op    string      `json:"op"`
-	Batch pgtype.UUID `json:"batch"`
-	Rowid int32       `json:"rowid"`
-	Line  int32       `json:"line"`
-	Input []byte      `json:"input"`
+	App     AppEnum     `json:"app"`
+	Op      string      `json:"op"`
+	Context []byte      `json:"context"`
+	Batch   pgtype.UUID `json:"batch"`
+	Rowid   int32       `json:"rowid"`
+	Line    int32       `json:"line"`
+	Input   []byte      `json:"input"`
 }
 
 func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error) {
@@ -95,10 +96,88 @@ func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsPara
 		if err := rows.Scan(
 			&i.App,
 			&i.Op,
+			&i.Context,
 			&i.Batch,
 			&i.Rowid,
 			&i.Line,
 			&i.Input,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getBatchByID = `-- name: GetBatchByID :one
+SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted
+FROM batches
+WHERE id = $1
+`
+
+func (q *Queries) GetBatchByID(ctx context.Context, id pgtype.UUID) (Batch, error) {
+	row := q.db.QueryRow(ctx, getBatchByID, id)
+	var i Batch
+	err := row.Scan(
+		&i.ID,
+		&i.App,
+		&i.Op,
+		&i.Context,
+		&i.Inputfile,
+		&i.Status,
+		&i.Reqat,
+		&i.Doneat,
+		&i.Outputfiles,
+		&i.Nsuccess,
+		&i.Nfailed,
+		&i.Naborted,
+	)
+	return i, err
+}
+
+const getBatchRowsByBatchIDSorted = `-- name: GetBatchRowsByBatchIDSorted :many
+SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
+FROM batchrows
+WHERE batch = $1
+ORDER BY line
+`
+
+type GetBatchRowsByBatchIDSortedRow struct {
+	Rowid    int32            `json:"rowid"`
+	Line     int32            `json:"line"`
+	Input    []byte           `json:"input"`
+	Status   StatusEnum       `json:"status"`
+	Reqat    pgtype.Timestamp `json:"reqat"`
+	Doneat   pgtype.Timestamp `json:"doneat"`
+	Res      []byte           `json:"res"`
+	Blobrows []byte           `json:"blobrows"`
+	Messages []byte           `json:"messages"`
+	Doneby   pgtype.Text      `json:"doneby"`
+}
+
+func (q *Queries) GetBatchRowsByBatchIDSorted(ctx context.Context, batch pgtype.UUID) ([]GetBatchRowsByBatchIDSortedRow, error) {
+	rows, err := q.db.Query(ctx, getBatchRowsByBatchIDSorted, batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetBatchRowsByBatchIDSortedRow
+	for rows.Next() {
+		var i GetBatchRowsByBatchIDSortedRow
+		if err := rows.Scan(
+			&i.Rowid,
+			&i.Line,
+			&i.Input,
+			&i.Status,
+			&i.Reqat,
+			&i.Doneat,
+			&i.Res,
+			&i.Blobrows,
+			&i.Messages,
+			&i.Doneby,
 		); err != nil {
 			return nil, err
 		}
@@ -121,6 +200,82 @@ func (q *Queries) GetBatchStatus(ctx context.Context, id pgtype.UUID) (StatusEnu
 	var status StatusEnum
 	err := row.Scan(&status)
 	return status, err
+}
+
+const getCompletedBatches = `-- name: GetCompletedBatches :many
+SELECT id
+FROM batches
+WHERE status IN ('success', 'failed', 'aborted')
+`
+
+func (q *Queries) GetCompletedBatches(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getCompletedBatches)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPendingBatchRows = `-- name: GetPendingBatchRows :many
+SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
+FROM batchrows
+WHERE batch = $1 AND status IN ('queued', 'inprog')
+`
+
+type GetPendingBatchRowsRow struct {
+	Rowid    int32            `json:"rowid"`
+	Line     int32            `json:"line"`
+	Input    []byte           `json:"input"`
+	Status   StatusEnum       `json:"status"`
+	Reqat    pgtype.Timestamp `json:"reqat"`
+	Doneat   pgtype.Timestamp `json:"doneat"`
+	Res      []byte           `json:"res"`
+	Blobrows []byte           `json:"blobrows"`
+	Messages []byte           `json:"messages"`
+	Doneby   pgtype.Text      `json:"doneby"`
+}
+
+func (q *Queries) GetPendingBatchRows(ctx context.Context, batch pgtype.UUID) ([]GetPendingBatchRowsRow, error) {
+	rows, err := q.db.Query(ctx, getPendingBatchRows, batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPendingBatchRowsRow
+	for rows.Next() {
+		var i GetPendingBatchRowsRow
+		if err := rows.Scan(
+			&i.Rowid,
+			&i.Line,
+			&i.Input,
+			&i.Status,
+			&i.Reqat,
+			&i.Doneat,
+			&i.Res,
+			&i.Blobrows,
+			&i.Messages,
+			&i.Doneby,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertIntoBatchRows = `-- name: InsertIntoBatchRows :exec
@@ -249,5 +404,34 @@ type UpdateBatchRowsStatusParams struct {
 
 func (q *Queries) UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRowsStatusParams) error {
 	_, err := q.db.Exec(ctx, updateBatchRowsStatus, arg.Status, arg.Column2)
+	return err
+}
+
+const updateBatchSummary = `-- name: UpdateBatchSummary :exec
+UPDATE batches
+SET status = $2, doneat = $3, outputfiles = $4, nsuccess = $5, nfailed = $6, naborted = $7
+WHERE id = $1
+`
+
+type UpdateBatchSummaryParams struct {
+	ID          pgtype.UUID      `json:"id"`
+	Status      StatusEnum       `json:"status"`
+	Doneat      pgtype.Timestamp `json:"doneat"`
+	Outputfiles []byte           `json:"outputfiles"`
+	Nsuccess    pgtype.Int4      `json:"nsuccess"`
+	Nfailed     pgtype.Int4      `json:"nfailed"`
+	Naborted    pgtype.Int4      `json:"naborted"`
+}
+
+func (q *Queries) UpdateBatchSummary(ctx context.Context, arg UpdateBatchSummaryParams) error {
+	_, err := q.db.Exec(ctx, updateBatchSummary,
+		arg.ID,
+		arg.Status,
+		arg.Doneat,
+		arg.Outputfiles,
+		arg.Nsuccess,
+		arg.Nfailed,
+		arg.Naborted,
+	)
 	return err
 }
