@@ -28,6 +28,7 @@ type BatchJob_t struct {
 	Input   JSONstr
 }
 
+// maybe combine initblock and initializer
 type InitBlock interface {
 	Close() error
 }
@@ -41,7 +42,7 @@ type SlowQueryProcessor interface {
 }
 
 type BatchProcessor interface {
-	DoBatchJob(InitBlock any, context JSONstr, line int, input JSONstr) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error)
+	DoBatchJob(InitBlock InitBlock, context JSONstr, line int, input JSONstr) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error)
 }
 
 // Assuming global variables are defined elsewhere

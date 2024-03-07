@@ -118,7 +118,9 @@ func main() {
 }
 
 // ReportProcessor implements the SlowQueryProcessor interface
-type BounceReportProcessor struct{}
+type BounceReportProcessor struct {
+	SolrClient SolrClient
+}
 
 type InitBlock struct {
 	// Add fields for resources like database connections
@@ -131,7 +133,7 @@ func (ib *InitBlock) Close() error {
 	return nil
 }
 
-func (p *BounceReportProcessor) DoSlowQuery(initBlock any, context batch.JSONstr, input batch.JSONstr) (status batch.BatchStatus_t, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
+func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context batch.JSONstr, input batch.JSONstr) (status batch.BatchStatus_t, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
 	// Parse the context and input JSON
 	var contextData struct {
 		UserID int `json:"userId"`
@@ -150,10 +152,17 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock any, context batch.JSONstr
 		return batch.BatchFailed, "", nil, nil, err
 	}
 
-	// Perform the long-running report generation logic here
-	// Use the contextData and inputData to generate the report
-	// Simulate a long-running operation
-	time.Sleep(10 * time.Second)
+	// assert that initBlock is of type InitBlock
+	if _, ok := initBlock.(*InitBlock); !ok {
+		return batch.BatchFailed, "", nil, nil, fmt.Errorf("initBlock is not of type InitBlock")
+	}
+
+	ib := initBlock.(*InitBlock)
+	report, err := ib.SolrClient.Query("")
+	if err != nil {
+		return batch.BatchFailed, "", nil, nil, err
+	}
+	fmt.Printf("Report: %s", report)
 
 	// Example output
 	reportResult := fmt.Sprintf("Report generated for user %d, type %s, from %s to %s",
