@@ -68,7 +68,7 @@ func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID st
 	// Use sqlc generated function to insert into batchrows table
 	err = s.Queries.InsertIntoBatchRows(ctx, batchsqlc.InsertIntoBatchRowsParams{
 		Batch: batchId,
-		Line:  1,
+		Line:  0,
 		Input: json.RawMessage(input),
 	})
 	if err != nil {
@@ -95,17 +95,32 @@ const (
 	BatchAborted
 )
 
+// determineBatchStatus converts a batch status from the database or Redis
+// to a BatchStatus_t value.
+func determineBatchStatus(status batchsqlc.StatusEnum) BatchStatus_t {
+	switch status {
+	case batchsqlc.StatusEnumSuccess:
+		return BatchSuccess
+	case batchsqlc.StatusEnumFailed:
+		return BatchFailed
+	case batchsqlc.StatusEnumAborted:
+		return BatchAborted
+	default:
+		// This includes StatusEnumQueued, StatusEnumInprog, StatusEnumWait, or any other unexpected value.
+		// You might want to log or handle unexpected values differently.
+		return BatchTryLater
+	}
+}
+
 func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, err error) {
 	// Check REDIS for the status
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
 	statusVal, err := s.RedisClient.Get(redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
-		reqIDUUID := uuid.New()
-		err := reqIDUUID.Scan(reqID)
+		reqIDUUID, err := uuid.Parse(reqID)
 		if err != nil {
 			log.Printf("SlowQuery.Done invalid request ID: %v", err)
-			// Handle error if the string is not a valid UUID
 			return BatchTryLater, "", nil, fmt.Errorf("invalid request ID: %v", err)
 		}
 		batchStatus, err := s.Queries.GetBatchStatus(context.Background(), reqIDUUID)
@@ -114,73 +129,29 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 			return BatchTryLater, "", nil, err // Assuming GetBatchStatus returns an error if not found
 		}
 
-		// Based on batchStatus, decide the next steps
-		switch batchStatus {
-		case "success", "failed", "aborted":
-			var result JSONstr
-			var messages []wscutils.ErrorMessage
+		// Convert string to StatusEnum if necessary
+		var enumStatus batchsqlc.StatusEnum
+		enumStatus.Scan(batchStatus) // Assuming batchStatus is a string, adjust if it's already StatusEnum
 
-			// Fetch data from batchrows if status is success or failed
-			if batchStatus != "aborted" {
-				rowsData, err := s.Queries.FetchBatchRowsData(context.Background(), reqIDUUID)
-				if err != nil {
-					log.Printf("SlowQuery.Done FetchBatchRowsDataFailed: %v", err)
-					return BatchTryLater, "", nil, err
-				}
+		// Determine the BatchStatus_t based on batchStatus
+		status := determineBatchStatus(enumStatus)
 
-				// Assuming you want to convert rowsData to JSONstr
-				// This requires rowsData to be serializable to JSON
-				jsonData, err := json.Marshal(rowsData)
-				if err != nil {
-					log.Printf("SlowQuery.Done FetchBatchRowsDataFailed: %v", err)
-					return BatchTryLater, "", nil, fmt.Errorf("error marshaling rows data to JSON: %v", err)
-				}
-				result = JSONstr(jsonData)
-			}
+		// Insert/update REDIS with 100x expiry if not found earlier
+		expiry := 100 * ALYA_BATCHSTATUS_CACHEDUR_SEC
+		s.RedisClient.Set(redisKey, batchStatus, time.Second*time.Duration(expiry))
 
-			// Determine the BatchStatus_t based on batchStatus
-			status := determineBatchStatus(string(batchStatus))
+		// Return the formatted result, messages, and nil for error
+		return status, result, messages, nil
 
-			// Insert/update REDIS with 100x expiry if not found earlier
-			expiry := 100 * ALYA_BATCHSTATUS_CACHEDUR_SEC // Assuming ALYA_BATCHSTATUS_CACHEDUR_SEC is defined globally
-			s.RedisClient.Set(redisKey, batchStatus, time.Second*time.Duration(expiry))
-
-			// You might need to set messages based on your application logic
-
-			// Return the formatted result, messages, and nil for error
-			return status, result, messages, nil
-
-		default:
-			// Insert/update REDIS with normal expiry and return BatchTryLater
-			s.RedisClient.Set(redisKey, batchStatus, time.Second*time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC))
-			return BatchTryLater, "", nil, nil
-		}
 	} else if err != nil {
 		return BatchTryLater, "", nil, err
 	} else {
 		// Key exists in REDIS, determine the action based on its value
-		status = determineBatchStatus(statusVal)
+		var enumStatus batchsqlc.StatusEnum
+		enumStatus.Scan(statusVal) // Convert Redis result to StatusEnum
+		status = determineBatchStatus(enumStatus)
 	}
 
 	// Format the response based on the status
-	// This part is left as an exercise, assuming functions like determineBatchStatus and fetchBatchRowsData are implemented
 	return status, result, messages, nil
-}
-
-// determineBatchStatus converts a batch status string from the database or Redis
-// to a BatchStatus_t value.
-// TODO: this may not be required if we just use proper enum with String() method
-func determineBatchStatus(status string) BatchStatus_t {
-	switch status {
-	case "success":
-		return BatchSuccess
-	case "failed":
-		return BatchFailed
-	case "aborted":
-		return BatchAborted
-	default:
-		// This includes "queued", "inprog", "wait", or any other unexpected value.
-		// You might want to log or handle unexpected values differently.
-		return BatchTryLater
-	}
 }

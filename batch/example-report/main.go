@@ -81,7 +81,7 @@ func main() {
 	fmt.Println(slowQuery.Queries) // just to make compiler happy while I'm developing slowquery module
 
 	// Register the SlowQueryProcessor for the long-running report
-	err := slowQuery.RegisterProcessor("broadside", "bounceReport", &BounceReportProcessor{})
+	err := slowQuery.RegisterProcessor("broadside", "bouncerpt", &BounceReportProcessor{})
 	if err != nil {
 		fmt.Println("Failed to register SlowQueryProcessor:", err)
 		return
@@ -90,7 +90,7 @@ func main() {
 	bi := BroadsideInitializer{}
 
 	// Register the initializer for your application
-	err = batch.RegisterInitializer("example-report", &bi)
+	err = batch.RegisterInitializer("broadside", &bi)
 	if err != nil {
 		// Handle the error
 	}
@@ -105,6 +105,9 @@ func main() {
 	}
 
 	fmt.Println("Slow query submitted. Request ID:", reqID)
+
+	// Start the JobManager in a separate goroutine
+	go batch.JobManager(queries)
 
 	// Poll for the slow query result
 	for {
@@ -150,7 +153,7 @@ func (ib *InitBlock) Close() error {
 	return nil
 }
 
-func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context batch.JSONstr, input batch.JSONstr) (status batch.BatchStatus_t, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
+func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context batch.JSONstr, input batch.JSONstr) (status batchsqlc.StatusEnum, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
 	// Parse the context and input JSON
 	var contextData struct {
 		UserID int `json:"userId"`
@@ -161,55 +164,31 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context b
 
 	err = json.Unmarshal([]byte(context), &contextData)
 	if err != nil {
-		return batch.BatchFailed, "", nil, nil, err
+		return batchsqlc.StatusEnumFailed, "", nil, nil, err
 	}
 
 	err = json.Unmarshal([]byte(input), &inputData)
 	if err != nil {
-		return batch.BatchFailed, "", nil, nil, err
+		return batchsqlc.StatusEnumFailed, "", nil, nil, err
 	}
 
 	// assert that initBlock is of type InitBlock
 	if _, ok := initBlock.(*InitBlock); !ok {
-		return batch.BatchFailed, "", nil, nil, fmt.Errorf("initBlock is not of type InitBlock")
+		return batchsqlc.StatusEnumFailed, "", nil, nil, fmt.Errorf("initBlock is not of type InitBlock")
 	}
 
 	ib := initBlock.(*InitBlock)
 	report, err := ib.SolrClient.Query("")
 	if err != nil {
-		return batch.BatchFailed, "", nil, nil, err
+		return batchsqlc.StatusEnumFailed, "", nil, nil, err
 	}
 	fmt.Printf("Report: %s", report)
 
 	// Example output
-	reportResult := fmt.Sprintf("Report generated for user %d, type %s, from %s to %s",
+	reportResult := fmt.Sprintf("Report generated for user %d, for from email %s",
 		contextData.UserID, inputData.FromEmail)
+	res := fmt.Sprintf(`{"report": "%s"}`, reportResult)
+	log.Printf("res in main: %v", res)
 
-	return batch.BatchSuccess, batch.JSONstr(reportResult), nil, nil, nil
+	return batchsqlc.StatusEnumSuccess, batch.JSONstr(res), nil, nil, nil
 }
-
-// for testing
-
-// func insertSampleBatchRecord(queries *batchsqlc.Queries) error {
-// 	ctx := context.Background()
-
-// 	// Sample data for insertion
-// 	id := pgtype.UUID{}
-// 	_ = id.Scan("123e4567-e89b-12d3-a456-426614174000") // Set your UUID here
-// 	app := "broadside"
-// 	op := "bouncerpt"
-// 	contextData := []byte(`{"sampleKey": "sampleValue"}`)
-
-// 	params := batchsqlc.InsertIntoBatchesParams{
-// 		App:     app,
-// 		Op:      op,
-// 		Context: contextData,
-// 	}
-
-// 	_, err := queries.InsertIntoBatches(ctx, params)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// }

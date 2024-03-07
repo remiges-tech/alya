@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
-	"github.com/spf13/viper"
 )
 
 type BatchJob_t struct {
@@ -38,7 +37,7 @@ type Initializer interface {
 }
 
 type SlowQueryProcessor interface {
-	DoSlowQuery(InitBlock InitBlock, context JSONstr, input JSONstr) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error)
+	DoSlowQuery(InitBlock InitBlock, context JSONstr, input JSONstr) (status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error)
 }
 
 type BatchProcessor interface {
@@ -105,6 +104,7 @@ func getOrCreateInitBlock(app string) (InitBlock, error) {
 	// Check if an Initializer is registered for the app
 	initializer, exists := initfuncs[app]
 	if !exists {
+		log.Printf("no initializer registered for app %s", app)
 		return nil, fmt.Errorf("no initializer registered for app %s", app)
 	}
 
@@ -123,10 +123,16 @@ func getOrCreateInitBlock(app string) (InitBlock, error) {
 // JobManager is responsible for pulling queued jobs, processing them, and updating records accordingly
 func JobManager(db *batchsqlc.Queries) {
 	for {
+		// print all maps
+		log.Printf("initblocks: %v", initblocks)
+		log.Printf("initfuncs: %v", initfuncs)
+		log.Printf("slowqueryprocessorfuncs: %v", slowqueryprocessorfuncs)
+		log.Printf("batchprocessorfuncs: %v", batchprocessorfuncs)
+
 		// Fetch a block of rows from the database
 		blockOfRows, err := db.FetchBlockOfRows(context.Background(), batchsqlc.FetchBlockOfRowsParams{
 			Status: batchsqlc.StatusEnumQueued,
-			Limit:  int32(viper.GetInt("ALYA_BATCHCHUNK_NROWS")),
+			Limit:  10, //ALYA_BATCHCHUNK_NROWS
 		})
 		if err != nil {
 			log.Println("Error fetching block of rows:", err)
@@ -155,6 +161,9 @@ func JobManager(db *batchsqlc.Queries) {
 
 		// Close and clean up initblocks
 		closeInitBlocks()
+
+		// sleep for constant number of seconds
+		time.Sleep(10 * time.Second) // 10 is ALYA_JOBMANAGER_SLEEP
 	}
 }
 
@@ -199,24 +208,22 @@ func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
 }
 
 func processRow(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) error {
-	// Check if the row is valid for processing
-	if row.Line == -1 {
-		return nil
-	}
-
 	// Get or create the initblock for the app
 	initBlock, err := getOrCreateInitBlock(string(row.App))
 	if err != nil {
+		log.Printf("error getting or creating initblock for app %s: %v", string(row.App), err)
 		return err
 	}
 
 	// Process the row based on its type (slow query or batch job)
 	if row.Line == 0 {
 		if err := processSlowQuery(db, row, initBlock); err != nil {
+			log.Printf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 			return err
 		}
 	} else {
 		if err := processBatchJob(db, row, initBlock); err != nil {
+			log.Printf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 			return err
 		}
 	}
@@ -385,6 +392,7 @@ func fetchJobs(tx *sql.Tx) []BatchJob_t {
 }
 
 func processSlowQuery(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) error {
+	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
 	// Retrieve the SlowQueryProcessor for the app and op
 	processor, exists := slowqueryprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
@@ -392,7 +400,8 @@ func processSlowQuery(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, 
 	}
 
 	// Process the slow query using the registered processor
-	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, JSONstr(string(row.Input)), JSONstr(string(row.Input)))
+	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, JSONstr(string(row.Context)), JSONstr(string(row.Input)))
+	log.Printf("status: %v", status)
 	if err != nil {
 		return fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 	}
@@ -426,7 +435,7 @@ func processBatchJob(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, i
 	return nil
 }
 
-func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
+func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
 	if len(messages) > 0 {
@@ -436,6 +445,8 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 			return fmt.Errorf("failed to marshal messages to JSON: %v", err)
 		}
 	}
+
+	log.Printf("result: %v", result)
 
 	// Update the batchrows record with the results
 	err := db.UpdateBatchRowsSlowQuery(context.Background(), batchsqlc.UpdateBatchRowsSlowQueryParams{
