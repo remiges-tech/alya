@@ -55,6 +55,19 @@ var (
 	doneBy                  pgtype.Text
 )
 
+func RegisterProcessor(app string, op string, p BatchProcessor) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	key := app + op
+	if _, exists := batchprocessorfuncs[key]; exists {
+		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
+	}
+
+	batchprocessorfuncs[key] = p
+	return nil
+}
+
 // RegisterInitializer registers an initializer for a specific application.
 // This is where applications register their initial logic with Alya.
 func RegisterInitializer(app string, initializer Initializer) error {
@@ -311,12 +324,12 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	}
 
 	status := batchsqlc.StatusEnumSuccess
-	if batch.Nfailed > 0 {
+	if batch.Nfailed.Int32 > 0 {
 		status = batchsqlc.StatusEnumFailed
 	}
 
 	err = db.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
-		ID:          batchID,
+		ID:          batchPgUUID,
 		Status:      status,
 		Doneat:      pgtype.Timestamp{Time: time.Now()},
 		Outputfiles: outputFilesJSON,

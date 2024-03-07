@@ -24,9 +24,18 @@ type SlowQuery struct {
 
 type JSONstr string
 
-// Assuming sqlc generated the following methods in the db package:
-// - InsertIntoBatches(ctx context.Context, arg db.InsertIntoBatchesParams) (db.Batch, error)
-// - InsertIntoBatchRows(ctx context.Context, arg db.InsertIntoBatchRowsParams) error
+func (s SlowQuery) RegisterProcessor(app string, op string, p SlowQueryProcessor) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	key := app + op
+	if _, exists := slowqueryprocessorfuncs[key]; exists {
+		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
+	}
+
+	slowqueryprocessorfuncs[key] = p
+	return nil
+}
 
 func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID string, err error) {
 	// Previous validation code remains unchanged
