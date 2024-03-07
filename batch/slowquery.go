@@ -9,20 +9,11 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
 
 const ALYA_BATCHSTATUS_CACHEDUR_SEC = 100
-
-type SlowQuery struct {
-	Db          *pgxpool.Pool
-	Queries     batchsqlc.Querier
-	RedisClient *redis.Client
-}
-
-type JSONstr string
 
 func (s SlowQuery) RegisterProcessor(app string, op string, p SlowQueryProcessor) error {
 	mu.Lock()
@@ -79,7 +70,7 @@ func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID st
 	// Commit the transaction
 	if err := tx.Commit(ctx); err != nil {
 		log.Printf("SlowQuery.Submit Txn CommitFailed: %v", err)
-		return ".Submit Txn CommitFailed", err
+		return "SlowQuery.Submit Txn CommitFailed", err
 	}
 
 	// Return the UUID as reqID and nil for err

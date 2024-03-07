@@ -14,24 +14,8 @@ import (
 	"github.com/remiges-tech/alya/wscutils"
 )
 
-func getDb() *pgxpool.Pool {
-	dbHost := "localhost"
-	dbPort := 5432
-	dbUser := "alyatest"
-	dbPassword := "alyatest"
-	dbName := "alyatest"
-
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
-
-	pool, err := pgxpool.New(context.Background(), connStr)
-	if err != nil {
-		log.Fatal("error connecting db")
-	}
-	return pool
-}
-
 // create mock solr client with open, close and query functions. use interface
-type SolrClient interface {
+type MockSolrClient interface {
 	Open() error
 	Close() error
 	Query(query string) (string, error)
@@ -58,6 +42,61 @@ func (i *BroadsideInitializer) Init(app string) (batch.InitBlock, error) {
 	solrClient := mockSolrClient{}
 	initBlock := &InitBlock{SolrClient: &solrClient}
 	return initBlock, nil
+}
+
+// ReportProcessor implements the SlowQueryProcessor interface
+type BounceReportProcessor struct {
+	SolrClient MockSolrClient
+}
+
+type InitBlock struct {
+	// Add fields for resources like database connections
+	SolrClient MockSolrClient
+}
+
+func (ib *InitBlock) Close() error {
+	// Clean up resources
+	ib.SolrClient.Close()
+	return nil
+}
+
+func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context batch.JSONstr, input batch.JSONstr) (status batchsqlc.StatusEnum, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
+	// Parse the context and input JSON
+	var contextData struct {
+		UserID int `json:"userId"`
+	}
+	var inputData struct {
+		FromEmail string `json:"fromEmail"`
+	}
+
+	err = json.Unmarshal([]byte(context), &contextData)
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+	}
+
+	err = json.Unmarshal([]byte(input), &inputData)
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+	}
+
+	// assert that initBlock is of type InitBlock
+	if _, ok := initBlock.(*InitBlock); !ok {
+		return batchsqlc.StatusEnumFailed, "", nil, nil, fmt.Errorf("initBlock is not of type InitBlock")
+	}
+
+	ib := initBlock.(*InitBlock)
+	report, err := ib.SolrClient.Query("")
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+	}
+	fmt.Printf("Report: %s", report)
+
+	// Example output
+	reportResult := fmt.Sprintf("Report generated for user %d, for from email %s",
+		contextData.UserID, inputData.FromEmail)
+	res := fmt.Sprintf(`{"report": "%s"}`, reportResult)
+
+	return batchsqlc.StatusEnumSuccess, batch.JSONstr(res), nil, nil, nil
 }
 
 func main() {
@@ -137,57 +176,18 @@ func main() {
 	}
 }
 
-// ReportProcessor implements the SlowQueryProcessor interface
-type BounceReportProcessor struct {
-	SolrClient SolrClient
-}
+func getDb() *pgxpool.Pool {
+	dbHost := "localhost"
+	dbPort := 5432
+	dbUser := "alyatest"
+	dbPassword := "alyatest"
+	dbName := "alyatest"
 
-type InitBlock struct {
-	// Add fields for resources like database connections
-	SolrClient SolrClient
-}
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
 
-func (ib *InitBlock) Close() error {
-	// Clean up resources
-	ib.SolrClient.Close()
-	return nil
-}
-
-func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context batch.JSONstr, input batch.JSONstr) (status batchsqlc.StatusEnum, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
-	// Parse the context and input JSON
-	var contextData struct {
-		UserID int `json:"userId"`
-	}
-	var inputData struct {
-		FromEmail string `json:"fromEmail"`
-	}
-
-	err = json.Unmarshal([]byte(context), &contextData)
+	pool, err := pgxpool.New(context.Background(), connStr)
 	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+		log.Fatal("error connecting db")
 	}
-
-	err = json.Unmarshal([]byte(input), &inputData)
-	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
-	}
-
-	// assert that initBlock is of type InitBlock
-	if _, ok := initBlock.(*InitBlock); !ok {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, fmt.Errorf("initBlock is not of type InitBlock")
-	}
-
-	ib := initBlock.(*InitBlock)
-	report, err := ib.SolrClient.Query("")
-	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
-	}
-	fmt.Printf("Report: %s", report)
-
-	// Example output
-	reportResult := fmt.Sprintf("Report generated for user %d, for from email %s",
-		contextData.UserID, inputData.FromEmail)
-	res := fmt.Sprintf(`{"report": "%s"}`, reportResult)
-
-	return batchsqlc.StatusEnumSuccess, batch.JSONstr(res), nil, nil, nil
+	return pool
 }
