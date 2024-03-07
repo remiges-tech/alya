@@ -29,3 +29,10 @@ CREATE TABLE batchrows (
     doneby VARCHAR(255),
     CONSTRAINT fk_batch FOREIGN KEY (batch) REFERENCES batches(id)
 );
+
+---- create above / drop below ----
+
+DROP TABLE IF EXISTS batchrows CASCADE;
+DROP TABLE IF EXISTS batches CASCADE;
+DROP TYPE status_enum;
+
