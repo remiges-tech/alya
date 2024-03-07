@@ -189,7 +189,7 @@ func insertSampleBatchRecord(queries *batchsqlc.Queries) error {
 
 	// Sample data for insertion
 	id := pgtype.UUID{}
-	_ = id.Set("123e4567-e89b-12d3-a456-426614174000") // Set your UUID here
+	_ = id.Scan("123e4567-e89b-12d3-a456-426614174000") // Set your UUID here
 	app := "example-app"
 	op := "example-operation"
 	contextData := []byte(`{"sampleKey": "sampleValue"}`)

@@ -56,6 +56,13 @@ var (
 	doneBy                  pgtype.Text
 )
 
+func init() {
+	initblocks = make(map[string]InitBlock)
+	initfuncs = make(map[string]Initializer)
+	slowqueryprocessorfuncs = make(map[string]SlowQueryProcessor)
+	batchprocessorfuncs = make(map[string]BatchProcessor)
+}
+
 func RegisterProcessor(app string, op string, p BatchProcessor) error {
 	mu.Lock()
 	defer mu.Unlock()
