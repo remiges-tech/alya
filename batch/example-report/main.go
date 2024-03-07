@@ -79,7 +79,7 @@ func main() {
 	}
 
 	// Submit a slow query request
-	context := batch.JSONstr(`{"userId": 123, "reportType": "sales"}`)
+	context := batch.JSONstr(`{"userId": 123`)
 	input := batch.JSONstr(`{"startDate": "2023-01-01", "endDate": "2023-12-31"}`)
 	reqID, err := slowQuery.Submit("LongRunningReportApp", "generateReport", context, input)
 	if err != nil {
@@ -134,12 +134,10 @@ func (ib *InitBlock) Close() error {
 func (p *BounceReportProcessor) DoSlowQuery(initBlock any, context batch.JSONstr, input batch.JSONstr) (status batch.BatchStatus_t, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
 	// Parse the context and input JSON
 	var contextData struct {
-		UserID     int    `json:"userId"`
-		ReportType string `json:"reportType"`
+		UserID int `json:"userId"`
 	}
 	var inputData struct {
-		StartDate string `json:"startDate"`
-		EndDate   string `json:"endDate"`
+		FromEmail string `json:"fromEmail"`
 	}
 
 	err = json.Unmarshal([]byte(context), &contextData)
@@ -159,7 +157,7 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock any, context batch.JSONstr
 
 	// Example output
 	reportResult := fmt.Sprintf("Report generated for user %d, type %s, from %s to %s",
-		contextData.UserID, contextData.ReportType, inputData.StartDate, inputData.EndDate)
+		contextData.UserID, inputData.FromEmail)
 
 	return batch.BatchSuccess, batch.JSONstr(reportResult), nil, nil, nil
 }
