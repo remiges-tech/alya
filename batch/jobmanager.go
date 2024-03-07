@@ -359,9 +359,6 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 func moveToObjectStore(filePath string) (string, error) {
 	// Implement the logic to move the file to the object store
 	// and return the object ID
-	// For example, you can use a cloud storage library like AWS S3 or Google Cloud Storage
-	// to upload the file and retrieve the object ID
-	// This function is left as a placeholder for you to implement based on your object store setup
 	return "", fmt.Errorf("moveToObjectStore not implemented")
 }
 
@@ -445,8 +442,6 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 			return fmt.Errorf("failed to marshal messages to JSON: %v", err)
 		}
 	}
-
-	log.Printf("result: %v", result)
 
 	// Update the batchrows record with the results
 	err := db.UpdateBatchRowsSlowQuery(context.Background(), batchsqlc.UpdateBatchRowsSlowQueryParams{
@@ -559,14 +554,3 @@ func getHostname() string {
 	}
 	return hostname
 }
-
-// func main() {
-// 	// Assume db is a *sql.DB connected to your database
-// 	var db *sql.DB
-// 	doneBy := pgtype.Text{}
-// 	err := doneBy.Scan(getHostname())
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	JobManager(db)
-// }

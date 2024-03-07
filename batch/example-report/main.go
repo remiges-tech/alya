@@ -188,7 +188,6 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context b
 	reportResult := fmt.Sprintf("Report generated for user %d, for from email %s",
 		contextData.UserID, inputData.FromEmail)
 	res := fmt.Sprintf(`{"report": "%s"}`, reportResult)
-	log.Printf("res in main: %v", res)
 
 	return batchsqlc.StatusEnumSuccess, batch.JSONstr(res), nil, nil, nil
 }

@@ -107,7 +107,6 @@ func determineBatchStatus(status batchsqlc.StatusEnum) BatchStatus_t {
 		return BatchAborted
 	default:
 		// This includes StatusEnumQueued, StatusEnumInprog, StatusEnumWait, or any other unexpected value.
-		// You might want to log or handle unexpected values differently.
 		return BatchTryLater
 	}
 }
