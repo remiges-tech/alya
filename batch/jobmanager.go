@@ -177,7 +177,7 @@ func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
 		job := BatchJob_t{
 			App:   string(row.App),
 			Op:    row.Op,
-			Batch: row.Batch.Bytes,
+			Batch: row.Batch,
 			RowID: int(row.Rowid),
 			Line:  int(row.Line),
 			Input: JSONstr(string(row.Input)),
@@ -244,11 +244,8 @@ func summarizeCompletedBatches(db *batchsqlc.Queries) error {
 func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	ctx := context.Background()
 
-	batchPgUUID := pgtype.UUID{}
-	batchPgUUID.Scan(batchID)
-
 	// Fetch the batch record
-	batch, err := db.GetBatchByID(ctx, batchPgUUID)
+	batch, err := db.GetBatchByID(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get batch by ID: %v", err)
 	}
@@ -259,7 +256,7 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	}
 
 	// Fetch pending batchrows records for the batch with status "queued" or "inprog"
-	pendingRows, err := db.GetPendingBatchRows(ctx, batchPgUUID)
+	pendingRows, err := db.GetPendingBatchRows(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get pending batch rows: %v", err)
 	}
@@ -270,7 +267,7 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	}
 
 	// Fetch all batchrows records for the batch, sorted by "line"
-	batchRows, err := db.GetBatchRowsByBatchIDSorted(ctx, batchPgUUID)
+	batchRows, err := db.GetBatchRowsByBatchIDSorted(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get batch rows sorted: %v", err)
 	}
@@ -337,7 +334,7 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	}
 
 	err = db.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
-		ID:          batchPgUUID,
+		ID:          batchID,
 		Status:      status,
 		Doneat:      pgtype.Timestamp{Time: time.Now()},
 		Outputfiles: outputFilesJSON,
@@ -464,7 +461,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 
 	// Update the batches record with the output files
 	err = db.UpdateBatchOutputFiles(context.Background(), batchsqlc.UpdateBatchOutputFilesParams{
-		ID:          row.Batch, //pgtypeUUID,
+		ID:          row.Batch,
 		Outputfiles: outputFilesJSON,
 	})
 	if err != nil {
@@ -536,7 +533,7 @@ func getCompletedBatches(db *batchsqlc.Queries) ([]uuid.UUID, error) {
 	// Extract the batch IDs from the retrieved batches
 	var completedBatches []uuid.UUID
 	for _, batch := range batches {
-		completedBatches = append(completedBatches, batch.Bytes)
+		completedBatches = append(completedBatches, batch)
 	}
 
 	return completedBatches, nil

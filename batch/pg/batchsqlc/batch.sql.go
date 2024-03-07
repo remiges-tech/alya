@@ -8,6 +8,7 @@ package batchsqlc
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -30,7 +31,7 @@ type FetchBatchRowsDataRow struct {
 	Doneby   pgtype.Text      `json:"doneby"`
 }
 
-func (q *Queries) FetchBatchRowsData(ctx context.Context, batch pgtype.UUID) ([]FetchBatchRowsDataRow, error) {
+func (q *Queries) FetchBatchRowsData(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsDataRow, error) {
 	rows, err := q.db.Query(ctx, fetchBatchRowsData, batch)
 	if err != nil {
 		return nil, err
@@ -75,13 +76,13 @@ type FetchBlockOfRowsParams struct {
 }
 
 type FetchBlockOfRowsRow struct {
-	App     string      `json:"app"`
-	Op      string      `json:"op"`
-	Context []byte      `json:"context"`
-	Batch   pgtype.UUID `json:"batch"`
-	Rowid   int32       `json:"rowid"`
-	Line    int32       `json:"line"`
-	Input   []byte      `json:"input"`
+	App     string    `json:"app"`
+	Op      string    `json:"op"`
+	Context []byte    `json:"context"`
+	Batch   uuid.UUID `json:"batch"`
+	Rowid   int32     `json:"rowid"`
+	Line    int32     `json:"line"`
+	Input   []byte    `json:"input"`
 }
 
 func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error) {
@@ -118,7 +119,7 @@ FROM batches
 WHERE id = $1
 `
 
-func (q *Queries) GetBatchByID(ctx context.Context, id pgtype.UUID) (Batch, error) {
+func (q *Queries) GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error) {
 	row := q.db.QueryRow(ctx, getBatchByID, id)
 	var i Batch
 	err := row.Scan(
@@ -158,7 +159,7 @@ type GetBatchRowsByBatchIDSortedRow struct {
 	Doneby   pgtype.Text      `json:"doneby"`
 }
 
-func (q *Queries) GetBatchRowsByBatchIDSorted(ctx context.Context, batch pgtype.UUID) ([]GetBatchRowsByBatchIDSortedRow, error) {
+func (q *Queries) GetBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetBatchRowsByBatchIDSortedRow, error) {
 	rows, err := q.db.Query(ctx, getBatchRowsByBatchIDSorted, batch)
 	if err != nil {
 		return nil, err
@@ -195,7 +196,7 @@ FROM batches
 WHERE id = $1
 `
 
-func (q *Queries) GetBatchStatus(ctx context.Context, id pgtype.UUID) (StatusEnum, error) {
+func (q *Queries) GetBatchStatus(ctx context.Context, id uuid.UUID) (StatusEnum, error) {
 	row := q.db.QueryRow(ctx, getBatchStatus, id)
 	var status StatusEnum
 	err := row.Scan(&status)
@@ -208,15 +209,15 @@ FROM batches
 WHERE status IN ('success', 'failed', 'aborted')
 `
 
-func (q *Queries) GetCompletedBatches(ctx context.Context) ([]pgtype.UUID, error) {
+func (q *Queries) GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, getCompletedBatches)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []pgtype.UUID
+	var items []uuid.UUID
 	for rows.Next() {
-		var id pgtype.UUID
+		var id uuid.UUID
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
@@ -247,7 +248,7 @@ type GetPendingBatchRowsRow struct {
 	Doneby   pgtype.Text      `json:"doneby"`
 }
 
-func (q *Queries) GetPendingBatchRows(ctx context.Context, batch pgtype.UUID) ([]GetPendingBatchRowsRow, error) {
+func (q *Queries) GetPendingBatchRows(ctx context.Context, batch uuid.UUID) ([]GetPendingBatchRowsRow, error) {
 	rows, err := q.db.Query(ctx, getPendingBatchRows, batch)
 	if err != nil {
 		return nil, err
@@ -284,9 +285,9 @@ VALUES ($1, $2, $3, 'queued', NOW())
 `
 
 type InsertIntoBatchRowsParams struct {
-	Batch pgtype.UUID `json:"batch"`
-	Line  int32       `json:"line"`
-	Input []byte      `json:"input"`
+	Batch uuid.UUID `json:"batch"`
+	Line  int32     `json:"line"`
+	Input []byte    `json:"input"`
 }
 
 func (q *Queries) InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRowsParams) error {
@@ -301,20 +302,20 @@ RETURNING id
 `
 
 type InsertIntoBatchesParams struct {
-	ID      pgtype.UUID `json:"id"`
-	App     string      `json:"app"`
-	Op      string      `json:"op"`
-	Context []byte      `json:"context"`
+	ID      uuid.UUID `json:"id"`
+	App     string    `json:"app"`
+	Op      string    `json:"op"`
+	Context []byte    `json:"context"`
 }
 
-func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (pgtype.UUID, error) {
+func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, insertIntoBatches,
 		arg.ID,
 		arg.App,
 		arg.Op,
 		arg.Context,
 	)
-	var id pgtype.UUID
+	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
 }
@@ -326,8 +327,8 @@ WHERE id = $1
 `
 
 type UpdateBatchOutputFilesParams struct {
-	ID          pgtype.UUID `json:"id"`
-	Outputfiles []byte      `json:"outputfiles"`
+	ID          uuid.UUID `json:"id"`
+	Outputfiles []byte    `json:"outputfiles"`
 }
 
 func (q *Queries) UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error {
@@ -414,7 +415,7 @@ WHERE id = $1
 `
 
 type UpdateBatchSummaryParams struct {
-	ID          pgtype.UUID      `json:"id"`
+	ID          uuid.UUID        `json:"id"`
 	Status      StatusEnum       `json:"status"`
 	Doneat      pgtype.Timestamp `json:"doneat"`
 	Outputfiles []byte           `json:"outputfiles"`

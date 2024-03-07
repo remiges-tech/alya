@@ -1,7 +1,9 @@
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 CREATE TYPE status_enum AS ENUM ('queued', 'inprog', 'success', 'failed', 'aborted', 'wait');
 
 CREATE TABLE batches (
-    id UUID NOT NULL PRIMARY KEY,
+    id UUID NOT NULL PRIMARY KEY DEFAULT uuid_generate_v4(),
     app VARCHAR(255) NOT NULL,
     op VARCHAR(255) NOT NULL CHECK (op = LOWER(op)), 
     context JSONB NOT NULL,

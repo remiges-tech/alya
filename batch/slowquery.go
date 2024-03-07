@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/go-redis/redis"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
@@ -38,11 +38,6 @@ func (s SlowQuery) RegisterProcessor(app string, op string, p SlowQueryProcessor
 }
 
 func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID string, err error) {
-	// Previous validation code remains unchanged
-
-	// Generate a unique request ID
-	id := uuid.New().String()
-
 	// Start a database transaction
 	tx, err := s.Db.Begin(context.Background())
 	if err != nil {
@@ -52,32 +47,43 @@ func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID st
 
 	ctx := context.Background()
 
+	batchId, err := uuid.NewUUID()
+	if err != nil {
+		log.Printf("SlowQuery.Submit uuid.NewUUID failed: %v", err)
+		return "", err
+	}
+
 	// Use sqlc generated function to insert into batches table
 	_, err = s.Queries.InsertIntoBatches(ctx, batchsqlc.InsertIntoBatchesParams{
+		ID:      batchId,
 		App:     app,
 		Op:      op,
-		Context: json.RawMessage(inputContext),
+		Context: []byte(string(inputContext)),
 	})
 	if err != nil {
+		log.Printf("SlowQuery.Submit InsertIntoBatchesFailed: %v", err)
 		return "", err
 	}
 
 	// Use sqlc generated function to insert into batchrows table
 	err = s.Queries.InsertIntoBatchRows(ctx, batchsqlc.InsertIntoBatchRowsParams{
+		Batch: batchId,
 		Line:  1,
 		Input: json.RawMessage(input),
 	})
 	if err != nil {
+		log.Printf("SlowQuery.Submit InsertIntoBatchRowsFailed: %v", err)
 		return "", err
 	}
 
 	// Commit the transaction
 	if err := tx.Commit(ctx); err != nil {
-		return "", err
+		log.Printf("SlowQuery.Submit Txn CommitFailed: %v", err)
+		return ".Submit Txn CommitFailed", err
 	}
 
 	// Return the UUID as reqID and nil for err
-	return id, nil
+	return batchId.String(), nil
 }
 
 type BatchStatus_t int
@@ -95,15 +101,16 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 	statusVal, err := s.RedisClient.Get(redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
-		// generate pgtype uuid
-		reqUUID := pgtype.UUID{}
-		fmt.Printf("reqUUID: %v", reqUUID)
+		reqIDUUID := uuid.New()
+		err := reqIDUUID.Scan(reqID)
 		if err != nil {
+			log.Printf("SlowQuery.Done invalid request ID: %v", err)
 			// Handle error if the string is not a valid UUID
 			return BatchTryLater, "", nil, fmt.Errorf("invalid request ID: %v", err)
 		}
-		batchStatus, err := s.Queries.GetBatchStatus(context.Background(), reqUUID)
+		batchStatus, err := s.Queries.GetBatchStatus(context.Background(), reqIDUUID)
 		if err != nil {
+			log.Printf("SlowQuery.Done GetBatchStatusFailed for request %v: %v", reqID, err)
 			return BatchTryLater, "", nil, err // Assuming GetBatchStatus returns an error if not found
 		}
 
@@ -115,8 +122,9 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 
 			// Fetch data from batchrows if status is success or failed
 			if batchStatus != "aborted" {
-				rowsData, err := s.Queries.FetchBatchRowsData(context.Background(), reqUUID)
+				rowsData, err := s.Queries.FetchBatchRowsData(context.Background(), reqIDUUID)
 				if err != nil {
+					log.Printf("SlowQuery.Done FetchBatchRowsDataFailed: %v", err)
 					return BatchTryLater, "", nil, err
 				}
 
@@ -124,7 +132,7 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 				// This requires rowsData to be serializable to JSON
 				jsonData, err := json.Marshal(rowsData)
 				if err != nil {
-					// Handle JSON marshaling error
+					log.Printf("SlowQuery.Done FetchBatchRowsDataFailed: %v", err)
 					return BatchTryLater, "", nil, fmt.Errorf("error marshaling rows data to JSON: %v", err)
 				}
 				result = JSONstr(jsonData)

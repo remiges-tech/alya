@@ -7,19 +7,19 @@ package batchsqlc
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/uuid"
 )
 
 type Querier interface {
-	FetchBatchRowsData(ctx context.Context, batch pgtype.UUID) ([]FetchBatchRowsDataRow, error)
+	FetchBatchRowsData(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsDataRow, error)
 	FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error)
-	GetBatchByID(ctx context.Context, id pgtype.UUID) (Batch, error)
-	GetBatchRowsByBatchIDSorted(ctx context.Context, batch pgtype.UUID) ([]GetBatchRowsByBatchIDSortedRow, error)
-	GetBatchStatus(ctx context.Context, id pgtype.UUID) (StatusEnum, error)
-	GetCompletedBatches(ctx context.Context) ([]pgtype.UUID, error)
-	GetPendingBatchRows(ctx context.Context, batch pgtype.UUID) ([]GetPendingBatchRowsRow, error)
+	GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error)
+	GetBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetBatchRowsByBatchIDSortedRow, error)
+	GetBatchStatus(ctx context.Context, id uuid.UUID) (StatusEnum, error)
+	GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error)
+	GetPendingBatchRows(ctx context.Context, batch uuid.UUID) ([]GetPendingBatchRowsRow, error)
 	InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRowsParams) error
-	InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (pgtype.UUID, error)
+	InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error)
 	UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error
 	UpdateBatchRowsBatchJob(ctx context.Context, arg UpdateBatchRowsBatchJobParams) error
 	UpdateBatchRowsSlowQuery(ctx context.Context, arg UpdateBatchRowsSlowQueryParams) error

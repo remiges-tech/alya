@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/go-redis/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
@@ -65,12 +65,18 @@ func main() {
 
 	queries := batchsqlc.New(pool)
 
-	insertSampleBatchRecord(queries)
+	// insertSampleBatchRecord(queries)
+
+	// instantiate redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
 
 	// Initialize SlowQuery
 	slowQuery := batch.SlowQuery{
-		Db:      pool,
-		Queries: queries,
+		Db:          pool,
+		Queries:     queries,
+		RedisClient: redisClient,
 	}
 	fmt.Println(slowQuery.Queries) // just to make compiler happy while I'm developing slowquery module
 
@@ -90,9 +96,9 @@ func main() {
 	}
 
 	// Submit a slow query request
-	context := batch.JSONstr(`{"userId": 123`)
+	context := batch.JSONstr(`{"userId": 123}`)
 	input := batch.JSONstr(`{"startDate": "2023-01-01", "endDate": "2023-12-31"}`)
-	reqID, err := slowQuery.Submit("LongRunningReportApp", "generateReport", context, input)
+	reqID, err := slowQuery.Submit("broadside", "bouncerpt", context, input)
 	if err != nil {
 		fmt.Println("Failed to submit slow query:", err)
 		return
@@ -184,27 +190,26 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context b
 
 // for testing
 
-func insertSampleBatchRecord(queries *batchsqlc.Queries) error {
-	ctx := context.Background()
+// func insertSampleBatchRecord(queries *batchsqlc.Queries) error {
+// 	ctx := context.Background()
 
-	// Sample data for insertion
-	id := pgtype.UUID{}
-	_ = id.Scan("123e4567-e89b-12d3-a456-426614174000") // Set your UUID here
-	app := "example-app"
-	op := "example-operation"
-	contextData := []byte(`{"sampleKey": "sampleValue"}`)
+// 	// Sample data for insertion
+// 	id := pgtype.UUID{}
+// 	_ = id.Scan("123e4567-e89b-12d3-a456-426614174000") // Set your UUID here
+// 	app := "broadside"
+// 	op := "bouncerpt"
+// 	contextData := []byte(`{"sampleKey": "sampleValue"}`)
 
-	params := batchsqlc.InsertIntoBatchesParams{
-		ID:      id,
-		App:     app,
-		Op:      op,
-		Context: contextData,
-	}
+// 	params := batchsqlc.InsertIntoBatchesParams{
+// 		App:     app,
+// 		Op:      op,
+// 		Context: contextData,
+// 	}
 
-	_, err := queries.InsertIntoBatches(ctx, params)
-	if err != nil {
-		return err
-	}
+// 	_, err := queries.InsertIntoBatches(ctx, params)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	return nil
-}
+// 	return nil
+// }

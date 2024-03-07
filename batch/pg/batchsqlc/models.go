@@ -8,6 +8,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -58,7 +59,7 @@ func (ns NullStatusEnum) Value() (driver.Value, error) {
 }
 
 type Batch struct {
-	ID          pgtype.UUID      `json:"id"`
+	ID          uuid.UUID        `json:"id"`
 	App         string           `json:"app"`
 	Op          string           `json:"op"`
 	Context     []byte           `json:"context"`
@@ -74,7 +75,7 @@ type Batch struct {
 
 type Batchrow struct {
 	Rowid    int32            `json:"rowid"`
-	Batch    pgtype.UUID      `json:"batch"`
+	Batch    uuid.UUID        `json:"batch"`
 	Line     int32            `json:"line"`
 	Input    []byte           `json:"input"`
 	Status   StatusEnum       `json:"status"`
