@@ -54,7 +54,7 @@ func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID st
 
 	// Use sqlc generated function to insert into batches table
 	_, err = s.Queries.InsertIntoBatches(ctx, batchsqlc.InsertIntoBatchesParams{
-		App:     batchsqlc.AppEnum(app),
+		App:     app,
 		Op:      op,
 		Context: json.RawMessage(inputContext),
 	})

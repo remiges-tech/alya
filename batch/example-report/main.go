@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
@@ -63,6 +64,8 @@ func main() {
 	pool := getDb()
 
 	queries := batchsqlc.New(pool)
+
+	insertSampleBatchRecord(queries)
 
 	// Initialize SlowQuery
 	slowQuery := batch.SlowQuery{
@@ -177,4 +180,31 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context b
 		contextData.UserID, inputData.FromEmail)
 
 	return batch.BatchSuccess, batch.JSONstr(reportResult), nil, nil, nil
+}
+
+// for testing
+
+func insertSampleBatchRecord(queries *batchsqlc.Queries) error {
+	ctx := context.Background()
+
+	// Sample data for insertion
+	id := pgtype.UUID{}
+	_ = id.Set("123e4567-e89b-12d3-a456-426614174000") // Set your UUID here
+	app := "example-app"
+	op := "example-operation"
+	contextData := []byte(`{"sampleKey": "sampleValue"}`)
+
+	params := batchsqlc.InsertIntoBatchesParams{
+		ID:      id,
+		App:     app,
+		Op:      op,
+		Context: contextData,
+	}
+
+	_, err := queries.InsertIntoBatches(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
