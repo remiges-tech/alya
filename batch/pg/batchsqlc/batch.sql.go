@@ -68,6 +68,7 @@ FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1
 LIMIT $2
+FOR UPDATE
 `
 
 type FetchBlockOfRowsParams struct {

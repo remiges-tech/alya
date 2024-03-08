@@ -17,6 +17,8 @@ import (
 	"github.com/remiges-tech/alya/wscutils"
 )
 
+const ALYA_BATCHCHUNK_NROWS = 10
+
 // Assuming global variables are defined elsewhere
 // make all the maps sync maps to make them thread safe
 var (
@@ -105,7 +107,7 @@ func JobManager(db *batchsqlc.Queries) {
 		// Fetch a block of rows from the database
 		blockOfRows, err := db.FetchBlockOfRows(context.Background(), batchsqlc.FetchBlockOfRowsParams{
 			Status: batchsqlc.StatusEnumQueued,
-			Limit:  10, //ALYA_BATCHCHUNK_NROWS
+			Limit:  ALYA_BATCHCHUNK_NROWS,
 		})
 		if err != nil {
 			log.Println("Error fetching block of rows:", err)

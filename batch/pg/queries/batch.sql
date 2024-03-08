@@ -38,7 +38,8 @@ SELECT batches.app, batches.op, batches.context, batchrows.batch, batchrows.rowi
 FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1
-LIMIT $2;
+LIMIT $2
+FOR UPDATE;
 
 
 -- name: UpdateBatchRowsStatus :exec
