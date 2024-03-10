@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
@@ -95,8 +96,7 @@ func getOrCreateInitBlock(app string) (InitBlock, error) {
 	return initBlock, nil
 }
 
-// JobManager is responsible for pulling queued jobs, processing them, and updating records accordingly
-func JobManager(db *batchsqlc.Queries) {
+func JobManager(pool *pgxpool.Pool) {
 	for {
 		// print all maps
 		log.Printf("initblocks: %v", initblocks)
@@ -104,11 +104,43 @@ func JobManager(db *batchsqlc.Queries) {
 		log.Printf("slowqueryprocessorfuncs: %v", slowqueryprocessorfuncs)
 		log.Printf("batchprocessorfuncs: %v", batchprocessorfuncs)
 
+		ctx := context.Background()
+
 		// Fetch a block of rows from the database
-		blockOfRows, err := db.FetchBlockOfRows(context.Background(), batchsqlc.FetchBlockOfRowsParams{
-			Status: batchsqlc.StatusEnumQueued,
-			Limit:  ALYA_BATCHCHUNK_NROWS,
-		})
+		blockOfRows, err := func() ([]batchsqlc.FetchBlockOfRowsRow, error) {
+			// Start a transaction
+			tx, err := pool.Begin(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("error starting transaction: %v", err)
+			}
+			defer tx.Rollback(ctx)
+
+			// Create a new Queries instance using the transaction
+			q := batchsqlc.New(tx)
+
+			// Fetch a block of rows from the database
+			blockOfRows, err := q.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
+				Status: batchsqlc.StatusEnumQueued,
+				Limit:  ALYA_BATCHCHUNK_NROWS,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("error fetching block of rows: %v", err)
+			}
+
+			// If no rows are found, rollback the transaction and return
+			if len(blockOfRows) == 0 {
+				return nil, nil
+			}
+
+			// Commit the transaction
+			err = tx.Commit(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("error committing transaction: %v", err)
+			}
+
+			return blockOfRows, nil
+		}()
+
 		if err != nil {
 			log.Println("Error fetching block of rows:", err)
 			time.Sleep(getRandomSleepDuration())
@@ -124,13 +156,13 @@ func JobManager(db *batchsqlc.Queries) {
 
 		// Process each row in the block
 		for _, row := range blockOfRows {
-			if err := processRow(db, row); err != nil {
+			if err := processRow(pool, row); err != nil {
 				log.Println("Error processing row:", err)
 			}
 		}
 
 		// Check for completed batches and summarize them
-		if err := summarizeCompletedBatches(db); err != nil {
+		if err := summarizeCompletedBatches(pool); err != nil {
 			log.Println("Error summarizing completed batches:", err)
 		}
 
@@ -182,7 +214,11 @@ func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
 	return blockOfRows, nil
 }
 
-func processRow(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) error {
+func processRow(pool *pgxpool.Pool, row batchsqlc.FetchBlockOfRowsRow) error {
+
+	// Create a new Queries instance using the pool
+	q := batchsqlc.New(pool)
+
 	// Get or create the initblock for the app
 	initBlock, err := getOrCreateInitBlock(string(row.App))
 	if err != nil {
@@ -192,12 +228,12 @@ func processRow(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) error 
 
 	// Process the row based on its type (slow query or batch job)
 	if row.Line == 0 {
-		if err := processSlowQuery(db, row, initBlock); err != nil {
+		if err := processSlowQuery(q, row, initBlock); err != nil {
 			log.Printf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 			return err
 		}
 	} else {
-		if err := processBatchJob(db, row, initBlock); err != nil {
+		if err := processBatchJob(q, row, initBlock); err != nil {
 			log.Printf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 			return err
 		}
@@ -206,28 +242,47 @@ func processRow(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) error 
 	return nil
 }
 
-func summarizeCompletedBatches(db *batchsqlc.Queries) error {
+func summarizeCompletedBatches(pool *pgxpool.Pool) error {
 	// Retrieve completed batches
-	completedBatches, err := getCompletedBatches(db)
+	completedBatches, err := getCompletedBatches(pool)
 	if err != nil {
 		return err
 	}
 
 	// Summarize each completed batch
 	for _, batch := range completedBatches {
-		if err := summarizeBatch(db, batch); err != nil {
+		ctx := context.Background()
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			log.Println("Error starting transaction:", err)
+			continue
+		}
+		defer tx.Rollback(ctx)
+
+		// Create a new Queries instance using the transaction
+		q := batchsqlc.New(tx)
+
+		if err := summarizeBatch(q, batch); err != nil {
 			log.Println("Error summarizing batch:", batch, err)
+			tx.Rollback(ctx)
+			continue
+		}
+
+		// Commit the transaction
+		err = tx.Commit(ctx)
+		if err != nil {
+			log.Println("Error committing transaction:", err)
 		}
 	}
 
 	return nil
 }
 
-func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
+func summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) error {
 	ctx := context.Background()
 
 	// Fetch the batch record
-	batch, err := db.GetBatchByID(ctx, batchID)
+	batch, err := q.GetBatchByID(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get batch by ID: %v", err)
 	}
@@ -238,7 +293,7 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	}
 
 	// Fetch pending batchrows records for the batch with status "queued" or "inprog"
-	pendingRows, err := db.GetPendingBatchRows(ctx, batchID)
+	pendingRows, err := q.GetPendingBatchRows(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get pending batch rows: %v", err)
 	}
@@ -249,7 +304,7 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	}
 
 	// Fetch all batchrows records for the batch, sorted by "line"
-	batchRows, err := db.GetBatchRowsByBatchIDSorted(ctx, batchID)
+	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get batch rows sorted: %v", err)
 	}
@@ -315,7 +370,7 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 		status = batchsqlc.StatusEnumFailed
 	}
 
-	err = db.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
+	err = q.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
 		ID:          batchID,
 		Status:      status,
 		Doneat:      pgtype.Timestamp{Time: time.Now()},
@@ -502,22 +557,19 @@ func encodeJSONMap(m map[string]string) []byte {
 	return jsonData
 }
 
-func getCompletedBatches(db *batchsqlc.Queries) ([]uuid.UUID, error) {
+func getCompletedBatches(pool *pgxpool.Pool) ([]uuid.UUID, error) {
 	ctx := context.Background()
 
+	// Create a new Queries instance using the pool
+	q := batchsqlc.New(pool)
+
 	// Retrieve batches with status "success", "failed", or "aborted"
-	batches, err := db.GetCompletedBatches(ctx)
+	batches, err := q.GetCompletedBatches(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Extract the batch IDs from the retrieved batches
-	var completedBatches []uuid.UUID
-	for _, batch := range batches {
-		completedBatches = append(completedBatches, batch)
-	}
-
-	return completedBatches, nil
+	return batches, nil
 }
 
 func getHostname() string {

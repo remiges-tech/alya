@@ -146,7 +146,7 @@ func main() {
 	fmt.Println("Slow query submitted. Request ID:", reqID)
 
 	// Start the JobManager in a separate goroutine
-	go batch.JobManager(queries)
+	go batch.JobManager(pool)
 
 	// Poll for the slow query result
 	for {
