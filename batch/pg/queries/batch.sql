@@ -72,3 +72,10 @@ ORDER BY line;
 UPDATE batches
 SET status = $2, doneat = $3, outputfiles = $4, nsuccess = $5, nfailed = $6, naborted = $7
 WHERE id = $1;
+
+-- name: UpdateBatchCounters :exec
+UPDATE batches
+SET nsuccess = COALESCE(nsuccess, 0) + $2,
+    nfailed = COALESCE(nfailed, 0) + $3,
+    naborted = COALESCE(naborted, 0) + $4
+WHERE id = $1;

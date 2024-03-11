@@ -321,6 +321,31 @@ func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesPa
 	return id, err
 }
 
+const updateBatchCounters = `-- name: UpdateBatchCounters :exec
+UPDATE batches
+SET nsuccess = COALESCE(nsuccess, 0) + $2,
+    nfailed = COALESCE(nfailed, 0) + $3,
+    naborted = COALESCE(naborted, 0) + $4
+WHERE id = $1
+`
+
+type UpdateBatchCountersParams struct {
+	ID       uuid.UUID   `json:"id"`
+	Nsuccess pgtype.Int4 `json:"nsuccess"`
+	Nfailed  pgtype.Int4 `json:"nfailed"`
+	Naborted pgtype.Int4 `json:"naborted"`
+}
+
+func (q *Queries) UpdateBatchCounters(ctx context.Context, arg UpdateBatchCountersParams) error {
+	_, err := q.db.Exec(ctx, updateBatchCounters,
+		arg.ID,
+		arg.Nsuccess,
+		arg.Nfailed,
+		arg.Naborted,
+	)
+	return err
+}
+
 const updateBatchOutputFiles = `-- name: UpdateBatchOutputFiles :exec
 UPDATE batches
 SET outputfiles = $2

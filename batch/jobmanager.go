@@ -98,49 +98,16 @@ func getOrCreateInitBlock(app string) (InitBlock, error) {
 
 func JobManager(pool *pgxpool.Pool) {
 	for {
-		// print all maps
-		log.Printf("initblocks: %v", initblocks)
-		log.Printf("initfuncs: %v", initfuncs)
-		log.Printf("slowqueryprocessorfuncs: %v", slowqueryprocessorfuncs)
-		log.Printf("batchprocessorfuncs: %v", batchprocessorfuncs)
-
 		ctx := context.Background()
 
+		// Create a new Queries instance using the pool
+		queries := batchsqlc.New(pool)
+
 		// Fetch a block of rows from the database
-		blockOfRows, err := func() ([]batchsqlc.FetchBlockOfRowsRow, error) {
-			// Start a transaction
-			tx, err := pool.Begin(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("error starting transaction: %v", err)
-			}
-			defer tx.Rollback(ctx)
-
-			// Create a new Queries instance using the transaction
-			q := batchsqlc.New(tx)
-
-			// Fetch a block of rows from the database
-			blockOfRows, err := q.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
-				Status: batchsqlc.StatusEnumQueued,
-				Limit:  ALYA_BATCHCHUNK_NROWS,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("error fetching block of rows: %v", err)
-			}
-
-			// If no rows are found, rollback the transaction and return
-			if len(blockOfRows) == 0 {
-				return nil, nil
-			}
-
-			// Commit the transaction
-			err = tx.Commit(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("error committing transaction: %v", err)
-			}
-
-			return blockOfRows, nil
-		}()
-
+		blockOfRows, err := queries.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
+			Status: batchsqlc.StatusEnumQueued,
+			Limit:  ALYA_BATCHCHUNK_NROWS,
+		})
 		if err != nil {
 			log.Println("Error fetching block of rows:", err)
 			time.Sleep(getRandomSleepDuration())
@@ -154,30 +121,62 @@ func JobManager(pool *pgxpool.Pool) {
 			continue
 		}
 
-		// Filter out batches that represent slow queries
-		var batchList []uuid.UUID
+		var blockNsuccess, blockNfailed, blockNaborted int64
+		batchSet := make(map[uuid.UUID]bool)
+
 		// Process each row in the block
 		for _, row := range blockOfRows {
-			if err := processRow(pool, row); err != nil {
+			status, err := processRow(queries, row)
+			if err != nil {
 				log.Println("Error processing row:", err)
+				continue
 			}
+
+			switch status {
+			case batchsqlc.StatusEnumSuccess:
+				blockNsuccess++
+			case batchsqlc.StatusEnumFailed:
+				blockNfailed++
+			case batchsqlc.StatusEnumAborted:
+				blockNaborted++
+			}
+
 			if row.Line != 0 {
 				// Add the batch ID to the batchList if it's not a slow query
-				batchList = append(batchList, row.Batch)
+				batchSet[row.Batch] = true
+
+			}
+		}
+
+		// Update the counters in the batches table after processing the block
+		for batchID := range batchSet {
+			err := updateBatchCounters(queries, batchID, blockNsuccess, blockNfailed, blockNaborted)
+			if err != nil {
+				log.Println("Error updating batch counters:", err)
 			}
 		}
 
 		// Check for completed batches and summarize them
-		if err := summarizeCompletedBatches(pool, batchList); err != nil {
+		if err := summarizeCompletedBatches(queries, batchSet); err != nil {
 			log.Println("Error summarizing completed batches:", err)
 		}
 
 		// Close and clean up initblocks
 		closeInitBlocks()
-
-		// sleep for constant number of seconds
-		time.Sleep(10 * time.Second) // 10 is ALYA_JOBMANAGER_SLEEP
 	}
+}
+
+func updateBatchCounters(db *batchsqlc.Queries, batchID uuid.UUID, nsuccess, nfailed, naborted int64) error {
+	ctx := context.Background()
+
+	err := db.UpdateBatchCounters(ctx, batchsqlc.UpdateBatchCountersParams{
+		ID:       batchID,
+		Nsuccess: pgtype.Int4{Int32: int32(nsuccess), Valid: true},
+		Nfailed:  pgtype.Int4{Int32: int32(nfailed), Valid: true},
+		Naborted: pgtype.Int4{Int32: int32(naborted), Valid: true},
+	})
+
+	return err
 }
 
 func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
@@ -220,57 +219,27 @@ func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
 	return blockOfRows, nil
 }
 
-func processRow(pool *pgxpool.Pool, row batchsqlc.FetchBlockOfRowsRow) error {
-
-	// Create a new Queries instance using the pool
-	q := batchsqlc.New(pool)
-
+func processRow(q *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	// Get or create the initblock for the app
 	initBlock, err := getOrCreateInitBlock(string(row.App))
 	if err != nil {
 		log.Printf("error getting or creating initblock for app %s: %v", string(row.App), err)
-		return err
+		return batchsqlc.StatusEnumFailed, err
 	}
 
 	// Process the row based on its type (slow query or batch job)
 	if row.Line == 0 {
-		if err := processSlowQuery(q, row, initBlock); err != nil {
-			log.Printf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
-			return err
-		}
+		return processSlowQuery(q, row, initBlock)
 	} else {
-		if err := processBatchJob(q, row, initBlock); err != nil {
-			log.Printf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
-			return err
-		}
+		return processBatchJob(q, row, initBlock)
 	}
-
-	return nil
 }
 
-func summarizeCompletedBatches(pool *pgxpool.Pool, batchList []uuid.UUID) error {
-	for _, batchID := range batchList {
-		ctx := context.Background()
-		tx, err := pool.Begin(ctx)
-		if err != nil {
-			log.Println("Error starting transaction:", err)
-			continue
-		}
-		defer tx.Rollback(ctx)
-
-		// Create a new Queries instance using the transaction
-		q := batchsqlc.New(tx)
-
+func summarizeCompletedBatches(q *batchsqlc.Queries, batchSet map[uuid.UUID]bool) error {
+	for batchID := range batchSet {
 		if err := summarizeBatch(q, batchID); err != nil {
 			log.Println("Error summarizing batch:", batchID, err)
-			tx.Rollback(ctx)
 			continue
-		}
-
-		// Commit the transaction
-		err = tx.Commit(ctx)
-		if err != nil {
-			log.Println("Error committing transaction:", err)
 		}
 	}
 
@@ -418,48 +387,47 @@ func fetchJobs(tx *sql.Tx) []BatchJob_t {
 	return []BatchJob_t{}
 }
 
-func processSlowQuery(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) error {
+func processSlowQuery(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) (batchsqlc.StatusEnum, error) {
 	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
 	// Retrieve the SlowQueryProcessor for the app and op
 	processor, exists := slowqueryprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
-		return fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
 	}
 
 	// Process the slow query using the registered processor
 	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, JSONstr(string(row.Context)), JSONstr(string(row.Input)))
-	log.Printf("status: %v", status)
 	if err != nil {
-		return fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
 	// Update the corresponding batchrows and batches records with the results
 	if err := updateSlowQueryResult(db, row, status, result, messages, outputFiles); err != nil {
-		return fmt.Errorf("error updating slow query result for app %s and op %s: %v", row.App, row.Op, err)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating slow query result for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
-	return nil
+	return status, nil
 }
 
-func processBatchJob(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) error {
+func processBatchJob(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) (batchsqlc.StatusEnum, error) {
 	// Retrieve the BatchProcessor for the app and op
 	processor, exists := batchprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
-		return fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
 	}
 
 	// Process the batch job using the registered processor
 	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, JSONstr(string(row.Context)), int(row.Line), JSONstr(string(row.Input)))
 	if err != nil {
-		return fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
 	// Update the corresponding batchrows record with the results
 	if err := updateBatchJobResult(db, row, status, result, messages, blobRows); err != nil {
-		return fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
-	return nil
+	return status, nil
 }
 
 func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
