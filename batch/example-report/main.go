@@ -99,18 +99,6 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context b
 	return batchsqlc.StatusEnumSuccess, batch.JSONstr(res), nil, nil, nil
 }
 
-type SlowReportProcessor struct {
-	SolrClient MockSolrClient
-}
-
-func (p *SlowReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context batch.JSONstr, input batch.JSONstr) (status batchsqlc.StatusEnum, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
-	// Simulate a long-running process
-	time.Sleep(10 * time.Second)
-
-	// Return success status
-	return batchsqlc.StatusEnumSuccess, batch.JSONstr(`{"message": "Slow report processed successfully"}`), nil, nil, nil
-}
-
 func main() {
 	pool := getDb()
 
@@ -140,7 +128,7 @@ func main() {
 
 	bi := BroadsideInitializer{}
 
-	// Register the initializer for your application
+	// Register the initializer for the application
 	err = batch.RegisterInitializer("broadside", &bi)
 	if err != nil {
 		// Handle the error

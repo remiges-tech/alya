@@ -98,7 +98,7 @@ func main() {
 
 	bi := BroadsideInitializer{}
 
-	// Register the initializer for your application
+	// Register the initializer for the application
 	err = batch.RegisterInitializer("broadside", &bi)
 	if err != nil {
 		// Handle the error

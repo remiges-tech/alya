@@ -15,7 +15,8 @@ WHERE id = $1;
 -- name: FetchBatchRowsData :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
-WHERE batch = $1;
+WHERE batch = $1
+FOR UPDATE SKIP LOCKED;
 
 -- name: UpdateBatchRowsSlowQuery :exec
 UPDATE batchrows
@@ -39,7 +40,7 @@ FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1
 LIMIT $2
-FOR UPDATE;
+FOR UPDATE SKIP LOCKED;
 
 
 -- name: UpdateBatchRowsStatus :exec
@@ -50,23 +51,27 @@ WHERE rowid = ANY($2::int[]);
 -- name: GetCompletedBatches :many
 SELECT id
 FROM batches
-WHERE status IN ('success', 'failed', 'aborted');
+WHERE status IN ('success', 'failed', 'aborted')
+FOR UPDATE;
 
 -- name: GetBatchByID :one
 SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted
 FROM batches
-WHERE id = $1;
+WHERE id = $1 
+FOR UPDATE;
 
 -- name: GetPendingBatchRows :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
-WHERE batch = $1 AND status IN ('queued', 'inprog');
+WHERE batch = $1 AND status IN ('queued', 'inprog')
+FOR UPDATE; 
 
 -- name: GetBatchRowsByBatchIDSorted :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
 WHERE batch = $1
-ORDER BY line;
+ORDER BY line
+FOR UPDATE;
 
 -- name: UpdateBatchSummary :exec
 UPDATE batches

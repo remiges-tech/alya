@@ -16,6 +16,7 @@ const fetchBatchRowsData = `-- name: FetchBatchRowsData :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
 WHERE batch = $1
+FOR UPDATE SKIP LOCKED
 `
 
 type FetchBatchRowsDataRow struct {
@@ -68,7 +69,7 @@ FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1
 LIMIT $2
-FOR UPDATE
+FOR UPDATE SKIP LOCKED
 `
 
 type FetchBlockOfRowsParams struct {
@@ -117,7 +118,8 @@ func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsPara
 const getBatchByID = `-- name: GetBatchByID :one
 SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted
 FROM batches
-WHERE id = $1
+WHERE id = $1 
+FOR UPDATE
 `
 
 func (q *Queries) GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error) {
@@ -145,6 +147,7 @@ SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneb
 FROM batchrows
 WHERE batch = $1
 ORDER BY line
+FOR UPDATE
 `
 
 type GetBatchRowsByBatchIDSortedRow struct {
@@ -208,6 +211,7 @@ const getCompletedBatches = `-- name: GetCompletedBatches :many
 SELECT id
 FROM batches
 WHERE status IN ('success', 'failed', 'aborted')
+FOR UPDATE
 `
 
 func (q *Queries) GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error) {
@@ -234,6 +238,7 @@ const getPendingBatchRows = `-- name: GetPendingBatchRows :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
 WHERE batch = $1 AND status IN ('queued', 'inprog')
+FOR UPDATE
 `
 
 type GetPendingBatchRowsRow struct {

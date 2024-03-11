@@ -101,11 +101,19 @@ func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 	for {
 		ctx := context.Background()
 
-		// Create a new Queries instance using the pool
-		queries := batchsqlc.New(pool)
+		// Begin a transaction
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			log.Println("Error starting transaction:", err)
+			time.Sleep(getRandomSleepDuration())
+			continue
+		}
+
+		// Create a new Queries instance using the transaction
+		txQueries := batchsqlc.New(tx)
 
 		// Fetch a block of rows from the database
-		blockOfRows, err := queries.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
+		blockOfRows, err := txQueries.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
 			Status: batchsqlc.StatusEnumQueued,
 			Limit:  ALYA_BATCHCHUNK_NROWS,
 		})
@@ -118,6 +126,7 @@ func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 		// If no rows are found, sleep and continue
 		if len(blockOfRows) == 0 {
 			log.Println("No rows found, sleeping...")
+			tx.Rollback(ctx)
 			time.Sleep(getRandomSleepDuration())
 			continue
 		}
@@ -127,7 +136,7 @@ func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 
 		// Process each row in the block
 		for _, row := range blockOfRows {
-			status, err := processRow(queries, row)
+			status, err := processRow(txQueries, row)
 			if err != nil {
 				log.Println("Error processing row:", err)
 				continue
@@ -151,16 +160,22 @@ func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 
 		// Update the counters in the batches table after processing the block
 		for batchID := range batchSet {
-			err := updateBatchCounters(queries, batchID, blockNsuccess, blockNfailed, blockNaborted)
+			fmt.Printf("before updatebatchcounters batchid: %v \n", batchID.String())
+			fmt.Printf("before updatebatchcounters blockNsuccess: %v \n", blockNsuccess)
+			fmt.Printf("before updatebatchcounters blockNfailed: %v \n", blockNfailed)
+			fmt.Printf("before updatebatchcounters blockNaborted: %v \n", blockNaborted)
+			err := updateBatchCounters(txQueries, batchID, blockNsuccess, blockNfailed, blockNaborted)
 			if err != nil {
 				log.Println("Error updating batch counters:", err)
 			}
 		}
 
 		// Check for completed batches and summarize them
-		if err := summarizeCompletedBatches(queries, redisClient, batchSet); err != nil {
+		if err := summarizeCompletedBatches(txQueries, redisClient, batchSet); err != nil {
 			log.Println("Error summarizing completed batches:", err)
 		}
+
+		tx.Commit(ctx)
 
 		// Close and clean up initblocks
 		closeInitBlocks()
@@ -168,6 +183,7 @@ func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 }
 
 func updateBatchCounters(db *batchsqlc.Queries, batchID uuid.UUID, nsuccess, nfailed, naborted int64) error {
+	fmt.Printf("jobmanager inside updatebatchcounters batchid: %v \n", batchID.String())
 	ctx := context.Background()
 
 	err := db.UpdateBatchCounters(ctx, batchsqlc.UpdateBatchCountersParams{
@@ -180,47 +196,8 @@ func updateBatchCounters(db *batchsqlc.Queries, batchID uuid.UUID, nsuccess, nfa
 	return err
 }
 
-func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
-	ctx := context.Background()
-
-	// Fetch a block of rows with status "queued"
-	rows, err := db.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
-		Status: batchsqlc.StatusEnumQueued,
-		Limit:  100,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var blockOfRows []BatchJob_t
-	var rowIDs []int32
-
-	for _, row := range rows {
-		job := BatchJob_t{
-			App:   string(row.App),
-			Op:    row.Op,
-			Batch: row.Batch,
-			RowID: int(row.Rowid),
-			Line:  int(row.Line),
-			Input: JSONstr(string(row.Input)),
-		}
-		blockOfRows = append(blockOfRows, job)
-		rowIDs = append(rowIDs, int32(job.RowID))
-	}
-
-	// Update the fetched rows' status to "inprog"
-	err = db.UpdateBatchRowsStatus(ctx, batchsqlc.UpdateBatchRowsStatusParams{
-		Status:  batchsqlc.StatusEnumInprog,
-		Column2: rowIDs,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return blockOfRows, nil
-}
-
 func processRow(q *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+	fmt.Printf("jobmanager inside processrow\n")
 	// Get or create the initblock for the app
 	initBlock, err := getOrCreateInitBlock(string(row.App))
 	if err != nil {
@@ -237,6 +214,7 @@ func processRow(q *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchs
 }
 
 func summarizeCompletedBatches(q *batchsqlc.Queries, r *redis.Client, batchSet map[uuid.UUID]bool) error {
+	fmt.Printf("jobmanager inside summarizecompletedbatches\n")
 	for batchID := range batchSet {
 		if err := summarizeBatch(q, r, batchID); err != nil {
 			log.Println("Error summarizing batch:", batchID, err)
@@ -248,6 +226,7 @@ func summarizeCompletedBatches(q *batchsqlc.Queries, r *redis.Client, batchSet m
 }
 
 func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) error {
+	fmt.Printf("jobmanager inside summarizebatch\n")
 	ctx := context.Background()
 
 	// Fetch the batch record
@@ -262,10 +241,12 @@ func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) er
 	}
 
 	// Fetch pending batchrows records for the batch with status "queued" or "inprog"
+	fmt.Printf("jobmanager summarizebatch getpendingbatchrows %v \n", batchID.String())
 	pendingRows, err := q.GetPendingBatchRows(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get pending batch rows: %v", err)
 	}
+	fmt.Printf("jobmanager after getpendingbatchrows pendingrows %v \n", pendingRows)
 
 	// If there are pending rows, the batch is not yet complete
 	if len(pendingRows) > 0 {
@@ -274,6 +255,8 @@ func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) er
 
 	// Fetch all batchrows records for the batch, sorted by "line"
 	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
+	fmt.Printf("jobmanager summarizebatch getbatchrowsbybatchidsorted %v \n", batchID.String())
+	fmt.Printf("jobmanager summarizebatch getbatchrowsbybatchidsorted batchrows %v \n", batchRows)
 	if err != nil {
 		return fmt.Errorf("failed to get batch rows sorted: %v", err)
 	}
@@ -339,6 +322,7 @@ func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) er
 		status = batchsqlc.StatusEnumFailed
 	}
 
+	fmt.Printf("jobmanager summarizebatch updatebatchsummary batch: %v \n", batch)
 	err = q.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
 		ID:          batchID,
 		Status:      status,

@@ -2,6 +2,7 @@ package batch
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 )
@@ -110,4 +112,96 @@ func (b Batch) Done(batchID string) (status batchsqlc.StatusEnum, batchOutput []
 	}
 
 	return status, batchOutput, outputFiles, nsuccess, nfailed, naborted, nil
+}
+
+func (b Batch) Abort(batchID string) (status batchsqlc.StatusEnum, nsuccess, nfailed, naborted int, err error) {
+	fmt.Printf("batch.abort inside abort\n")
+	// Parse the batch ID as a UUID
+	batchUUID, err := uuid.Parse(batchID)
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("invalid batch ID: %v", err)
+	}
+
+	// Start a transaction
+	tx, err := b.Db.Begin(context.Background())
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("failed to start transaction: %v", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	// Perform SELECT FOR UPDATE on batches and batchrows for the given batch ID
+	fmt.Printf("batch.abort before getbatchbyid\n")
+	batch, err := b.Queries.GetBatchByID(context.Background(), batchUUID)
+	if err == sql.ErrNoRows {
+		return "", 0, 0, 0, fmt.Errorf("batch not found: %v", err)
+	}
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("failed to get batch by ID: %v", err)
+	}
+	fmt.Printf("batch.abort after getbatchbyid\n")
+
+	// Check if the batch status is already aborted, success, or failed
+	if batch.Status == batchsqlc.StatusEnumAborted ||
+		batch.Status == batchsqlc.StatusEnumSuccess ||
+		batch.Status == batchsqlc.StatusEnumFailed {
+		return batch.Status, int(batch.Nsuccess.Int32), int(batch.Nfailed.Int32), int(batch.Naborted.Int32), nil
+	}
+
+	// Fetch the pending batchrows records associated with the batch ID
+	fmt.Printf("batch.abort before getpendingbatchrows batchuuid: %v \n", batchUUID.String())
+	pendingRows, err := b.Queries.GetPendingBatchRows(context.Background(), batchUUID)
+	if len(pendingRows) == 0 {
+		return "", 0, 0, 0, fmt.Errorf("no pending rows found for batch %s", batchID)
+	}
+	if err == sql.ErrNoRows {
+		return "", 0, 0, 0, fmt.Errorf("batch not found: %v", err)
+	}
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("failed to get pending batchrows: %v", err)
+	}
+
+	// Extract the rowids from the batchRows
+	rowids := make([]int32, len(pendingRows))
+	for i, row := range pendingRows {
+		rowids[i] = row.Rowid
+	}
+
+	// Update the batchrows status to aborted for rows with status queued or inprog
+	fmt.Printf("batch.abort before updatebatchrowsstatus rowids %v:  \n", rowids)
+	err = b.Queries.UpdateBatchRowsStatus(context.Background(), batchsqlc.UpdateBatchRowsStatusParams{
+		Status:  batchsqlc.StatusEnumAborted,
+		Column2: rowids,
+	})
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("failed to update batchrows status: %v", err)
+	}
+
+	// Update the batch status to aborted and set doneat timestamp
+	fmt.Printf("batch.abort before updatebatchsummary\n")
+	err = b.Queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+		ID:       batchUUID,
+		Status:   batchsqlc.StatusEnumAborted,
+		Doneat:   pgtype.Timestamp{Time: time.Now()},
+		Naborted: pgtype.Int4{Int32: int32(len(pendingRows)), Valid: true},
+	})
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("failed to update batch summary: %v", err)
+	}
+
+	// Commit the transaction
+	fmt.Printf("batch.abort before tx.commit")
+	err = tx.Commit(context.Background())
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	// Set the Redis batch status record to aborted with an expiry time
+	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
+	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
+	err = b.RedisClient.Set(redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
+	if err != nil {
+		log.Printf("failed to set Redis batch status: %v", err)
+	}
+
+	return batchsqlc.StatusEnumAborted, int(batch.Nsuccess.Int32), int(batch.Nfailed.Int32), len(pendingRows), nil
 }
