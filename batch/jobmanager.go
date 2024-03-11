@@ -341,7 +341,7 @@ func summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) error {
 	err = q.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
 		ID:          batchID,
 		Status:      status,
-		Doneat:      pgtype.Timestamp{Time: time.Now()},
+		Doneat:      pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Outputfiles: outputFilesJSON,
 		Nsuccess:    batch.Nsuccess,
 		Nfailed:     batch.Nfailed,
