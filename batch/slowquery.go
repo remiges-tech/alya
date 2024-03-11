@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
@@ -144,4 +145,79 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 
 	// Format the response based on the status
 	return status, result, messages, nil
+}
+
+func (s SlowQuery) Abort(reqID string) (err error) {
+	// Parse the request ID as a UUID
+	reqIDUUID, err := uuid.Parse(reqID)
+	if err != nil {
+		return fmt.Errorf("invalid request ID: %v", err)
+	}
+
+	// Start a transaction
+	tx, err := s.Db.Begin(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %v", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	// Perform SELECT FOR UPDATE on batches and batchrows for the given request ID
+	batch, err := s.Queries.GetBatchByID(context.Background(), reqIDUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get batch by ID: %v", err)
+	}
+
+	// Check if the batch status is already aborted, success, or failed
+	if batch.Status == batchsqlc.StatusEnumAborted ||
+		batch.Status == batchsqlc.StatusEnumSuccess ||
+		batch.Status == batchsqlc.StatusEnumFailed {
+		return fmt.Errorf("cannot abort batch with status %s", batch.Status)
+	}
+
+	// Update the batch status to aborted and set doneat timestamp
+	err = s.Queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+		ID:     reqIDUUID,
+		Status: batchsqlc.StatusEnumAborted,
+		Doneat: pgtype.Timestamp{Time: time.Now()},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update batch summary: %v", err)
+	}
+
+	// Fetch the pending batchrows records associated with the batch ID
+	pendingRows, err := s.Queries.GetPendingBatchRows(context.Background(), reqIDUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get pending batchrows: %v", err)
+	}
+
+	// Extract the rowids from the batchRows
+	rowids := make([]int32, len(pendingRows))
+	for i, row := range pendingRows {
+		rowids[i] = row.Rowid
+	}
+
+	// Update the batchrows status to aborted for rows with status queued or inprog
+	err = s.Queries.UpdateBatchRowsStatus(context.Background(), batchsqlc.UpdateBatchRowsStatusParams{
+		Status:  batchsqlc.StatusEnumAborted,
+		Column2: rowids,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update batchrows status: %v", err)
+	}
+
+	// Commit the transaction
+	err = tx.Commit(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	// Set the Redis batch status record to aborted with an expiry time
+	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
+	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
+	err = s.RedisClient.Set(redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
+	if err != nil {
+		log.Printf("failed to set Redis batch status: %v", err)
+	}
+
+	return nil
 }
