@@ -154,13 +154,6 @@ func JobManager(pool *pgxpool.Pool) {
 			continue
 		}
 
-		// Process each row in the block
-		for _, row := range blockOfRows {
-			if err := processRow(pool, row); err != nil {
-				log.Println("Error processing row:", err)
-			}
-		}
-
 		// Filter out batches that represent slow queries
 		var batchList []uuid.UUID
 		// Process each row in the block
