@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-redis/redis"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -96,7 +97,7 @@ func getOrCreateInitBlock(app string) (InitBlock, error) {
 	return initBlock, nil
 }
 
-func JobManager(pool *pgxpool.Pool) {
+func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 	for {
 		ctx := context.Background()
 
@@ -157,7 +158,7 @@ func JobManager(pool *pgxpool.Pool) {
 		}
 
 		// Check for completed batches and summarize them
-		if err := summarizeCompletedBatches(queries, batchSet); err != nil {
+		if err := summarizeCompletedBatches(queries, redisClient, batchSet); err != nil {
 			log.Println("Error summarizing completed batches:", err)
 		}
 
@@ -235,9 +236,9 @@ func processRow(q *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchs
 	}
 }
 
-func summarizeCompletedBatches(q *batchsqlc.Queries, batchSet map[uuid.UUID]bool) error {
+func summarizeCompletedBatches(q *batchsqlc.Queries, r *redis.Client, batchSet map[uuid.UUID]bool) error {
 	for batchID := range batchSet {
-		if err := summarizeBatch(q, batchID); err != nil {
+		if err := summarizeBatch(q, r, batchID); err != nil {
 			log.Println("Error summarizing batch:", batchID, err)
 			continue
 		}
@@ -246,7 +247,7 @@ func summarizeCompletedBatches(q *batchsqlc.Queries, batchSet map[uuid.UUID]bool
 	return nil
 }
 
-func summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) error {
+func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) error {
 	ctx := context.Background()
 
 	// Fetch the batch record
@@ -349,6 +350,14 @@ func summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update batch summary: %v", err)
+	}
+
+	// update status in redis
+	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
+	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
+	_, err = r.Set(redisKey, string(status), expiry).Result()
+	if err != nil {
+		return fmt.Errorf("failed to update status in redis: %v", err)
 	}
 
 	return nil

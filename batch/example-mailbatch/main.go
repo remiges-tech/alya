@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/go-redis/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
@@ -61,6 +62,18 @@ func main() {
 	pool := getDb()
 	queries := batchsqlc.New(pool)
 
+	// Initialize Redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+
+	// Create a new Batch instance
+	batchClient := batch.Batch{
+		Db:          pool,
+		Queries:     queries,
+		RedisClient: redisClient,
+	}
+
 	// Register the batch processor and initializer
 	err := batch.RegisterProcessor("emailapp", "sendbulkemail", &EmailBatchProcessor{})
 	if err != nil {
@@ -70,12 +83,6 @@ func main() {
 	err = batch.RegisterInitializer("emailapp", &EmailInitializer{})
 	if err != nil {
 		log.Fatal("Failed to register initializer:", err)
-	}
-
-	// Create a new Batch instance
-	batchClient := batch.Batch{
-		Db:      pool,
-		Queries: queries,
 	}
 
 	// Prepare the batch input data
@@ -100,11 +107,13 @@ func main() {
 	fmt.Println("Batch submitted. Batch ID:", batchID)
 
 	// Start the JobManager in a separate goroutine
-	go batch.JobManager(pool)
+	go batch.JobManager(pool, redisClient)
 
 	// Poll for the batch completion status
 	for {
-		status, batchOutput, outputFiles, err := batchClient.Done(batchID)
+		status, batchOutput, outputFiles, nsuccess, nfailed, naborted, err := batchClient.Done(batchID)
+		fmt.Printf("batchid: %v\n", batchID)
+		fmt.Printf("status: %v\n", status)
 		if err != nil {
 			log.Fatal("Error while polling for batch status:", err)
 		}
@@ -118,6 +127,9 @@ func main() {
 		fmt.Println("Batch completed with status:", status)
 		fmt.Println("Batch output:", batchOutput)
 		fmt.Println("Output files:", outputFiles)
+		fmt.Println("Success count:", nsuccess)
+		fmt.Println("Failed count:", nfailed)
+		fmt.Println("Aborted count:", naborted)
 		break
 	}
 }
