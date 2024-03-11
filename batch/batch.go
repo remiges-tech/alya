@@ -16,7 +16,7 @@ type Batch struct {
 
 func (b Batch) Submit(app, op string, batchctx JSONstr, batchInput []batchsqlc.InsertIntoBatchRowsParams) (batchID string, err error) {
 	// Generate a unique batch ID
-	batchID = uuid.New().String()
+	batchUUID, err := uuid.NewUUID()
 
 	// Start a transaction
 	tx, err := b.Db.Begin(context.Background())
@@ -27,7 +27,7 @@ func (b Batch) Submit(app, op string, batchctx JSONstr, batchInput []batchsqlc.I
 
 	// Insert a record into the batches table
 	_, err = b.Queries.InsertIntoBatches(context.Background(), batchsqlc.InsertIntoBatchesParams{
-		ID:      uuid.MustParse(batchID),
+		ID:      batchUUID,
 		App:     app,
 		Op:      op,
 		Context: []byte(batchctx),
@@ -38,7 +38,7 @@ func (b Batch) Submit(app, op string, batchctx JSONstr, batchInput []batchsqlc.I
 
 	// Insert records into the batchrows table
 	for _, input := range batchInput {
-		input.Batch = uuid.MustParse(batchID)
+		input.Batch = batchUUID
 		err := b.Queries.InsertIntoBatchRows(context.Background(), input)
 		if err != nil {
 			return "", err
@@ -51,7 +51,7 @@ func (b Batch) Submit(app, op string, batchctx JSONstr, batchInput []batchsqlc.I
 		return "", err
 	}
 
-	return batchID, nil
+	return batchUUID.String(), nil
 }
 
 func (b Batch) Done(batchID string) (status batchsqlc.StatusEnum, batchOutput []batchsqlc.FetchBatchRowsDataRow, outputFiles map[string]string, err error) {
