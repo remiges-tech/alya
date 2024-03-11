@@ -161,8 +161,21 @@ func JobManager(pool *pgxpool.Pool) {
 			}
 		}
 
+		// Filter out batches that represent slow queries
+		var batchList []uuid.UUID
+		// Process each row in the block
+		for _, row := range blockOfRows {
+			if err := processRow(pool, row); err != nil {
+				log.Println("Error processing row:", err)
+			}
+			if row.Line != 0 {
+				// Add the batch ID to the batchList if it's not a slow query
+				batchList = append(batchList, row.Batch)
+			}
+		}
+
 		// Check for completed batches and summarize them
-		if err := summarizeCompletedBatches(pool); err != nil {
+		if err := summarizeCompletedBatches(pool, batchList); err != nil {
 			log.Println("Error summarizing completed batches:", err)
 		}
 
@@ -242,15 +255,8 @@ func processRow(pool *pgxpool.Pool, row batchsqlc.FetchBlockOfRowsRow) error {
 	return nil
 }
 
-func summarizeCompletedBatches(pool *pgxpool.Pool) error {
-	// Retrieve completed batches
-	completedBatches, err := getCompletedBatches(pool)
-	if err != nil {
-		return err
-	}
-
-	// Summarize each completed batch
-	for _, batch := range completedBatches {
+func summarizeCompletedBatches(pool *pgxpool.Pool, batchList []uuid.UUID) error {
+	for _, batchID := range batchList {
 		ctx := context.Background()
 		tx, err := pool.Begin(ctx)
 		if err != nil {
@@ -262,8 +268,8 @@ func summarizeCompletedBatches(pool *pgxpool.Pool) error {
 		// Create a new Queries instance using the transaction
 		q := batchsqlc.New(tx)
 
-		if err := summarizeBatch(q, batch); err != nil {
-			log.Println("Error summarizing batch:", batch, err)
+		if err := summarizeBatch(q, batchID); err != nil {
+			log.Println("Error summarizing batch:", batchID, err)
 			tx.Rollback(ctx)
 			continue
 		}
@@ -495,13 +501,33 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 		}
 	}
 
-	// Update the batches record with the output files
-	err = db.UpdateBatchOutputFiles(context.Background(), batchsqlc.UpdateBatchOutputFilesParams{
-		ID:          row.Batch,
-		Outputfiles: outputFilesJSON,
-	})
-	if err != nil {
-		return err
+	// Update the batches record based on the status of the slow query
+	if status == batchsqlc.StatusEnumSuccess {
+		err = db.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+			ID:          row.Batch,
+			Status:      batchsqlc.StatusEnumSuccess,
+			Doneat:      pgtype.Timestamp{Time: time.Now()},
+			Outputfiles: outputFilesJSON,
+			Nsuccess:    pgtype.Int4{Int32: 1, Valid: true},
+			Nfailed:     pgtype.Int4{Int32: 0, Valid: true},
+			Naborted:    pgtype.Int4{Int32: 0, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+	} else if status == batchsqlc.StatusEnumFailed {
+		err = db.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+			ID:          row.Batch,
+			Status:      batchsqlc.StatusEnumFailed,
+			Doneat:      pgtype.Timestamp{Time: time.Now()},
+			Outputfiles: outputFilesJSON,
+			Nsuccess:    pgtype.Int4{Int32: 0, Valid: true},
+			Nfailed:     pgtype.Int4{Int32: 1, Valid: true},
+			Naborted:    pgtype.Int4{Int32: 0, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
