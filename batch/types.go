@@ -32,7 +32,7 @@ type SlowQueryProcessor interface {
 }
 
 type BatchProcessor interface {
-	DoBatchJob(InitBlock InitBlock, context JSONstr, line int, input JSONstr) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error)
+	DoBatchJob(InitBlock InitBlock, context JSONstr, line int, input JSONstr) (status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error)
 }
 
 type SlowQuery struct {
