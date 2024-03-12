@@ -16,6 +16,7 @@ const fetchBatchRowsData = `-- name: FetchBatchRowsData :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
 WHERE batch = $1
+FOR UPDATE SKIP LOCKED
 `
 
 type FetchBatchRowsDataRow struct {
@@ -68,7 +69,7 @@ FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1
 LIMIT $2
-FOR UPDATE
+FOR UPDATE SKIP LOCKED
 `
 
 type FetchBlockOfRowsParams struct {
@@ -117,7 +118,8 @@ func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsPara
 const getBatchByID = `-- name: GetBatchByID :one
 SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted
 FROM batches
-WHERE id = $1
+WHERE id = $1 
+FOR UPDATE
 `
 
 func (q *Queries) GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error) {
@@ -145,6 +147,7 @@ SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneb
 FROM batchrows
 WHERE batch = $1
 ORDER BY line
+FOR UPDATE
 `
 
 type GetBatchRowsByBatchIDSortedRow struct {
@@ -208,6 +211,7 @@ const getCompletedBatches = `-- name: GetCompletedBatches :many
 SELECT id
 FROM batches
 WHERE status IN ('success', 'failed', 'aborted')
+FOR UPDATE
 `
 
 func (q *Queries) GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error) {
@@ -234,6 +238,7 @@ const getPendingBatchRows = `-- name: GetPendingBatchRows :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
 WHERE batch = $1 AND status IN ('queued', 'inprog')
+FOR UPDATE
 `
 
 type GetPendingBatchRowsRow struct {
@@ -319,6 +324,31 @@ func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesPa
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const updateBatchCounters = `-- name: UpdateBatchCounters :exec
+UPDATE batches
+SET nsuccess = COALESCE(nsuccess, 0) + $2,
+    nfailed = COALESCE(nfailed, 0) + $3,
+    naborted = COALESCE(naborted, 0) + $4
+WHERE id = $1
+`
+
+type UpdateBatchCountersParams struct {
+	ID       uuid.UUID   `json:"id"`
+	Nsuccess pgtype.Int4 `json:"nsuccess"`
+	Nfailed  pgtype.Int4 `json:"nfailed"`
+	Naborted pgtype.Int4 `json:"naborted"`
+}
+
+func (q *Queries) UpdateBatchCounters(ctx context.Context, arg UpdateBatchCountersParams) error {
+	_, err := q.db.Exec(ctx, updateBatchCounters,
+		arg.ID,
+		arg.Nsuccess,
+		arg.Nfailed,
+		arg.Naborted,
+	)
+	return err
 }
 
 const updateBatchOutputFiles = `-- name: UpdateBatchOutputFiles :exec

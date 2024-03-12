@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -60,51 +59,22 @@ func (ib *InitBlock) Close() error {
 	return nil
 }
 
-func (p *BounceReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context batch.JSONstr, input batch.JSONstr) (status batchsqlc.StatusEnum, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
-	// Parse the context and input JSON
-	var contextData struct {
-		UserID int `json:"userId"`
-	}
-	var inputData struct {
-		FromEmail string `json:"fromEmail"`
-	}
+type SlowReportProcessor struct {
+	SolrClient MockSolrClient
+}
 
-	err = json.Unmarshal([]byte(context), &contextData)
-	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
-	}
+func (p *SlowReportProcessor) DoSlowQuery(initBlock batch.InitBlock, context batch.JSONstr, input batch.JSONstr) (status batchsqlc.StatusEnum, result batch.JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error) {
+	// Simulate a long-running process
+	time.Sleep(10 * time.Second)
 
-	err = json.Unmarshal([]byte(input), &inputData)
-	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
-	}
-
-	// assert that initBlock is of type InitBlock
-	if _, ok := initBlock.(*InitBlock); !ok {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, fmt.Errorf("initBlock is not of type InitBlock")
-	}
-
-	ib := initBlock.(*InitBlock)
-	report, err := ib.SolrClient.Query("")
-	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
-	}
-	fmt.Printf("Report: %s", report)
-
-	// Example output
-	reportResult := fmt.Sprintf("Report generated for user %d, for from email %s",
-		contextData.UserID, inputData.FromEmail)
-	res := fmt.Sprintf(`{"report": "%s"}`, reportResult)
-
-	return batchsqlc.StatusEnumSuccess, batch.JSONstr(res), nil, nil, nil
+	// Return success status
+	return batchsqlc.StatusEnumSuccess, batch.JSONstr(`{"message": "Slow report processed successfully"}`), nil, nil, nil
 }
 
 func main() {
 	pool := getDb()
 
 	queries := batchsqlc.New(pool)
-
-	// insertSampleBatchRecord(queries)
 
 	// instantiate redis client
 	redisClient := redis.NewClient(&redis.Options{
@@ -117,10 +87,10 @@ func main() {
 		Queries:     queries,
 		RedisClient: redisClient,
 	}
-	fmt.Println(slowQuery.Queries) // just to make compiler happy while I'm developing slowquery module
+	fmt.Println(slowQuery.Queries)
 
 	// Register the SlowQueryProcessor for the long-running report
-	err := slowQuery.RegisterProcessor("broadside", "bouncerpt", &BounceReportProcessor{})
+	err := slowQuery.RegisterProcessor("broadside", "slowreport", &SlowReportProcessor{})
 	if err != nil {
 		fmt.Println("Failed to register SlowQueryProcessor:", err)
 		return
@@ -137,7 +107,7 @@ func main() {
 	// Submit a slow query request
 	context := batch.JSONstr(`{"userId": 123}`)
 	input := batch.JSONstr(`{"startDate": "2023-01-01", "endDate": "2023-12-31"}`)
-	reqID, err := slowQuery.Submit("broadside", "bouncerpt", context, input)
+	reqID, err := slowQuery.Submit("broadside", "slowreport", context, input)
 	if err != nil {
 		fmt.Println("Failed to submit slow query:", err)
 		return
@@ -147,6 +117,18 @@ func main() {
 
 	// Start the JobManager in a separate goroutine
 	go batch.JobManager(pool, redisClient)
+
+	// Wait for a short duration before aborting the slow query
+	time.Sleep(5 * time.Second)
+
+	// Abort the slow query
+	err = slowQuery.Abort(reqID)
+	if err != nil {
+		fmt.Println("Failed to abort slow query:", err)
+		return
+	}
+
+	fmt.Println("Slow query aborted.")
 
 	// Poll for the slow query result
 	for {
@@ -171,6 +153,11 @@ func main() {
 		if status == batch.BatchFailed {
 			fmt.Println("Report generation failed:")
 			fmt.Println("Error messages:", messages)
+			break
+		}
+
+		if status == batch.BatchAborted {
+			fmt.Println("Report generation aborted.")
 			break
 		}
 	}

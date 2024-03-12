@@ -11,8 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-redis/redis"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
@@ -95,17 +97,23 @@ func getOrCreateInitBlock(app string) (InitBlock, error) {
 	return initBlock, nil
 }
 
-// JobManager is responsible for pulling queued jobs, processing them, and updating records accordingly
-func JobManager(db *batchsqlc.Queries) {
+func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 	for {
-		// print all maps
-		log.Printf("initblocks: %v", initblocks)
-		log.Printf("initfuncs: %v", initfuncs)
-		log.Printf("slowqueryprocessorfuncs: %v", slowqueryprocessorfuncs)
-		log.Printf("batchprocessorfuncs: %v", batchprocessorfuncs)
+		ctx := context.Background()
+
+		// Begin a transaction
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			log.Println("Error starting transaction:", err)
+			time.Sleep(getRandomSleepDuration())
+			continue
+		}
+
+		// Create a new Queries instance using the transaction
+		txQueries := batchsqlc.New(tx)
 
 		// Fetch a block of rows from the database
-		blockOfRows, err := db.FetchBlockOfRows(context.Background(), batchsqlc.FetchBlockOfRowsParams{
+		blockOfRows, err := txQueries.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
 			Status: batchsqlc.StatusEnumQueued,
 			Limit:  ALYA_BATCHCHUNK_NROWS,
 		})
@@ -118,116 +126,111 @@ func JobManager(db *batchsqlc.Queries) {
 		// If no rows are found, sleep and continue
 		if len(blockOfRows) == 0 {
 			log.Println("No rows found, sleeping...")
+			tx.Rollback(ctx)
 			time.Sleep(getRandomSleepDuration())
 			continue
 		}
 
+		var blockNsuccess, blockNfailed, blockNaborted int64
+		batchSet := make(map[uuid.UUID]bool)
+
 		// Process each row in the block
 		for _, row := range blockOfRows {
-			if err := processRow(db, row); err != nil {
+			status, err := processRow(txQueries, row)
+			if err != nil {
 				log.Println("Error processing row:", err)
+				continue
+			}
+
+			switch status {
+			case batchsqlc.StatusEnumSuccess:
+				blockNsuccess++
+			case batchsqlc.StatusEnumFailed:
+				blockNfailed++
+			case batchsqlc.StatusEnumAborted:
+				blockNaborted++
+			}
+
+			if row.Line != 0 {
+				// Add the batch ID to the batchList if it's not a slow query
+				batchSet[row.Batch] = true
+
+			}
+		}
+
+		// Update the counters in the batches table after processing the block
+		for batchID := range batchSet {
+			fmt.Printf("before updatebatchcounters batchid: %v \n", batchID.String())
+			fmt.Printf("before updatebatchcounters blockNsuccess: %v \n", blockNsuccess)
+			fmt.Printf("before updatebatchcounters blockNfailed: %v \n", blockNfailed)
+			fmt.Printf("before updatebatchcounters blockNaborted: %v \n", blockNaborted)
+			err := updateBatchCounters(txQueries, batchID, blockNsuccess, blockNfailed, blockNaborted)
+			if err != nil {
+				log.Println("Error updating batch counters:", err)
 			}
 		}
 
 		// Check for completed batches and summarize them
-		if err := summarizeCompletedBatches(db); err != nil {
+		if err := summarizeCompletedBatches(txQueries, redisClient, batchSet); err != nil {
 			log.Println("Error summarizing completed batches:", err)
 		}
 
+		tx.Commit(ctx)
+
 		// Close and clean up initblocks
 		closeInitBlocks()
-
-		// sleep for constant number of seconds
-		time.Sleep(10 * time.Second) // 10 is ALYA_JOBMANAGER_SLEEP
 	}
 }
 
-func fetchBlockOfRows(db *batchsqlc.Queries) ([]BatchJob_t, error) {
+func updateBatchCounters(db *batchsqlc.Queries, batchID uuid.UUID, nsuccess, nfailed, naborted int64) error {
+	fmt.Printf("jobmanager inside updatebatchcounters batchid: %v \n", batchID.String())
 	ctx := context.Background()
 
-	// Fetch a block of rows with status "queued"
-	rows, err := db.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
-		Status: batchsqlc.StatusEnumQueued,
-		Limit:  100,
+	err := db.UpdateBatchCounters(ctx, batchsqlc.UpdateBatchCountersParams{
+		ID:       batchID,
+		Nsuccess: pgtype.Int4{Int32: int32(nsuccess), Valid: true},
+		Nfailed:  pgtype.Int4{Int32: int32(nfailed), Valid: true},
+		Naborted: pgtype.Int4{Int32: int32(naborted), Valid: true},
 	})
-	if err != nil {
-		return nil, err
-	}
 
-	var blockOfRows []BatchJob_t
-	var rowIDs []int32
-
-	for _, row := range rows {
-		job := BatchJob_t{
-			App:   string(row.App),
-			Op:    row.Op,
-			Batch: row.Batch,
-			RowID: int(row.Rowid),
-			Line:  int(row.Line),
-			Input: JSONstr(string(row.Input)),
-		}
-		blockOfRows = append(blockOfRows, job)
-		rowIDs = append(rowIDs, int32(job.RowID))
-	}
-
-	// Update the fetched rows' status to "inprog"
-	err = db.UpdateBatchRowsStatus(ctx, batchsqlc.UpdateBatchRowsStatusParams{
-		Status:  batchsqlc.StatusEnumInprog,
-		Column2: rowIDs,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return blockOfRows, nil
+	return err
 }
 
-func processRow(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) error {
+func processRow(q *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+	fmt.Printf("jobmanager inside processrow\n")
 	// Get or create the initblock for the app
 	initBlock, err := getOrCreateInitBlock(string(row.App))
 	if err != nil {
 		log.Printf("error getting or creating initblock for app %s: %v", string(row.App), err)
-		return err
+		return batchsqlc.StatusEnumFailed, err
 	}
 
 	// Process the row based on its type (slow query or batch job)
 	if row.Line == 0 {
-		if err := processSlowQuery(db, row, initBlock); err != nil {
-			log.Printf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
-			return err
-		}
+		return processSlowQuery(q, row, initBlock)
 	} else {
-		if err := processBatchJob(db, row, initBlock); err != nil {
-			log.Printf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
-			return err
+		return processBatchJob(q, row, initBlock)
+	}
+}
+
+func summarizeCompletedBatches(q *batchsqlc.Queries, r *redis.Client, batchSet map[uuid.UUID]bool) error {
+	fmt.Printf("jobmanager inside summarizecompletedbatches\n")
+	for batchID := range batchSet {
+		if err := summarizeBatch(q, r, batchID); err != nil {
+			log.Println("Error summarizing batch:", batchID, err)
+			continue
 		}
 	}
 
 	return nil
 }
 
-func summarizeCompletedBatches(db *batchsqlc.Queries) error {
-	// Retrieve completed batches
-	completedBatches, err := getCompletedBatches(db)
-	if err != nil {
-		return err
-	}
-
-	// Summarize each completed batch
-	for _, batch := range completedBatches {
-		if err := summarizeBatch(db, batch); err != nil {
-			log.Println("Error summarizing batch:", batch, err)
-		}
-	}
-
-	return nil
-}
-
-func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
+func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) error {
+	fmt.Printf("jobmanager inside summarizebatch\n")
 	ctx := context.Background()
 
 	// Fetch the batch record
-	batch, err := db.GetBatchByID(ctx, batchID)
+	batch, err := q.GetBatchByID(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get batch by ID: %v", err)
 	}
@@ -238,10 +241,12 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	}
 
 	// Fetch pending batchrows records for the batch with status "queued" or "inprog"
-	pendingRows, err := db.GetPendingBatchRows(ctx, batchID)
+	fmt.Printf("jobmanager summarizebatch getpendingbatchrows %v \n", batchID.String())
+	pendingRows, err := q.GetPendingBatchRows(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get pending batch rows: %v", err)
 	}
+	fmt.Printf("jobmanager after getpendingbatchrows pendingrows %v \n", pendingRows)
 
 	// If there are pending rows, the batch is not yet complete
 	if len(pendingRows) > 0 {
@@ -249,7 +254,9 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 	}
 
 	// Fetch all batchrows records for the batch, sorted by "line"
-	batchRows, err := db.GetBatchRowsByBatchIDSorted(ctx, batchID)
+	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
+	fmt.Printf("jobmanager summarizebatch getbatchrowsbybatchidsorted %v \n", batchID.String())
+	fmt.Printf("jobmanager summarizebatch getbatchrowsbybatchidsorted batchrows %v \n", batchRows)
 	if err != nil {
 		return fmt.Errorf("failed to get batch rows sorted: %v", err)
 	}
@@ -315,10 +322,11 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 		status = batchsqlc.StatusEnumFailed
 	}
 
-	err = db.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
+	fmt.Printf("jobmanager summarizebatch updatebatchsummary batch: %v \n", batch)
+	err = q.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
 		ID:          batchID,
 		Status:      status,
-		Doneat:      pgtype.Timestamp{Time: time.Now()},
+		Doneat:      pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Outputfiles: outputFilesJSON,
 		Nsuccess:    batch.Nsuccess,
 		Nfailed:     batch.Nfailed,
@@ -328,13 +336,22 @@ func summarizeBatch(db *batchsqlc.Queries, batchID uuid.UUID) error {
 		return fmt.Errorf("failed to update batch summary: %v", err)
 	}
 
+	// update status in redis
+	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
+	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
+	_, err = r.Set(redisKey, string(status), expiry).Result()
+	if err != nil {
+		return fmt.Errorf("failed to update status in redis: %v", err)
+	}
+
 	return nil
 }
 
 func moveToObjectStore(filePath string) (string, error) {
 	// Implement the logic to move the file to the object store
 	// and return the object ID
-	return "", fmt.Errorf("moveToObjectStore not implemented")
+	// return "", fmt.Errorf("moveToObjectStore not implemented")
+	return "", nil
 }
 
 func closeInitBlocks() {
@@ -363,48 +380,47 @@ func fetchJobs(tx *sql.Tx) []BatchJob_t {
 	return []BatchJob_t{}
 }
 
-func processSlowQuery(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) error {
+func processSlowQuery(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) (batchsqlc.StatusEnum, error) {
 	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
 	// Retrieve the SlowQueryProcessor for the app and op
 	processor, exists := slowqueryprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
-		return fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
 	}
 
 	// Process the slow query using the registered processor
 	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, JSONstr(string(row.Context)), JSONstr(string(row.Input)))
-	log.Printf("status: %v", status)
 	if err != nil {
-		return fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
 	// Update the corresponding batchrows and batches records with the results
 	if err := updateSlowQueryResult(db, row, status, result, messages, outputFiles); err != nil {
-		return fmt.Errorf("error updating slow query result for app %s and op %s: %v", row.App, row.Op, err)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating slow query result for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
-	return nil
+	return status, nil
 }
 
-func processBatchJob(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) error {
+func processBatchJob(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) (batchsqlc.StatusEnum, error) {
 	// Retrieve the BatchProcessor for the app and op
 	processor, exists := batchprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
-		return fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
 	}
 
 	// Process the batch job using the registered processor
 	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, JSONstr(string(row.Context)), int(row.Line), JSONstr(string(row.Input)))
 	if err != nil {
-		return fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
 	// Update the corresponding batchrows record with the results
 	if err := updateBatchJobResult(db, row, status, result, messages, blobRows); err != nil {
-		return fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
-	return nil
+	return status, nil
 }
 
 func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
@@ -440,19 +456,39 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 		}
 	}
 
-	// Update the batches record with the output files
-	err = db.UpdateBatchOutputFiles(context.Background(), batchsqlc.UpdateBatchOutputFilesParams{
-		ID:          row.Batch,
-		Outputfiles: outputFilesJSON,
-	})
-	if err != nil {
-		return err
+	// Update the batches record based on the status of the slow query
+	if status == batchsqlc.StatusEnumSuccess {
+		err = db.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+			ID:          row.Batch,
+			Status:      batchsqlc.StatusEnumSuccess,
+			Doneat:      pgtype.Timestamp{Time: time.Now()},
+			Outputfiles: outputFilesJSON,
+			Nsuccess:    pgtype.Int4{Int32: 1, Valid: true},
+			Nfailed:     pgtype.Int4{Int32: 0, Valid: true},
+			Naborted:    pgtype.Int4{Int32: 0, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+	} else if status == batchsqlc.StatusEnumFailed {
+		err = db.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+			ID:          row.Batch,
+			Status:      batchsqlc.StatusEnumFailed,
+			Doneat:      pgtype.Timestamp{Time: time.Now()},
+			Outputfiles: outputFilesJSON,
+			Nsuccess:    pgtype.Int4{Int32: 0, Valid: true},
+			Nfailed:     pgtype.Int4{Int32: 1, Valid: true},
+			Naborted:    pgtype.Int4{Int32: 0, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func updateBatchJobResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
+func updateBatchJobResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
 	if len(messages) > 0 {
@@ -502,22 +538,19 @@ func encodeJSONMap(m map[string]string) []byte {
 	return jsonData
 }
 
-func getCompletedBatches(db *batchsqlc.Queries) ([]uuid.UUID, error) {
+func getCompletedBatches(pool *pgxpool.Pool) ([]uuid.UUID, error) {
 	ctx := context.Background()
 
+	// Create a new Queries instance using the pool
+	q := batchsqlc.New(pool)
+
 	// Retrieve batches with status "success", "failed", or "aborted"
-	batches, err := db.GetCompletedBatches(ctx)
+	batches, err := q.GetCompletedBatches(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Extract the batch IDs from the retrieved batches
-	var completedBatches []uuid.UUID
-	for _, batch := range batches {
-		completedBatches = append(completedBatches, batch)
-	}
-
-	return completedBatches, nil
+	return batches, nil
 }
 
 func getHostname() string {
