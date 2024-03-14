@@ -60,27 +60,22 @@ func (ib *EmailInitBlock) Close() error {
 func main() {
 	// Initialize the database connection
 	pool := getDb()
-	queries := batchsqlc.New(pool)
 
 	// Initialize Redis client
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
 
-	// Create a new Batch instance
-	batchClient := batch.Batch{
-		Db:          pool,
-		Queries:     queries,
-		RedisClient: redisClient,
-	}
+	// Initialize JobManager
+	jm := batch.NewJobManager(pool, redisClient)
 
 	// Register the batch processor and initializer
-	err := batch.RegisterProcessor("emailapp", "sendbulkemail", &EmailBatchProcessor{})
+	err := jm.RegisterProcessorBatch("emailapp", "sendbulkemail", &EmailBatchProcessor{})
 	if err != nil {
 		log.Fatal("Failed to register batch processor:", err)
 	}
 
-	err = batch.RegisterInitializer("emailapp", &EmailInitializer{})
+	err = jm.RegisterInitializer("emailapp", &EmailInitializer{})
 	if err != nil {
 		log.Fatal("Failed to register initializer:", err)
 	}
@@ -99,7 +94,7 @@ func main() {
 	}
 
 	// Submit the batch
-	batchID, err := batchClient.Submit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput)
+	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput, false)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)
 	}
@@ -107,13 +102,13 @@ func main() {
 	fmt.Println("Batch submitted. Batch ID:", batchID)
 
 	// Start the JobManager in a separate goroutine
-	go batch.JobManager(pool, redisClient)
+	go jm.Run()
 
 	// Wait for a short duration before aborting the batch
 	time.Sleep(5 * time.Second)
 
 	// Abort the batch
-	status, nsuccess, nfailed, naborted, err := batchClient.Abort(batchID)
+	status, nsuccess, nfailed, naborted, err := jm.BatchAbort(batchID)
 	if err != nil {
 		log.Fatal("Failed to abort batch:", err)
 	}

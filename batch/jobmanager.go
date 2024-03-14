@@ -2,7 +2,6 @@ package batch
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -24,62 +23,60 @@ const ALYA_BATCHCHUNK_NROWS = 10
 // Assuming global variables are defined elsewhere
 // make all the maps sync maps to make them thread safe
 var (
+	mu     sync.Mutex // Ensures thread-safe access to the initfuncs map
+	doneBy pgtype.Text
+)
+
+type JobManager struct {
+	Db                      *pgxpool.Pool
+	Queries                 batchsqlc.Querier
+	RedisClient             *redis.Client
 	initblocks              map[string]InitBlock
 	initfuncs               map[string]Initializer
 	slowqueryprocessorfuncs map[string]SlowQueryProcessor
 	batchprocessorfuncs     map[string]BatchProcessor
-	mu                      sync.Mutex // Ensures thread-safe access to the initfuncs map
-	doneBy                  pgtype.Text
-)
-
-func init() {
-	initblocks = make(map[string]InitBlock)
-	initfuncs = make(map[string]Initializer)
-	slowqueryprocessorfuncs = make(map[string]SlowQueryProcessor)
-	batchprocessorfuncs = make(map[string]BatchProcessor)
 }
 
-func RegisterProcessor(app string, op string, p BatchProcessor) error {
-	mu.Lock()
-	defer mu.Unlock()
-
-	key := app + op
-	if _, exists := batchprocessorfuncs[key]; exists {
-		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
+func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client) *JobManager {
+	return &JobManager{
+		Db:                      db,
+		Queries:                 batchsqlc.New(db),
+		RedisClient:             redisClient,
+		initblocks:              make(map[string]InitBlock),
+		initfuncs:               make(map[string]Initializer),
+		slowqueryprocessorfuncs: make(map[string]SlowQueryProcessor),
+		batchprocessorfuncs:     make(map[string]BatchProcessor),
 	}
-
-	batchprocessorfuncs[key] = p
-	return nil
 }
 
 // RegisterInitializer registers an initializer for a specific application.
 // This is where applications register their initial logic with Alya.
-func RegisterInitializer(app string, initializer Initializer) error {
+func (jm *JobManager) RegisterInitializer(app string, initializer Initializer) error {
 	mu.Lock()
 	defer mu.Unlock()
 
 	// Check if an initializer for this app already exists to prevent accidental overwrites
-	if _, exists := initfuncs[app]; exists {
+	if _, exists := jm.initfuncs[app]; exists {
 		return fmt.Errorf("initializer for app %s already registered", app)
 	}
 
 	// Register the initializer for the app
-	initfuncs[app] = initializer
+	jm.initfuncs[app] = initializer
 	return nil
 }
 
-func getOrCreateInitBlock(app string) (InitBlock, error) {
+func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 	// Lock the mutex to ensure thread-safe access to the initblocks map
 	mu.Lock()
 	defer mu.Unlock()
 
 	// Check if an InitBlock already exists for the app
-	if initBlock, exists := initblocks[app]; exists {
+	if initBlock, exists := jm.initblocks[app]; exists {
 		return initBlock, nil
 	}
 
 	// Check if an Initializer is registered for the app
-	initializer, exists := initfuncs[app]
+	initializer, exists := jm.initfuncs[app]
 	if !exists {
 		log.Printf("no initializer registered for app %s", app)
 		return nil, fmt.Errorf("no initializer registered for app %s", app)
@@ -92,17 +89,17 @@ func getOrCreateInitBlock(app string) (InitBlock, error) {
 	}
 
 	// Cache the InitBlock for future use
-	initblocks[app] = initBlock
+	jm.initblocks[app] = initBlock
 
 	return initBlock, nil
 }
 
-func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
+func (jm *JobManager) Run() {
 	for {
 		ctx := context.Background()
 
 		// Begin a transaction
-		tx, err := pool.Begin(ctx)
+		tx, err := jm.Db.Begin(ctx)
 		if err != nil {
 			log.Println("Error starting transaction:", err)
 			time.Sleep(getRandomSleepDuration())
@@ -136,7 +133,7 @@ func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 
 		// Process each row in the block
 		for _, row := range blockOfRows {
-			status, err := processRow(txQueries, row)
+			status, err := jm.processRow(txQueries, row)
 			if err != nil {
 				log.Println("Error processing row:", err)
 				continue
@@ -171,15 +168,83 @@ func JobManager(pool *pgxpool.Pool, redisClient *redis.Client) {
 		}
 
 		// Check for completed batches and summarize them
-		if err := summarizeCompletedBatches(txQueries, redisClient, batchSet); err != nil {
+		if err := jm.summarizeCompletedBatches(txQueries, batchSet); err != nil {
 			log.Println("Error summarizing completed batches:", err)
 		}
 
 		tx.Commit(ctx)
 
 		// Close and clean up initblocks
-		closeInitBlocks()
+		jm.closeInitBlocks()
 	}
+}
+
+func (jm *JobManager) processRow(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+	fmt.Printf("jobmanager inside processrow\n")
+
+	// Process the row based on its type (slow query or batch job)
+	if row.Line == 0 {
+		return jm.processSlowQuery(txQueries, row)
+	} else {
+		return jm.processBatchJob(txQueries, row)
+	}
+}
+
+func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
+	// Retrieve the SlowQueryProcessor for the app and op
+	processor, exists := jm.slowqueryprocessorfuncs[string(row.App)+row.Op]
+	if !exists {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
+	}
+
+	// Get or create the initblock for the app
+	initBlock, err := jm.getOrCreateInitBlock(string(row.App))
+	if err != nil {
+		log.Printf("error getting or creating initblock for app %s: %v", string(row.App), err)
+		return batchsqlc.StatusEnumFailed, err
+	}
+
+	// Process the slow query using the registered processor
+	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, JSONstr(string(row.Context)), JSONstr(string(row.Input)))
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
+	}
+
+	// Update the corresponding batchrows and batches records with the results
+	if err := updateSlowQueryResult(txQueries, row, status, result, messages, outputFiles); err != nil {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating slow query result for app %s and op %s: %v", row.App, row.Op, err)
+	}
+
+	return status, nil
+}
+
+func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+	// Retrieve the BatchProcessor for the app and op
+	processor, exists := jm.batchprocessorfuncs[string(row.App)+row.Op]
+	if !exists {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
+	}
+
+	// Get or create the initblock for the app
+	initBlock, err := jm.getOrCreateInitBlock(string(row.App))
+	if err != nil {
+		log.Printf("error getting or creating initblock for app %s: %v", string(row.App), err)
+		return batchsqlc.StatusEnumFailed, err
+	}
+
+	// Process the batch job using the registered processor
+	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, JSONstr(string(row.Context)), int(row.Line), JSONstr(string(row.Input)))
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
+	}
+
+	// Update the corresponding batchrows record with the results
+	if err := updateBatchJobResult(txQueries, row, status, result, messages, blobRows); err != nil {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
+	}
+
+	return status, nil
 }
 
 func updateBatchCounters(db *batchsqlc.Queries, batchID uuid.UUID, nsuccess, nfailed, naborted int64) error {
@@ -196,27 +261,10 @@ func updateBatchCounters(db *batchsqlc.Queries, batchID uuid.UUID, nsuccess, nfa
 	return err
 }
 
-func processRow(q *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
-	fmt.Printf("jobmanager inside processrow\n")
-	// Get or create the initblock for the app
-	initBlock, err := getOrCreateInitBlock(string(row.App))
-	if err != nil {
-		log.Printf("error getting or creating initblock for app %s: %v", string(row.App), err)
-		return batchsqlc.StatusEnumFailed, err
-	}
-
-	// Process the row based on its type (slow query or batch job)
-	if row.Line == 0 {
-		return processSlowQuery(q, row, initBlock)
-	} else {
-		return processBatchJob(q, row, initBlock)
-	}
-}
-
-func summarizeCompletedBatches(q *batchsqlc.Queries, r *redis.Client, batchSet map[uuid.UUID]bool) error {
+func (jm *JobManager) summarizeCompletedBatches(q *batchsqlc.Queries, batchSet map[uuid.UUID]bool) error {
 	fmt.Printf("jobmanager inside summarizecompletedbatches\n")
 	for batchID := range batchSet {
-		if err := summarizeBatch(q, r, batchID); err != nil {
+		if err := jm.summarizeBatch(q, batchID); err != nil {
 			log.Println("Error summarizing batch:", batchID, err)
 			continue
 		}
@@ -225,7 +273,7 @@ func summarizeCompletedBatches(q *batchsqlc.Queries, r *redis.Client, batchSet m
 	return nil
 }
 
-func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) error {
+func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) error {
 	fmt.Printf("jobmanager inside summarizebatch\n")
 	ctx := context.Background()
 
@@ -338,7 +386,7 @@ func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) er
 	// update status in redis
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
 	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-	_, err = r.Set(redisKey, string(status), expiry).Result()
+	_, err = jm.RedisClient.Set(redisKey, string(status), expiry).Result()
 	if err != nil {
 		return fmt.Errorf("failed to update status in redis: %v", err)
 	}
@@ -353,13 +401,13 @@ func moveToObjectStore(filePath string) (string, error) {
 	return "", nil
 }
 
-func closeInitBlocks() {
-	for app, initBlock := range initblocks {
+func (jm *JobManager) closeInitBlocks() {
+	for app, initBlock := range jm.initblocks {
 		if err := initBlock.Close(); err != nil {
 			log.Println("Error closing initblock for app:", app, err)
 		}
 	}
-	initblocks = make(map[string]InitBlock)
+	jm.initblocks = make(map[string]InitBlock)
 }
 
 func getRandomSleepDuration() time.Duration {
@@ -367,62 +415,7 @@ func getRandomSleepDuration() time.Duration {
 	return time.Duration(rand.Intn(31)+30) * time.Second
 }
 
-func cleanup() {
-	// Cleanup and reset global variables as necessary
-}
-
-// fetchJobs function queries the database for queued jobs,
-// lock them for processing (e.g., by setting their status to inprog),
-// and return them for processing.
-func fetchJobs(tx *sql.Tx) []BatchJob_t {
-	// Fetch jobs from the database
-	return []BatchJob_t{}
-}
-
-func processSlowQuery(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) (batchsqlc.StatusEnum, error) {
-	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
-	// Retrieve the SlowQueryProcessor for the app and op
-	processor, exists := slowqueryprocessorfuncs[string(row.App)+row.Op]
-	if !exists {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
-	}
-
-	// Process the slow query using the registered processor
-	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, JSONstr(string(row.Context)), JSONstr(string(row.Input)))
-	if err != nil {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
-	}
-
-	// Update the corresponding batchrows and batches records with the results
-	if err := updateSlowQueryResult(db, row, status, result, messages, outputFiles); err != nil {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating slow query result for app %s and op %s: %v", row.App, row.Op, err)
-	}
-
-	return status, nil
-}
-
-func processBatchJob(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, initBlock InitBlock) (batchsqlc.StatusEnum, error) {
-	// Retrieve the BatchProcessor for the app and op
-	processor, exists := batchprocessorfuncs[string(row.App)+row.Op]
-	if !exists {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
-	}
-
-	// Process the batch job using the registered processor
-	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, JSONstr(string(row.Context)), int(row.Line), JSONstr(string(row.Input)))
-	if err != nil {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
-	}
-
-	// Update the corresponding batchrows record with the results
-	if err := updateBatchJobResult(db, row, status, result, messages, blobRows); err != nil {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
-	}
-
-	return status, nil
-}
-
-func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
+func updateSlowQueryResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
 	if len(messages) > 0 {
@@ -434,7 +427,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 	}
 
 	// Update the batchrows record with the results
-	err := db.UpdateBatchRowsSlowQuery(context.Background(), batchsqlc.UpdateBatchRowsSlowQueryParams{
+	err := txQueries.UpdateBatchRowsSlowQuery(context.Background(), batchsqlc.UpdateBatchRowsSlowQueryParams{
 		Rowid:    int32(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
 		Doneat:   pgtype.Timestamp{Time: time.Now()},
@@ -457,7 +450,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 
 	// Update the batches record based on the status of the slow query
 	if status == batchsqlc.StatusEnumSuccess {
-		err = db.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+		err = txQueries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
 			ID:          row.Batch,
 			Status:      batchsqlc.StatusEnumSuccess,
 			Doneat:      pgtype.Timestamp{Time: time.Now()},
@@ -470,7 +463,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 			return err
 		}
 	} else if status == batchsqlc.StatusEnumFailed {
-		err = db.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+		err = txQueries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
 			ID:          row.Batch,
 			Status:      batchsqlc.StatusEnumFailed,
 			Doneat:      pgtype.Timestamp{Time: time.Now()},
@@ -487,7 +480,7 @@ func updateSlowQueryResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRows
 	return nil
 }
 
-func updateBatchJobResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
+func updateBatchJobResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
 	if len(messages) > 0 {
@@ -509,7 +502,7 @@ func updateBatchJobResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsR
 	}
 
 	// Update the batchrows record with the results
-	err := db.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
+	err := txQueries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
 		Rowid:    int32(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
 		Doneat:   pgtype.Timestamp{Time: time.Now()},
@@ -523,41 +516,4 @@ func updateBatchJobResult(db *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsR
 	}
 
 	return nil
-}
-
-func encodeJSONMap(m map[string]string) []byte {
-	if len(m) == 0 {
-		return nil
-	}
-	jsonData, err := json.Marshal(m)
-	if err != nil {
-		// Handle the error appropriately (e.g., log it, return an error)
-		return nil
-	}
-	return jsonData
-}
-
-func getCompletedBatches(pool *pgxpool.Pool) ([]uuid.UUID, error) {
-	ctx := context.Background()
-
-	// Create a new Queries instance using the pool
-	q := batchsqlc.New(pool)
-
-	// Retrieve batches with status "success", "failed", or "aborted"
-	batches, err := q.GetCompletedBatches(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return batches, nil
-}
-
-func getHostname() string {
-	hostname, err := os.Hostname()
-	if err != nil {
-		// Handle the error appropriately (e.g., log it, return a default value)
-		fmt.Println("Failed to get hostname:", err)
-		return "unknown"
-	}
-	return hostname
 }

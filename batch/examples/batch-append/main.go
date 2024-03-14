@@ -61,33 +61,28 @@ func (ib *EmailInitBlock) Close() error {
 func main() {
 	// Initialize the database connection
 	pool := getDb()
-	queries := batchsqlc.New(pool)
 
 	// Initialize Redis client
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
 
-	// Create a new Batch instance
-	batchClient := batch.Batch{
-		Db:          pool,
-		Queries:     queries,
-		RedisClient: redisClient,
-	}
+	// Initialize JobManager
+	jm := batch.NewJobManager(pool, redisClient)
 
 	// Register the batch processor and initializer
-	err := batch.RegisterProcessor("emailapp", "sendbulkemail", &EmailBatchProcessor{})
+	err := jm.RegisterProcessorBatch("emailapp", "sendbulkemail", &EmailBatchProcessor{})
 	if err != nil {
 		log.Fatal("Failed to register batch processor:", err)
 	}
 
-	err = batch.RegisterInitializer("emailapp", &EmailInitializer{})
+	err = jm.RegisterInitializer("emailapp", &EmailInitializer{})
 	if err != nil {
 		log.Fatal("Failed to register initializer:", err)
 	}
 
 	// Submit the initial batch
-	batchID := submitBatch(batchClient)
+	batchID := submitBatch(jm)
 
 	// Prepare additional batch input data
 	additionalBatchInput := []batchsqlc.InsertIntoBatchRowsParams{
@@ -106,13 +101,13 @@ func main() {
 
 	// Start the JobManager in a separate goroutine
 	fmt.Println("Starting the JobManager...")
-	go batch.JobManager(pool, redisClient)
+	go jm.Run()
 
 	// sleep for 1 minute
 	fmt.Println("Sleeping for 1 minute...")
 	time.Sleep(1 * time.Minute)
 	// Append the additional batch input to the existing batch
-	nrows, err := batchClient.Append(batchID.String(), additionalBatchInput, false)
+	nrows, err := jm.BatchAppend(batchID.String(), additionalBatchInput, false)
 	if err != nil {
 		log.Fatal("Failed to append to batch:", err)
 	}
@@ -121,7 +116,7 @@ func main() {
 
 	// Poll for the batch completion status
 	for {
-		status, batchOutput, outputFiles, nsuccess, nfailed, naborted, err := batchClient.Done(batchID.String())
+		status, batchOutput, outputFiles, nsuccess, nfailed, naborted, err := jm.BatchDone(batchID.String())
 		if err != nil {
 			log.Fatal("Error while polling for batch status:", err)
 		}
@@ -142,7 +137,7 @@ func main() {
 	}
 }
 
-func submitBatch(batchClient batch.Batch) uuid.UUID {
+func submitBatch(jm *batch.JobManager) uuid.UUID {
 	// Prepare the batch input data
 	batchInput := []batchsqlc.InsertIntoBatchRowsParams{
 		{
@@ -158,7 +153,7 @@ func submitBatch(batchClient batch.Batch) uuid.UUID {
 
 	// Submit the batch
 	waitabit := true
-	batchID, err := batchClient.Submit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput, waitabit)
+	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput, waitabit)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)
 	}
