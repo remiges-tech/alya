@@ -16,22 +16,22 @@ import (
 
 const ALYA_BATCHSTATUS_CACHEDUR_SEC = 100
 
-func (s SlowQuery) RegisterProcessor(app string, op string, p SlowQueryProcessor) error {
+func (jm *JobManager) RegisterSlowQueryProcessor(app string, op string, p SlowQueryProcessor) error {
 	mu.Lock()
 	defer mu.Unlock()
 
 	key := app + op
-	if _, exists := slowqueryprocessorfuncs[key]; exists {
+	if _, exists := jm.slowqueryprocessorfuncs[key]; exists {
 		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
 	}
 
-	slowqueryprocessorfuncs[key] = p
+	jm.slowqueryprocessorfuncs[key] = p
 	return nil
 }
 
-func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID string, err error) {
+func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONstr) (reqID string, err error) {
 	// Start a database transaction
-	tx, err := s.Db.Begin(context.Background())
+	tx, err := jm.Db.Begin(context.Background())
 	if err != nil {
 		return "", err
 	}
@@ -46,11 +46,12 @@ func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID st
 	}
 
 	// Use sqlc generated function to insert into batches table
-	_, err = s.Queries.InsertIntoBatches(ctx, batchsqlc.InsertIntoBatchesParams{
+	_, err = jm.Queries.InsertIntoBatches(ctx, batchsqlc.InsertIntoBatchesParams{
 		ID:      batchId,
 		App:     app,
 		Op:      op,
 		Context: []byte(string(inputContext)),
+		Status:  batchsqlc.StatusEnumQueued,
 	})
 	if err != nil {
 		log.Printf("SlowQuery.Submit InsertIntoBatchesFailed: %v", err)
@@ -58,7 +59,7 @@ func (s SlowQuery) Submit(app, op string, inputContext, input JSONstr) (reqID st
 	}
 
 	// Use sqlc generated function to insert into batchrows table
-	err = s.Queries.InsertIntoBatchRows(ctx, batchsqlc.InsertIntoBatchRowsParams{
+	err = jm.Queries.InsertIntoBatchRows(ctx, batchsqlc.InsertIntoBatchRowsParams{
 		Batch: batchId,
 		Line:  0,
 		Input: json.RawMessage(input),
@@ -103,10 +104,10 @@ func determineBatchStatus(status batchsqlc.StatusEnum) BatchStatus_t {
 	}
 }
 
-func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, err error) {
+func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, err error) {
 	// Check REDIS for the status
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
-	statusVal, err := s.RedisClient.Get(redisKey).Result()
+	statusVal, err := jm.RedisClient.Get(redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
 		reqIDUUID, err := uuid.Parse(reqID)
@@ -114,7 +115,7 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 			log.Printf("SlowQuery.Done invalid request ID: %v", err)
 			return BatchTryLater, "", nil, fmt.Errorf("invalid request ID: %v", err)
 		}
-		batchStatus, err := s.Queries.GetBatchStatus(context.Background(), reqIDUUID)
+		batchStatus, err := jm.Queries.GetBatchStatus(context.Background(), reqIDUUID)
 		if err != nil {
 			log.Printf("SlowQuery.Done GetBatchStatusFailed for request %v: %v", reqID, err)
 			return BatchTryLater, "", nil, err // Assuming GetBatchStatus returns an error if not found
@@ -129,7 +130,7 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 
 		// Insert/update REDIS with 100x expiry if not found earlier
 		expiry := 100 * ALYA_BATCHSTATUS_CACHEDUR_SEC
-		s.RedisClient.Set(redisKey, batchStatus, time.Second*time.Duration(expiry))
+		jm.RedisClient.Set(redisKey, batchStatus, time.Second*time.Duration(expiry))
 
 		// Return the formatted result, messages, and nil for error
 		return status, result, messages, nil
@@ -147,7 +148,7 @@ func (s SlowQuery) Done(reqID string) (status BatchStatus_t, result JSONstr, mes
 	return status, result, messages, nil
 }
 
-func (s SlowQuery) Abort(reqID string) (err error) {
+func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	// Parse the request ID as a UUID
 	reqIDUUID, err := uuid.Parse(reqID)
 	if err != nil {
@@ -155,14 +156,14 @@ func (s SlowQuery) Abort(reqID string) (err error) {
 	}
 
 	// Start a transaction
-	tx, err := s.Db.Begin(context.Background())
+	tx, err := jm.Db.Begin(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer tx.Rollback(context.Background())
 
 	// Perform SELECT FOR UPDATE on batches and batchrows for the given request ID
-	batch, err := s.Queries.GetBatchByID(context.Background(), reqIDUUID)
+	batch, err := jm.Queries.GetBatchByID(context.Background(), reqIDUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get batch by ID: %v", err)
 	}
@@ -175,7 +176,7 @@ func (s SlowQuery) Abort(reqID string) (err error) {
 	}
 
 	// Update the batch status to aborted and set doneat timestamp
-	err = s.Queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+	err = jm.Queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
 		ID:     reqIDUUID,
 		Status: batchsqlc.StatusEnumAborted,
 		Doneat: pgtype.Timestamp{Time: time.Now()},
@@ -185,7 +186,7 @@ func (s SlowQuery) Abort(reqID string) (err error) {
 	}
 
 	// Fetch the pending batchrows records associated with the batch ID
-	pendingRows, err := s.Queries.GetPendingBatchRows(context.Background(), reqIDUUID)
+	pendingRows, err := jm.Queries.GetPendingBatchRows(context.Background(), reqIDUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get pending batchrows: %v", err)
 	}
@@ -197,7 +198,7 @@ func (s SlowQuery) Abort(reqID string) (err error) {
 	}
 
 	// Update the batchrows status to aborted for rows with status queued or inprog
-	err = s.Queries.UpdateBatchRowsStatus(context.Background(), batchsqlc.UpdateBatchRowsStatusParams{
+	err = jm.Queries.UpdateBatchRowsStatus(context.Background(), batchsqlc.UpdateBatchRowsStatusParams{
 		Status:  batchsqlc.StatusEnumAborted,
 		Column2: rowids,
 	})
@@ -214,7 +215,7 @@ func (s SlowQuery) Abort(reqID string) (err error) {
 	// Set the Redis batch status record to aborted with an expiry time
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
 	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-	err = s.RedisClient.Set(redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
+	err = jm.RedisClient.Set(redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
 	if err != nil {
 		log.Printf("failed to set Redis batch status: %v", err)
 	}

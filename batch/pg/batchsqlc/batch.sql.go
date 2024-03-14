@@ -67,7 +67,7 @@ const fetchBlockOfRows = `-- name: FetchBlockOfRows :many
 SELECT batches.app, batches.op, batches.context, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
 FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
-WHERE batchrows.status = $1
+WHERE batchrows.status = $1 AND batches.status != 'wait'
 LIMIT $2
 FOR UPDATE SKIP LOCKED
 `
@@ -142,6 +142,42 @@ func (q *Queries) GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error)
 	return i, err
 }
 
+const getBatchRowsByBatchID = `-- name: GetBatchRowsByBatchID :many
+SELECT rowid, batch, line, input, status, reqat, doneat, res, blobrows, messages, doneby FROM batchrows WHERE batch = $1
+`
+
+func (q *Queries) GetBatchRowsByBatchID(ctx context.Context, batch uuid.UUID) ([]Batchrow, error) {
+	rows, err := q.db.Query(ctx, getBatchRowsByBatchID, batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Batchrow
+	for rows.Next() {
+		var i Batchrow
+		if err := rows.Scan(
+			&i.Rowid,
+			&i.Batch,
+			&i.Line,
+			&i.Input,
+			&i.Status,
+			&i.Reqat,
+			&i.Doneat,
+			&i.Res,
+			&i.Blobrows,
+			&i.Messages,
+			&i.Doneby,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getBatchRowsByBatchIDSorted = `-- name: GetBatchRowsByBatchIDSorted :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
@@ -192,6 +228,17 @@ func (q *Queries) GetBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UU
 		return nil, err
 	}
 	return items, nil
+}
+
+const getBatchRowsCount = `-- name: GetBatchRowsCount :one
+SELECT COUNT(*) FROM batchrows WHERE batch = $1
+`
+
+func (q *Queries) GetBatchRowsCount(ctx context.Context, batch uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getBatchRowsCount, batch)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const getBatchStatus = `-- name: GetBatchStatus :one
@@ -303,15 +350,16 @@ func (q *Queries) InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRo
 
 const insertIntoBatches = `-- name: InsertIntoBatches :one
 INSERT INTO batches (id, app, op, context, status, reqat)
-VALUES ($1, $2, $3, $4, 'queued', NOW())
+VALUES ($1, $2, $3, $4, $5, NOW())
 RETURNING id
 `
 
 type InsertIntoBatchesParams struct {
-	ID      uuid.UUID `json:"id"`
-	App     string    `json:"app"`
-	Op      string    `json:"op"`
-	Context []byte    `json:"context"`
+	ID      uuid.UUID  `json:"id"`
+	App     string     `json:"app"`
+	Op      string     `json:"op"`
+	Context []byte     `json:"context"`
+	Status  StatusEnum `json:"status"`
 }
 
 func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error) {
@@ -320,6 +368,7 @@ func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesPa
 		arg.App,
 		arg.Op,
 		arg.Context,
+		arg.Status,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -436,6 +485,35 @@ type UpdateBatchRowsStatusParams struct {
 
 func (q *Queries) UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRowsStatusParams) error {
 	_, err := q.db.Exec(ctx, updateBatchRowsStatus, arg.Status, arg.Column2)
+	return err
+}
+
+const updateBatchStatus = `-- name: UpdateBatchStatus :exec
+UPDATE batches
+SET status = $2, doneat = $3, outputfiles = $4, nsuccess = $5, nfailed = $6, naborted = $7
+WHERE id = $1
+`
+
+type UpdateBatchStatusParams struct {
+	ID          uuid.UUID        `json:"id"`
+	Status      StatusEnum       `json:"status"`
+	Doneat      pgtype.Timestamp `json:"doneat"`
+	Outputfiles []byte           `json:"outputfiles"`
+	Nsuccess    pgtype.Int4      `json:"nsuccess"`
+	Nfailed     pgtype.Int4      `json:"nfailed"`
+	Naborted    pgtype.Int4      `json:"naborted"`
+}
+
+func (q *Queries) UpdateBatchStatus(ctx context.Context, arg UpdateBatchStatusParams) error {
+	_, err := q.db.Exec(ctx, updateBatchStatus,
+		arg.ID,
+		arg.Status,
+		arg.Doneat,
+		arg.Outputfiles,
+		arg.Nsuccess,
+		arg.Nfailed,
+		arg.Naborted,
+	)
 	return err
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
@@ -32,7 +33,7 @@ func (p *EmailBatchProcessor) DoBatchJob(initBlock batch.InitBlock, context batc
 
 	// Simulate sending the email
 	fmt.Printf("Sending email to %s with subject: %s\n", emailInput.RecipientEmail, emailInput.Subject)
-	time.Sleep(5 * time.Second) // Simulating email sending delay
+	time.Sleep(time.Second) // Simulating email sending delay
 
 	// Generate sample blobRows data
 	blobRows = map[string]string{
@@ -80,6 +81,63 @@ func main() {
 		log.Fatal("Failed to register initializer:", err)
 	}
 
+	// Submit the initial batch
+	batchID := submitBatch(jm)
+
+	// Prepare additional batch input data
+	additionalBatchInput := []batchsqlc.InsertIntoBatchRowsParams{
+		{
+			Batch: batchID,
+			Line:  3,
+			Input: []byte(`{"recipientEmail": "user3@example.com", "subject": "Batch Email 3", "body": "Hello, this is batch email 3."}`),
+		},
+		{
+			Batch: batchID,
+			Line:  4,
+			Input: []byte(`{"recipientEmail": "user4@example.com", "subject": "Batch Email 4", "body": "Hello, this is batch email 4."}`),
+		},
+		// Add more batch input records as needed
+	}
+
+	// Start the JobManager in a separate goroutine
+	fmt.Println("Starting the JobManager...")
+	go jm.Run()
+
+	// sleep for 1 minute
+	fmt.Println("Sleeping for 1 minute...")
+	time.Sleep(1 * time.Minute)
+	// Append the additional batch input to the existing batch
+	nrows, err := jm.BatchAppend(batchID.String(), additionalBatchInput, false)
+	if err != nil {
+		log.Fatal("Failed to append to batch:", err)
+	}
+
+	fmt.Println("Total rows in the batch:", nrows)
+
+	// Poll for the batch completion status
+	for {
+		status, batchOutput, outputFiles, nsuccess, nfailed, naborted, err := jm.BatchDone(batchID.String())
+		if err != nil {
+			log.Fatal("Error while polling for batch status:", err)
+		}
+
+		if status == batchsqlc.StatusEnumQueued || status == batchsqlc.StatusEnumInprog {
+			fmt.Println("Batch processing in progress. Trying again in 5 seconds...")
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		fmt.Println("Batch completed with status:", status)
+		fmt.Println("Batch output:", batchOutput)
+		fmt.Println("Output files:", outputFiles)
+		fmt.Println("Success count:", nsuccess)
+		fmt.Println("Failed count:", nfailed)
+		fmt.Println("Aborted count:", naborted)
+		break
+	}
+}
+
+func submitBatch(jm *batch.JobManager) uuid.UUID {
 	// Prepare the batch input data
 	batchInput := []batchsqlc.InsertIntoBatchRowsParams{
 		{
@@ -94,30 +152,15 @@ func main() {
 	}
 
 	// Submit the batch
-	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput, false)
+	waitabit := true
+	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput, waitabit)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)
 	}
 
 	fmt.Println("Batch submitted. Batch ID:", batchID)
 
-	// Start the JobManager in a separate goroutine
-	go jm.Run()
-
-	// Wait for a short duration before aborting the batch
-	time.Sleep(5 * time.Second)
-
-	// Abort the batch
-	status, nsuccess, nfailed, naborted, err := jm.BatchAbort(batchID)
-	if err != nil {
-		log.Fatal("Failed to abort batch:", err)
-	}
-
-	fmt.Println("Batch aborted. Status:", status)
-	fmt.Println("Success count:", nsuccess)
-	fmt.Println("Failed count:", nfailed)
-	fmt.Println("Aborted count:", naborted)
-
+	return uuid.MustParse(batchID)
 }
 
 func getDb() *pgxpool.Pool {

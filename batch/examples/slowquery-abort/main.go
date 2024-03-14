@@ -89,8 +89,11 @@ func main() {
 	}
 	fmt.Println(slowQuery.Queries)
 
+	// Initialize JobManager
+	jm := batch.NewJobManager(pool, redisClient)
+
 	// Register the SlowQueryProcessor for the long-running report
-	err := slowQuery.RegisterProcessor("broadside", "slowreport", &SlowReportProcessor{})
+	err := jm.RegisterProcessorSlowQuery("broadside", "slowreport", &SlowReportProcessor{})
 	if err != nil {
 		fmt.Println("Failed to register SlowQueryProcessor:", err)
 		return
@@ -99,7 +102,7 @@ func main() {
 	bi := BroadsideInitializer{}
 
 	// Register the initializer for the application
-	err = batch.RegisterInitializer("broadside", &bi)
+	err = jm.RegisterInitializer("broadside", &bi)
 	if err != nil {
 		// Handle the error
 	}
@@ -107,7 +110,7 @@ func main() {
 	// Submit a slow query request
 	context := batch.JSONstr(`{"userId": 123}`)
 	input := batch.JSONstr(`{"startDate": "2023-01-01", "endDate": "2023-12-31"}`)
-	reqID, err := slowQuery.Submit("broadside", "slowreport", context, input)
+	reqID, err := jm.SlowQuerySubmit("broadside", "slowreport", context, input)
 	if err != nil {
 		fmt.Println("Failed to submit slow query:", err)
 		return
@@ -116,13 +119,13 @@ func main() {
 	fmt.Println("Slow query submitted. Request ID:", reqID)
 
 	// Start the JobManager in a separate goroutine
-	go batch.JobManager(pool, redisClient)
+	go jm.Run()
 
 	// Wait for a short duration before aborting the slow query
 	time.Sleep(5 * time.Second)
 
 	// Abort the slow query
-	err = slowQuery.Abort(reqID)
+	err = jm.SlowQueryAbort(reqID)
 	if err != nil {
 		fmt.Println("Failed to abort slow query:", err)
 		return
@@ -132,7 +135,7 @@ func main() {
 
 	// Poll for the slow query result
 	for {
-		status, result, messages, err := slowQuery.Done(reqID)
+		status, result, messages, err := jm.SlowQueryDone(reqID)
 		if err != nil {
 			fmt.Println("Error while polling for slow query result:", err)
 			return
