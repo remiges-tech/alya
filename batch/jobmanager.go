@@ -128,43 +128,25 @@ func (jm *JobManager) Run() {
 			continue
 		}
 
-		var blockNsuccess, blockNfailed, blockNaborted int64
 		batchSet := make(map[uuid.UUID]bool)
 
 		// Process each row in the block
 		for _, row := range blockOfRows {
-			status, err := jm.processRow(txQueries, row)
+			_, err := jm.processRow(txQueries, row)
 			if err != nil {
 				log.Println("Error processing row:", err)
 				continue
 			}
 
-			switch status {
-			case batchsqlc.StatusEnumSuccess:
-				blockNsuccess++
-			case batchsqlc.StatusEnumFailed:
-				blockNfailed++
-			case batchsqlc.StatusEnumAborted:
-				blockNaborted++
-			}
-
+			// Add the batch ID to the batchSet if it's not a slow query
 			if row.Line != 0 {
-				// Add the batch ID to the batchList if it's not a slow query
 				batchSet[row.Batch] = true
-
 			}
 		}
 
-		// Update the counters in the batches table after processing the block
-		for batchID := range batchSet {
-			fmt.Printf("before updatebatchcounters batchid: %v \n", batchID.String())
-			fmt.Printf("before updatebatchcounters blockNsuccess: %v \n", blockNsuccess)
-			fmt.Printf("before updatebatchcounters blockNfailed: %v \n", blockNfailed)
-			fmt.Printf("before updatebatchcounters blockNaborted: %v \n", blockNaborted)
-			err := updateBatchCounters(txQueries, batchID, blockNsuccess, blockNfailed, blockNaborted)
-			if err != nil {
-				log.Println("Error updating batch counters:", err)
-			}
+		// Check for completed batches and summarize them
+		if err := jm.summarizeCompletedBatches(txQueries, batchSet); err != nil {
+			log.Println("Error summarizing completed batches:", err)
 		}
 
 		// Check for completed batches and summarize them
@@ -247,18 +229,69 @@ func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsql
 	return status, nil
 }
 
-func updateBatchCounters(db *batchsqlc.Queries, batchID uuid.UUID, nsuccess, nfailed, naborted int64) error {
-	fmt.Printf("jobmanager inside updatebatchcounters batchid: %v \n", batchID.String())
-	ctx := context.Background()
+func updateSlowQueryResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
+	// Marshal messages to JSON
+	var messagesJSON []byte
+	if len(messages) > 0 {
+		var err error
+		messagesJSON, err = json.Marshal(messages)
+		if err != nil {
+			return fmt.Errorf("failed to marshal messages to JSON: %v", err)
+		}
+	}
 
-	err := db.UpdateBatchCounters(ctx, batchsqlc.UpdateBatchCountersParams{
-		ID:       batchID,
-		Nsuccess: pgtype.Int4{Int32: int32(nsuccess), Valid: true},
-		Nfailed:  pgtype.Int4{Int32: int32(nfailed), Valid: true},
-		Naborted: pgtype.Int4{Int32: int32(naborted), Valid: true},
+	// Update the batchrows record with the results
+	err := txQueries.UpdateBatchRowsSlowQuery(context.Background(), batchsqlc.UpdateBatchRowsSlowQueryParams{
+		Rowid:    int32(row.Rowid),
+		Status:   batchsqlc.StatusEnum(status),
+		Doneat:   pgtype.Timestamp{Time: time.Now()},
+		Res:      []byte(result),
+		Messages: messagesJSON,
+		Doneby:   doneBy,
 	})
+	if err != nil {
+		return err
+	}
 
-	return err
+	return nil
+}
+
+func updateBatchJobResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
+	// Marshal messages to JSON
+	var messagesJSON []byte
+	if len(messages) > 0 {
+		var err error
+		messagesJSON, err = json.Marshal(messages)
+		if err != nil {
+			return fmt.Errorf("failed to marshal messages to JSON: %v", err)
+		}
+	}
+
+	// Marshal blobRows to JSON
+	var blobRowsJSON []byte
+	if len(blobRows) > 0 {
+		var err error
+		blobRowsJSON, err = json.Marshal(blobRows)
+		if err != nil {
+			return fmt.Errorf("failed to marshal blobRows to JSON: %v", err)
+		}
+	}
+
+	// Update the batchrows record with the results
+	err := txQueries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
+		Rowid:    int32(row.Rowid),
+		Status:   batchsqlc.StatusEnum(status),
+		Doneat:   pgtype.Timestamp{Time: time.Now()},
+		Res:      []byte(result),
+		Blobrows: blobRowsJSON,
+		Messages: messagesJSON,
+		Doneby:   doneBy,
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (jm *JobManager) summarizeCompletedBatches(q *batchsqlc.Queries, batchSet map[uuid.UUID]bool) error {
@@ -274,7 +307,6 @@ func (jm *JobManager) summarizeCompletedBatches(q *batchsqlc.Queries, batchSet m
 }
 
 func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) error {
-	fmt.Printf("jobmanager inside summarizebatch\n")
 	ctx := context.Background()
 
 	// Fetch the batch record
@@ -289,12 +321,10 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 	}
 
 	// Fetch pending batchrows records for the batch with status "queued" or "inprog"
-	fmt.Printf("jobmanager summarizebatch getpendingbatchrows %v \n", batchID.String())
 	pendingRows, err := q.GetPendingBatchRows(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to get pending batch rows: %v", err)
 	}
-	fmt.Printf("jobmanager after getpendingbatchrows pendingrows %v \n", pendingRows)
 
 	// If there are pending rows, the batch is not yet complete
 	if len(pendingRows) > 0 {
@@ -303,9 +333,21 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 
 	// Fetch all batchrows records for the batch, sorted by "line"
 	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
-	fmt.Printf("jobmanager summarizebatch getbatchrowsbybatchidsorted %v \n", batchID.String())
 	if err != nil {
 		return fmt.Errorf("failed to get batch rows sorted: %v", err)
+	}
+
+	// Calculate the summary counters
+	var nsuccess, nfailed, naborted int64
+	for _, row := range batchRows {
+		switch row.Status {
+		case batchsqlc.StatusEnumSuccess:
+			nsuccess++
+		case batchsqlc.StatusEnumFailed:
+			nfailed++
+		case batchsqlc.StatusEnumAborted:
+			naborted++
+		}
 	}
 
 	// Create temporary files for each unique logical file in blobrows
@@ -365,19 +407,18 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 	}
 
 	status := batchsqlc.StatusEnumSuccess
-	if batch.Nfailed.Int32 > 0 {
+	if nfailed > 0 {
 		status = batchsqlc.StatusEnumFailed
 	}
 
-	fmt.Printf("jobmanager summarizebatch updatebatchsummary batch: %v \n", batch)
 	err = q.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
 		ID:          batchID,
 		Status:      status,
-		Doneat:      pgtype.Timestamp{Time: time.Now(), Valid: true},
+		Doneat:      pgtype.Timestamp{Time: time.Now()},
 		Outputfiles: outputFilesJSON,
-		Nsuccess:    batch.Nsuccess,
-		Nfailed:     batch.Nfailed,
-		Naborted:    batch.Naborted,
+		Nsuccess:    pgtype.Int4{Int32: int32(nsuccess), Valid: true},
+		Nfailed:     pgtype.Int4{Int32: int32(nfailed), Valid: true},
+		Naborted:    pgtype.Int4{Int32: int32(naborted), Valid: true},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update batch summary: %v", err)
@@ -413,107 +454,4 @@ func (jm *JobManager) closeInitBlocks() {
 func getRandomSleepDuration() time.Duration {
 	// Generate a random sleep duration between 30 and 60 seconds
 	return time.Duration(rand.Intn(31)+30) * time.Second
-}
-
-func updateSlowQueryResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
-	// Marshal messages to JSON
-	var messagesJSON []byte
-	if len(messages) > 0 {
-		var err error
-		messagesJSON, err = json.Marshal(messages)
-		if err != nil {
-			return fmt.Errorf("failed to marshal messages to JSON: %v", err)
-		}
-	}
-
-	// Update the batchrows record with the results
-	err := txQueries.UpdateBatchRowsSlowQuery(context.Background(), batchsqlc.UpdateBatchRowsSlowQueryParams{
-		Rowid:    int32(row.Rowid),
-		Status:   batchsqlc.StatusEnum(status),
-		Doneat:   pgtype.Timestamp{Time: time.Now()},
-		Res:      []byte(result),
-		Messages: messagesJSON,
-		Doneby:   doneBy,
-	})
-	if err != nil {
-		return err
-	}
-
-	// Marshal outputFiles to JSON
-	var outputFilesJSON []byte
-	if len(outputFiles) > 0 {
-		outputFilesJSON, err = json.Marshal(outputFiles)
-		if err != nil {
-			return fmt.Errorf("failed to marshal outputFiles to JSON: %v", err)
-		}
-	}
-
-	// Update the batches record based on the status of the slow query
-	if status == batchsqlc.StatusEnumSuccess {
-		err = txQueries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
-			ID:          row.Batch,
-			Status:      batchsqlc.StatusEnumSuccess,
-			Doneat:      pgtype.Timestamp{Time: time.Now()},
-			Outputfiles: outputFilesJSON,
-			Nsuccess:    pgtype.Int4{Int32: 1, Valid: true},
-			Nfailed:     pgtype.Int4{Int32: 0, Valid: true},
-			Naborted:    pgtype.Int4{Int32: 0, Valid: true},
-		})
-		if err != nil {
-			return err
-		}
-	} else if status == batchsqlc.StatusEnumFailed {
-		err = txQueries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
-			ID:          row.Batch,
-			Status:      batchsqlc.StatusEnumFailed,
-			Doneat:      pgtype.Timestamp{Time: time.Now()},
-			Outputfiles: outputFilesJSON,
-			Nsuccess:    pgtype.Int4{Int32: 0, Valid: true},
-			Nfailed:     pgtype.Int4{Int32: 1, Valid: true},
-			Naborted:    pgtype.Int4{Int32: 0, Valid: true},
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func updateBatchJobResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
-	// Marshal messages to JSON
-	var messagesJSON []byte
-	if len(messages) > 0 {
-		var err error
-		messagesJSON, err = json.Marshal(messages)
-		if err != nil {
-			return fmt.Errorf("failed to marshal messages to JSON: %v", err)
-		}
-	}
-
-	// Marshal blobRows to JSON
-	var blobRowsJSON []byte
-	if len(blobRows) > 0 {
-		var err error
-		blobRowsJSON, err = json.Marshal(blobRows)
-		if err != nil {
-			return fmt.Errorf("failed to marshal blobRows to JSON: %v", err)
-		}
-	}
-
-	// Update the batchrows record with the results
-	err := txQueries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
-		Rowid:    int32(row.Rowid),
-		Status:   batchsqlc.StatusEnum(status),
-		Doneat:   pgtype.Timestamp{Time: time.Now()},
-		Res:      []byte(result),
-		Blobrows: blobRowsJSON,
-		Messages: messagesJSON,
-		Doneby:   doneBy,
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
