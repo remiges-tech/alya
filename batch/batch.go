@@ -21,7 +21,7 @@ type Batch struct {
 	RedisClient *redis.Client
 }
 
-func (b Batch) Submit(app, op string, batchctx JSONstr, batchInput []batchsqlc.InsertIntoBatchRowsParams) (batchID string, err error) {
+func (b Batch) Submit(app, op string, batchctx JSONstr, batchInput []batchsqlc.InsertIntoBatchRowsParams, waitabit bool) (batchID string, err error) {
 	// Generate a unique batch ID
 	batchUUID, err := uuid.NewUUID()
 
@@ -32,12 +32,19 @@ func (b Batch) Submit(app, op string, batchctx JSONstr, batchInput []batchsqlc.I
 	}
 	defer tx.Rollback(context.Background())
 
+	// Set the batch status based on waitabit
+	status := batchsqlc.StatusEnumQueued
+	if waitabit {
+		status = batchsqlc.StatusEnumWait
+	}
+
 	// Insert a record into the batches table
 	_, err = b.Queries.InsertIntoBatches(context.Background(), batchsqlc.InsertIntoBatchesParams{
 		ID:      batchUUID,
 		App:     app,
 		Op:      op,
 		Context: []byte(batchctx),
+		Status:  status,
 	})
 	if err != nil {
 		return "", err
@@ -204,4 +211,129 @@ func (b Batch) Abort(batchID string) (status batchsqlc.StatusEnum, nsuccess, nfa
 	}
 
 	return batchsqlc.StatusEnumAborted, int(batch.Nsuccess.Int32), int(batch.Nfailed.Int32), len(pendingRows), nil
+}
+
+func (b Batch) Append(batchID string, batchinput []batchsqlc.InsertIntoBatchRowsParams, waitabit bool) (nrows int, err error) {
+	// Check if the batch record exists in the batches table
+	batch, err := b.Queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("batch not found: %v", err)
+		}
+		return 0, fmt.Errorf("failed to get batch by ID: %v", err)
+	}
+
+	// Check if the batch status is "wait"
+	if batch.Status != batchsqlc.StatusEnumWait {
+		return 0, fmt.Errorf("batch status must be 'wait' to append rows")
+	}
+
+	// Start a transaction
+	tx, err := b.Db.Begin(context.Background())
+	if err != nil {
+		return 0, fmt.Errorf("failed to start transaction: %v", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	// Insert records into the batchrows table
+	for _, input := range batchinput {
+		if input.Line <= 0 {
+			return 0, fmt.Errorf("invalid line number: %d", input.Line)
+		}
+
+		err := b.Queries.InsertIntoBatchRows(context.Background(), input)
+		if err != nil {
+			return 0, fmt.Errorf("failed to insert batch row: %v", err)
+		}
+	}
+
+	// Update the batch status to "queued" if waitabit is false
+	if !waitabit {
+		err = b.Queries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
+			ID:     uuid.MustParse(batchID),
+			Status: batchsqlc.StatusEnumQueued,
+		})
+		if err != nil {
+			return 0, fmt.Errorf("failed to update batch status: %v", err)
+		}
+	}
+
+	// Commit the transaction
+	err = tx.Commit(context.Background())
+	if err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	// Get the total count of rows in batchrows for the batch
+	batchRows, err := b.Queries.GetBatchRowsByBatchID(context.Background(), uuid.MustParse(batchID))
+	if err != nil {
+		return 0, fmt.Errorf("failed to get batch rows: %v", err)
+	}
+	nrows = len(batchRows)
+
+	return int(nrows), nil
+}
+
+func (b Batch) WaitOff(batchID string) (string, int, error) {
+	// Parse the batch ID as a UUID
+	batchUUID, err := uuid.Parse(batchID)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid batch ID: %v", err)
+	}
+
+	// Start a transaction
+	tx, err := b.Db.Begin(context.Background())
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to start transaction: %v", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	// Perform SELECT FOR UPDATE on the batches table
+	batch, err := b.Queries.GetBatchByID(context.Background(), batchUUID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", 0, fmt.Errorf("batch not found: %v", err)
+		}
+		return "", 0, fmt.Errorf("failed to get batch by ID: %v", err)
+	}
+
+	// Check if the batch status is already "queued"
+	if batch.Status == batchsqlc.StatusEnumQueued {
+		// Get the total count of rows in batchrows for the batch
+		batchRows, err := b.Queries.GetBatchRowsCount(context.Background(), batchUUID)
+		if err != nil {
+			return "", 0, fmt.Errorf("failed to get batch rows: %v", err)
+		}
+
+		// No need to update the status, return success
+		return batchID, int(batchRows), nil
+	}
+
+	// Check if the batch status is "wait"
+	if batch.Status != batchsqlc.StatusEnumWait {
+		return "", 0, fmt.Errorf("batch status must be 'wait' to change to 'queued'")
+	}
+
+	// Update the batch status to "queued"
+	err = b.Queries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
+		ID:     batchUUID,
+		Status: batchsqlc.StatusEnumQueued,
+	})
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to update batch status: %v", err)
+	}
+
+	// Get the total count of rows in batchrows for the batch
+	nrows, err := b.Queries.GetBatchRowsCount(context.Background(), batchUUID)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to get batch rows count: %v", err)
+	}
+
+	// Commit the transaction
+	err = tx.Commit(context.Background())
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return batchID, int(nrows), nil
 }

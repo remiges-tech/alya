@@ -1,6 +1,6 @@
 -- name: InsertIntoBatches :one
 INSERT INTO batches (id, app, op, context, status, reqat)
-VALUES ($1, $2, $3, $4, 'queued', NOW())
+VALUES ($1, $2, $3, $4, $5, NOW())
 RETURNING id;
 
 -- name: InsertIntoBatchRows :exec
@@ -38,7 +38,7 @@ WHERE rowid = $1;
 SELECT batches.app, batches.op, batches.context, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
 FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
-WHERE batchrows.status = $1
+WHERE batchrows.status = $1 AND batches.status != 'wait'
 LIMIT $2
 FOR UPDATE SKIP LOCKED;
 
@@ -84,3 +84,14 @@ SET nsuccess = COALESCE(nsuccess, 0) + $2,
     nfailed = COALESCE(nfailed, 0) + $3,
     naborted = COALESCE(naborted, 0) + $4
 WHERE id = $1;
+
+-- name: GetBatchRowsByBatchID :many
+SELECT * FROM batchrows WHERE batch = $1;
+
+-- name: UpdateBatchStatus :exec
+UPDATE batches
+SET status = $2, doneat = $3, outputfiles = $4, nsuccess = $5, nfailed = $6, naborted = $7
+WHERE id = $1;
+
+-- name: GetBatchRowsCount :one
+SELECT COUNT(*) FROM batchrows WHERE batch = $1;

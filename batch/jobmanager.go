@@ -256,7 +256,6 @@ func summarizeBatch(q *batchsqlc.Queries, r *redis.Client, batchID uuid.UUID) er
 	// Fetch all batchrows records for the batch, sorted by "line"
 	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
 	fmt.Printf("jobmanager summarizebatch getbatchrowsbybatchidsorted %v \n", batchID.String())
-	fmt.Printf("jobmanager summarizebatch getbatchrowsbybatchidsorted batchrows %v \n", batchRows)
 	if err != nil {
 		return fmt.Errorf("failed to get batch rows sorted: %v", err)
 	}
