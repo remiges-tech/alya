@@ -29,17 +29,6 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 		return nil
 	}
 
-	// Fetch pending batchrows records for the batch with status "queued" or "inprog"
-	pendingRows, err := q.GetPendingBatchRows(ctx, batchID)
-	if err != nil {
-		return fmt.Errorf("failed to get pending batch rows: %v", err)
-	}
-
-	// If there are pending rows, the batch is not yet complete
-	if len(pendingRows) > 0 {
-		return nil
-	}
-
 	// Fetch all batchrows records for the batch, sorted by "line"
 	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
 	if err != nil {
@@ -48,6 +37,9 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 
 	// Calculate the summary counters
 	nsuccess, nfailed, naborted := calculateSummaryCounters(batchRows)
+
+	// Determine the overall batch status based on the counter values
+	batchStatus := determineBatchStatus(nsuccess, nfailed, naborted)
 
 	// Create temporary files for each unique logical file in blobrows
 	tmpFiles, err := createTemporaryFiles(batchRows)
@@ -69,13 +61,13 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 	}
 
 	// Update the batches record with summarized information
-	err = updateBatchSummary(q, ctx, batchID, batch.Status, outputFiles, nsuccess, nfailed, naborted)
+	err = updateBatchSummary(q, ctx, batchID, batchStatus, outputFiles, nsuccess, nfailed, naborted)
 	if err != nil {
 		return fmt.Errorf("failed to update batch summary: %v", err)
 	}
 
 	// Update status in redis
-	err = updateStatusInRedis(jm.RedisClient, batchID, batch.Status)
+	err = updateStatusInRedis(jm.RedisClient, batchID, batchStatus)
 	if err != nil {
 		return fmt.Errorf("failed to update status in redis: %v", err)
 	}
@@ -95,6 +87,16 @@ func calculateSummaryCounters(batchRows []batchsqlc.GetBatchRowsByBatchIDSortedR
 		}
 	}
 	return
+}
+
+func determineBatchStatus(nsuccess, nfailed, naborted int64) batchsqlc.StatusEnum {
+	if naborted > 0 {
+		return batchsqlc.StatusEnumAborted
+	} else if nfailed > 0 {
+		return batchsqlc.StatusEnumFailed
+	} else {
+		return batchsqlc.StatusEnumSuccess
+	}
 }
 
 func createTemporaryFiles(batchRows []batchsqlc.GetBatchRowsByBatchIDSortedRow) (map[string]*os.File, error) {
@@ -211,11 +213,11 @@ func moveToObjectStore(filePath string, store objstore.ObjectStore, bucket strin
 		return "", fmt.Errorf("failed to put object in store: %v", err)
 	}
 
-	// Delete the temporary file
-	err = os.Remove(filePath)
-	if err != nil {
-		log.Printf("failed to delete temporary file: %v", err)
-	}
+	// // Delete the temporary file
+	// err = os.Remove(filePath)
+	// if err != nil {
+	// 	log.Printf("failed to delete temporary file: %v", err)
+	// }
 
 	return objectName, nil
 }

@@ -152,11 +152,6 @@ func (jm *JobManager) Run() {
 			log.Println("Error summarizing completed batches:", err)
 		}
 
-		// Check for completed batches and summarize them
-		if err := jm.summarizeCompletedBatches(txQueries, batchSet); err != nil {
-			log.Println("Error summarizing completed batches:", err)
-		}
-
 		tx.Commit(ctx)
 
 		// Close and clean up initblocks
