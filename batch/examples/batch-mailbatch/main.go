@@ -12,21 +12,16 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/remiges-tech/alya/batch"
+	"github.com/remiges-tech/alya/batch/examples"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
-
-type EmailInput struct {
-	RecipientEmail string `json:"recipientEmail"`
-	Subject        string `json:"subject"`
-	Body           string `json:"body"`
-}
 
 type EmailBatchProcessor struct{}
 
 func (p *EmailBatchProcessor) DoBatchJob(initBlock batch.InitBlock, context batch.JSONstr, line int, input batch.JSONstr) (status batchsqlc.StatusEnum, result batch.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
 	// Parse the input JSON
-	var emailInput EmailInput
+	var emailInput examples.EmailInput
 	err = json.Unmarshal([]byte(input), &emailInput)
 	if err != nil {
 		return batchsqlc.StatusEnumFailed, "", nil, nil, err
@@ -101,20 +96,20 @@ func main() {
 		log.Fatal("Failed to register initializer:", err)
 	}
 
-	// Prepare the batch input data
-	batchInput := []batchsqlc.InsertIntoBatchRowsParams{
-		{
-			Line:  1,
-			Input: []byte(`{"recipientEmail": "user1@example.com", "subject": "Batch Email 1", "body": "Hello, this is batch email 1."}`),
-		},
-		{
-			Line:  2,
-			Input: []byte(`{"recipientEmail": "user2@example.com", "subject": "Batch Email 2", "body": "Hello, this is batch email 2."}`),
-		},
-		// Add more batch input records as needed
+	// Define the base email template with placeholders for dynamic content
+	emailTemplate := examples.EmailTemplate{
+		RecipientEmail: "user",
+		Subject:        "Batch Email",
+		Body:           "Hello, this is a batch email.",
 	}
 
-	// Submit the batch
+	// Specify the desired number of records to generate
+	numRecords := 100 // Example: Generate 100 unique email records
+
+	// Generate the batch input data using the template and number of records
+	batchInput := examples.GenerateBatchInput(numRecords, emailTemplate)
+
+	// Submit the batch with the generated input data
 	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput, false)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)

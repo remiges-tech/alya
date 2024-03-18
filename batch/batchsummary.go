@@ -213,11 +213,5 @@ func moveToObjectStore(filePath string, store objstore.ObjectStore, bucket strin
 		return "", fmt.Errorf("failed to put object in store: %v", err)
 	}
 
-	// // Delete the temporary file
-	// err = os.Remove(filePath)
-	// if err != nil {
-	// 	log.Printf("failed to delete temporary file: %v", err)
-	// }
-
 	return objectName, nil
 }

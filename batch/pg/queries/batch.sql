@@ -78,6 +78,11 @@ UPDATE batches
 SET status = $2, doneat = $3, outputfiles = $4, nsuccess = $5, nfailed = $6, naborted = $7
 WHERE id = $1;
 
+-- name: UpdateBatchSummaryOnAbort :exec
+UPDATE batches
+SET status = $2, doneat = $3, naborted = $4
+WHERE id = $1;
+
 -- name: UpdateBatchCounters :exec
 UPDATE batches
 SET nsuccess = COALESCE(nsuccess, 0) + $2,

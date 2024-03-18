@@ -29,6 +29,7 @@ type Querier interface {
 	UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRowsStatusParams) error
 	UpdateBatchStatus(ctx context.Context, arg UpdateBatchStatusParams) error
 	UpdateBatchSummary(ctx context.Context, arg UpdateBatchSummaryParams) error
+	UpdateBatchSummaryOnAbort(ctx context.Context, arg UpdateBatchSummaryOnAbortParams) error
 }
 
 var _ Querier = (*Queries)(nil)

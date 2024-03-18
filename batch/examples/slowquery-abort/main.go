@@ -9,6 +9,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch"
+	"github.com/remiges-tech/alya/batch/examples"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
@@ -89,8 +90,10 @@ func main() {
 	}
 	fmt.Println(slowQuery.Queries)
 
+	store := examples.CreateMinioClient()
+
 	// Initialize JobManager
-	jm := batch.NewJobManager(pool, redisClient)
+	jm := batch.NewJobManager(pool, redisClient, store)
 
 	// Register the SlowQueryProcessor for the long-running report
 	err := jm.RegisterProcessorSlowQuery("broadside", "slowreport", &SlowReportProcessor{})
