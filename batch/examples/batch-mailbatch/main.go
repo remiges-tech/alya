@@ -9,22 +9,19 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/remiges-tech/alya/batch"
+	"github.com/remiges-tech/alya/batch/examples"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
-
-type EmailInput struct {
-	RecipientEmail string `json:"recipientEmail"`
-	Subject        string `json:"subject"`
-	Body           string `json:"body"`
-}
 
 type EmailBatchProcessor struct{}
 
 func (p *EmailBatchProcessor) DoBatchJob(initBlock batch.InitBlock, context batch.JSONstr, line int, input batch.JSONstr) (status batchsqlc.StatusEnum, result batch.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
 	// Parse the input JSON
-	var emailInput EmailInput
+	var emailInput examples.EmailInput
 	err = json.Unmarshal([]byte(input), &emailInput)
 	if err != nil {
 		return batchsqlc.StatusEnumFailed, "", nil, nil, err
@@ -66,11 +63,30 @@ func main() {
 		Addr: "localhost:6379",
 	})
 
+	// Create a new Minio client instance with the default credentials
+	minioClient, err := minio.New("localhost:9000", &minio.Options{
+		Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
+		Secure: false,
+	})
+	if err != nil {
+		log.Fatalf("Error creating Minio client: %v", err)
+	}
+	// Create the test bucket
+	bucketName := "batch-output"
+	err = minioClient.MakeBucket(context.Background(), bucketName, minio.MakeBucketOptions{})
+	if err != nil {
+		// Check if the bucket already exists
+		exists, err := minioClient.BucketExists(context.Background(), bucketName)
+		if err != nil || !exists {
+			log.Fatalf("Error creating test bucket: %v", err)
+		}
+	}
+
 	// Initialize JobManager
-	jm := batch.NewJobManager(pool, redisClient)
+	jm := batch.NewJobManager(pool, redisClient, minioClient)
 
 	// Register the batch processor and initializer
-	err := jm.RegisterProcessorBatch("emailapp", "sendbulkemail", &EmailBatchProcessor{})
+	err = jm.RegisterProcessorBatch("emailapp", "sendbulkemail", &EmailBatchProcessor{})
 	if err != nil {
 		log.Fatal("Failed to register batch processor:", err)
 	}
@@ -80,20 +96,20 @@ func main() {
 		log.Fatal("Failed to register initializer:", err)
 	}
 
-	// Prepare the batch input data
-	batchInput := []batchsqlc.InsertIntoBatchRowsParams{
-		{
-			Line:  1,
-			Input: []byte(`{"recipientEmail": "user1@example.com", "subject": "Batch Email 1", "body": "Hello, this is batch email 1."}`),
-		},
-		{
-			Line:  2,
-			Input: []byte(`{"recipientEmail": "user2@example.com", "subject": "Batch Email 2", "body": "Hello, this is batch email 2."}`),
-		},
-		// Add more batch input records as needed
+	// Define the base email template with placeholders for dynamic content
+	emailTemplate := examples.EmailTemplate{
+		RecipientEmail: "user",
+		Subject:        "Batch Email",
+		Body:           "Hello, this is a batch email.",
 	}
 
-	// Submit the batch
+	// Specify the desired number of records to generate
+	numRecords := 100 // Example: Generate 100 unique email records
+
+	// Generate the batch input data using the template and number of records
+	batchInput := examples.GenerateBatchInput(numRecords, emailTemplate)
+
+	// Submit the batch with the generated input data
 	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput, false)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)
@@ -106,7 +122,7 @@ func main() {
 
 	// Poll for the batch completion status
 	for {
-		status, batchOutput, outputFiles, nsuccess, nfailed, naborted, err := jm.BatchDone(batchID)
+		status, _, outputFiles, nsuccess, nfailed, naborted, err := jm.BatchDone(batchID)
 		fmt.Printf("batchid: %v\n", batchID)
 		fmt.Printf("status: %v\n", status)
 		if err != nil {
@@ -120,7 +136,6 @@ func main() {
 		}
 
 		fmt.Println("Batch completed with status:", status)
-		fmt.Println("Batch output:", batchOutput)
 		fmt.Println("Output files:", outputFiles)
 		fmt.Println("Success count:", nsuccess)
 		fmt.Println("Failed count:", nfailed)

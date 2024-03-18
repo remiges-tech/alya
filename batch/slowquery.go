@@ -90,7 +90,7 @@ const (
 
 // determineBatchStatus converts a batch status from the database or Redis
 // to a BatchStatus_t value.
-func determineBatchStatus(status batchsqlc.StatusEnum) BatchStatus_t {
+func getBatchStatus(status batchsqlc.StatusEnum) BatchStatus_t {
 	switch status {
 	case batchsqlc.StatusEnumSuccess:
 		return BatchSuccess
@@ -126,7 +126,7 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		enumStatus.Scan(batchStatus) // Assuming batchStatus is a string, adjust if it's already StatusEnum
 
 		// Determine the BatchStatus_t based on batchStatus
-		status := determineBatchStatus(enumStatus)
+		status := getBatchStatus(enumStatus)
 
 		// Insert/update REDIS with 100x expiry if not found earlier
 		expiry := 100 * ALYA_BATCHSTATUS_CACHEDUR_SEC
@@ -141,7 +141,7 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		// Key exists in REDIS, determine the action based on its value
 		var enumStatus batchsqlc.StatusEnum
 		enumStatus.Scan(statusVal) // Convert Redis result to StatusEnum
-		status = determineBatchStatus(enumStatus)
+		status = getBatchStatus(enumStatus)
 	}
 
 	// Format the response based on the status

@@ -211,7 +211,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 
 	// Update the batch status to aborted and set doneat timestamp
 	fmt.Printf("batch.abort before updatebatchsummary\n")
-	err = jm.Queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+	err = jm.Queries.UpdateBatchSummaryOnAbort(context.Background(), batchsqlc.UpdateBatchSummaryOnAbortParams{
 		ID:       batchUUID,
 		Status:   batchsqlc.StatusEnumAborted,
 		Doneat:   pgtype.Timestamp{Time: time.Now()},

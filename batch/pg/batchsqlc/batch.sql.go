@@ -545,3 +545,26 @@ func (q *Queries) UpdateBatchSummary(ctx context.Context, arg UpdateBatchSummary
 	)
 	return err
 }
+
+const updateBatchSummaryOnAbort = `-- name: UpdateBatchSummaryOnAbort :exec
+UPDATE batches
+SET status = $2, doneat = $3, naborted = $4
+WHERE id = $1
+`
+
+type UpdateBatchSummaryOnAbortParams struct {
+	ID       uuid.UUID        `json:"id"`
+	Status   StatusEnum       `json:"status"`
+	Doneat   pgtype.Timestamp `json:"doneat"`
+	Naborted pgtype.Int4      `json:"naborted"`
+}
+
+func (q *Queries) UpdateBatchSummaryOnAbort(ctx context.Context, arg UpdateBatchSummaryOnAbortParams) error {
+	_, err := q.db.Exec(ctx, updateBatchSummaryOnAbort,
+		arg.ID,
+		arg.Status,
+		arg.Doneat,
+		arg.Naborted,
+	)
+	return err
+}

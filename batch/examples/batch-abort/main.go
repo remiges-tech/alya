@@ -10,6 +10,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch"
+	"github.com/remiges-tech/alya/batch/examples"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
@@ -66,8 +67,10 @@ func main() {
 		Addr: "localhost:6379",
 	})
 
+	store := examples.CreateMinioClient()
+
 	// Initialize JobManager
-	jm := batch.NewJobManager(pool, redisClient)
+	jm := batch.NewJobManager(pool, redisClient, store)
 
 	// Register the batch processor and initializer
 	err := jm.RegisterProcessorBatch("emailapp", "sendbulkemail", &EmailBatchProcessor{})
@@ -80,19 +83,18 @@ func main() {
 		log.Fatal("Failed to register initializer:", err)
 	}
 
-	// Prepare the batch input data
-	batchInput := []batchsqlc.InsertIntoBatchRowsParams{
-		{
-			Line:  1,
-			Input: []byte(`{"recipientEmail": "user1@example.com", "subject": "Batch Email 1", "body": "Hello, this is batch email 1."}`),
-		},
-		{
-			Line:  2,
-			Input: []byte(`{"recipientEmail": "user2@example.com", "subject": "Batch Email 2", "body": "Hello, this is batch email 2."}`),
-		},
-		// Add more batch input records as needed
+	// Define the base email template with placeholders for dynamic content
+	emailTemplate := examples.EmailTemplate{
+		RecipientEmail: "user",
+		Subject:        "Batch Email",
+		Body:           "Hello, this is a batch email.",
 	}
 
+	// Specify the desired number of records to generate
+	numRecords := 100 // Example: Generate 100 unique email records
+
+	// Generate the batch input data using the template and number of records
+	batchInput := examples.GenerateBatchInput(numRecords, emailTemplate)
 	// Submit the batch
 	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", batch.JSONstr("{}"), batchInput, false)
 	if err != nil {
@@ -105,7 +107,7 @@ func main() {
 	go jm.Run()
 
 	// Wait for a short duration before aborting the batch
-	time.Sleep(5 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	// Abort the batch
 	status, nsuccess, nfailed, naborted, err := jm.BatchAbort(batchID)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
 	"sync"
 	"time"
 
@@ -14,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
+	"github.com/remiges-tech/alya/batch/objstore"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
@@ -31,17 +32,19 @@ type JobManager struct {
 	Db                      *pgxpool.Pool
 	Queries                 batchsqlc.Querier
 	RedisClient             *redis.Client
+	ObjStore                objstore.ObjectStore
 	initblocks              map[string]InitBlock
 	initfuncs               map[string]Initializer
 	slowqueryprocessorfuncs map[string]SlowQueryProcessor
 	batchprocessorfuncs     map[string]BatchProcessor
 }
 
-func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client) *JobManager {
+func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client) *JobManager {
 	return &JobManager{
 		Db:                      db,
 		Queries:                 batchsqlc.New(db),
 		RedisClient:             redisClient,
+		ObjStore:                objstore.NewMinioObjectStore(minioClient),
 		initblocks:              make(map[string]InitBlock),
 		initfuncs:               make(map[string]Initializer),
 		slowqueryprocessorfuncs: make(map[string]SlowQueryProcessor),
@@ -142,11 +145,6 @@ func (jm *JobManager) Run() {
 			if row.Line != 0 {
 				batchSet[row.Batch] = true
 			}
-		}
-
-		// Check for completed batches and summarize them
-		if err := jm.summarizeCompletedBatches(txQueries, batchSet); err != nil {
-			log.Println("Error summarizing completed batches:", err)
 		}
 
 		// Check for completed batches and summarize them
@@ -304,142 +302,6 @@ func (jm *JobManager) summarizeCompletedBatches(q *batchsqlc.Queries, batchSet m
 	}
 
 	return nil
-}
-
-func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) error {
-	ctx := context.Background()
-
-	// Fetch the batch record
-	batch, err := q.GetBatchByID(ctx, batchID)
-	if err != nil {
-		return fmt.Errorf("failed to get batch by ID: %v", err)
-	}
-
-	// Check if the batch is already summarized
-	if !batch.Doneat.Time.IsZero() {
-		return nil
-	}
-
-	// Fetch pending batchrows records for the batch with status "queued" or "inprog"
-	pendingRows, err := q.GetPendingBatchRows(ctx, batchID)
-	if err != nil {
-		return fmt.Errorf("failed to get pending batch rows: %v", err)
-	}
-
-	// If there are pending rows, the batch is not yet complete
-	if len(pendingRows) > 0 {
-		return nil
-	}
-
-	// Fetch all batchrows records for the batch, sorted by "line"
-	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
-	if err != nil {
-		return fmt.Errorf("failed to get batch rows sorted: %v", err)
-	}
-
-	// Calculate the summary counters
-	var nsuccess, nfailed, naborted int64
-	for _, row := range batchRows {
-		switch row.Status {
-		case batchsqlc.StatusEnumSuccess:
-			nsuccess++
-		case batchsqlc.StatusEnumFailed:
-			nfailed++
-		case batchsqlc.StatusEnumAborted:
-			naborted++
-		}
-	}
-
-	// Create temporary files for each unique logical file in blobrows
-	tmpFiles := make(map[string]*os.File)
-	for _, row := range batchRows {
-		var blobRows map[string]string
-		if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
-			return fmt.Errorf("failed to unmarshal blobrows: %v", err)
-		}
-
-		for logicalFile := range blobRows {
-			if _, exists := tmpFiles[logicalFile]; !exists {
-				file, err := os.CreateTemp("", logicalFile)
-				if err != nil {
-					return fmt.Errorf("failed to create temporary file: %v", err)
-				}
-				tmpFiles[logicalFile] = file
-			}
-		}
-	}
-
-	// Append blobrows strings to the appropriate temporary files
-	for _, row := range batchRows {
-		var blobRows map[string]string
-		if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
-			return fmt.Errorf("failed to unmarshal blobrows: %v", err)
-		}
-
-		for logicalFile, content := range blobRows {
-			if _, err := tmpFiles[logicalFile].WriteString(content + "\n"); err != nil {
-				return fmt.Errorf("failed to write to temporary file: %v", err)
-			}
-		}
-	}
-
-	// Close all temporary files
-	for _, file := range tmpFiles {
-		if err := file.Close(); err != nil {
-			return fmt.Errorf("failed to close temporary file: %v", err)
-		}
-	}
-
-	// Move temporary files to the object store and update outputfiles
-	outputFiles := make(map[string]string)
-	for logicalFile, file := range tmpFiles {
-		objectID, err := moveToObjectStore(file.Name())
-		if err != nil {
-			return fmt.Errorf("failed to move file to object store: %v", err)
-		}
-		outputFiles[logicalFile] = objectID
-	}
-
-	// Update the batches record with summarized information
-	outputFilesJSON, err := json.Marshal(outputFiles)
-	if err != nil {
-		return fmt.Errorf("failed to marshal output files: %v", err)
-	}
-
-	status := batchsqlc.StatusEnumSuccess
-	if nfailed > 0 {
-		status = batchsqlc.StatusEnumFailed
-	}
-
-	err = q.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
-		ID:          batchID,
-		Status:      status,
-		Doneat:      pgtype.Timestamp{Time: time.Now()},
-		Outputfiles: outputFilesJSON,
-		Nsuccess:    pgtype.Int4{Int32: int32(nsuccess), Valid: true},
-		Nfailed:     pgtype.Int4{Int32: int32(nfailed), Valid: true},
-		Naborted:    pgtype.Int4{Int32: int32(naborted), Valid: true},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update batch summary: %v", err)
-	}
-
-	// update status in redis
-	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
-	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-	_, err = jm.RedisClient.Set(redisKey, string(status), expiry).Result()
-	if err != nil {
-		return fmt.Errorf("failed to update status in redis: %v", err)
-	}
-
-	return nil
-}
-
-func moveToObjectStore(filePath string) (string, error) {
-	// Implement the logic to move the file to the object store
-	// and return the object ID
-	// return "", fmt.Errorf("moveToObjectStore not implemented")
-	return "", nil
 }
 
 func (jm *JobManager) closeInitBlocks() {
