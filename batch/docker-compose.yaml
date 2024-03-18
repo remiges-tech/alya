@@ -21,4 +21,5 @@ services:
     image: minio/minio
     ports:
       - "9000:9000"
-    command: server /data
+      - "9001:9001" 
+    command: server /data --console-address ":9001"
