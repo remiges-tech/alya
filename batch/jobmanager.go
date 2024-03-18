@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
+	"github.com/remiges-tech/alya/batch/objstore"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 )
@@ -31,17 +33,19 @@ type JobManager struct {
 	Db                      *pgxpool.Pool
 	Queries                 batchsqlc.Querier
 	RedisClient             *redis.Client
+	ObjStore                objstore.ObjectStore
 	initblocks              map[string]InitBlock
 	initfuncs               map[string]Initializer
 	slowqueryprocessorfuncs map[string]SlowQueryProcessor
 	batchprocessorfuncs     map[string]BatchProcessor
 }
 
-func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client) *JobManager {
+func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client) *JobManager {
 	return &JobManager{
 		Db:                      db,
 		Queries:                 batchsqlc.New(db),
 		RedisClient:             redisClient,
+		ObjStore:                objstore.NewMinioObjectStore(minioClient),
 		initblocks:              make(map[string]InitBlock),
 		initfuncs:               make(map[string]Initializer),
 		slowqueryprocessorfuncs: make(map[string]SlowQueryProcessor),
@@ -391,9 +395,10 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 	}
 
 	// Move temporary files to the object store and update outputfiles
+	// Move temporary files to the object store and update outputfiles
 	outputFiles := make(map[string]string)
 	for logicalFile, file := range tmpFiles {
-		objectID, err := moveToObjectStore(file.Name())
+		objectID, err := moveToObjectStore(file.Name(), jm.ObjectStore, "batch-output")
 		if err != nil {
 			return fmt.Errorf("failed to move file to object store: %v", err)
 		}
@@ -435,11 +440,36 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 	return nil
 }
 
-func moveToObjectStore(filePath string) (string, error) {
-	// Implement the logic to move the file to the object store
-	// and return the object ID
-	// return "", fmt.Errorf("moveToObjectStore not implemented")
-	return "", nil
+func moveToObjectStore(filePath string, store objstore.ObjectStore, bucket string) (string, error) {
+	// Open the file
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// Get the file info
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("failed to get file info: %v", err)
+	}
+
+	// Generate a unique object name
+	objectName := uuid.New().String()
+
+	// Put the object in the object store
+	err = store.Put(context.Background(), bucket, objectName, file, fileInfo.Size(), "application/octet-stream")
+	if err != nil {
+		return "", fmt.Errorf("failed to put object in store: %v", err)
+	}
+
+	// Delete the temporary file
+	err = os.Remove(filePath)
+	if err != nil {
+		log.Printf("failed to delete temporary file: %v", err)
+	}
+
+	return objectName, nil
 }
 
 func (jm *JobManager) closeInitBlocks() {
