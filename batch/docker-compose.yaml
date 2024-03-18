@@ -16,3 +16,9 @@ services:
     container_name: alyabatch-redis
     ports:
       - "6379:6379"
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+    command: server /data
