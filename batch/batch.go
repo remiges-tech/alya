@@ -162,9 +162,11 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	}
 	defer tx.Rollback(context.Background())
 
+	queries := batchsqlc.New(tx)
+
 	// Perform SELECT FOR UPDATE on batches and batchrows for the given batch ID
 	fmt.Printf("batch.abort before getbatchbyid\n")
-	batch, err := jm.Queries.GetBatchByID(context.Background(), batchUUID)
+	batch, err := queries.GetBatchByID(context.Background(), batchUUID)
 	if err == sql.ErrNoRows {
 		return "", 0, 0, 0, fmt.Errorf("batch not found: %v", err)
 	}
@@ -182,7 +184,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 
 	// Fetch the pending batchrows records associated with the batch ID
 	fmt.Printf("batch.abort before getpendingbatchrows batchuuid: %v \n", batchUUID.String())
-	pendingRows, err := jm.Queries.GetPendingBatchRows(context.Background(), batchUUID)
+	pendingRows, err := queries.GetPendingBatchRows(context.Background(), batchUUID)
 	if len(pendingRows) == 0 {
 		return "", 0, 0, 0, fmt.Errorf("no pending rows found for batch %s", batchID)
 	}
@@ -201,7 +203,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 
 	// Update the batchrows status to aborted for rows with status queued or inprog
 	fmt.Printf("batch.abort before updatebatchrowsstatus rowids %v:  \n", rowids)
-	err = jm.Queries.UpdateBatchRowsStatus(context.Background(), batchsqlc.UpdateBatchRowsStatusParams{
+	err = queries.UpdateBatchRowsStatus(context.Background(), batchsqlc.UpdateBatchRowsStatusParams{
 		Status:  batchsqlc.StatusEnumAborted,
 		Column2: rowids,
 	})
@@ -209,13 +211,34 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 		return "", 0, 0, 0, fmt.Errorf("failed to update batchrows status: %v", err)
 	}
 
+	// Fetch the updated batchrows records for the batch
+	updatedBatchRows, err := queries.GetBatchRowsByBatchID(context.Background(), batchUUID)
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("failed to get updated batchrows: %v", err)
+	}
+
+	// Count the number of rows with each status
+	var successCount, failedCount, abortedCount int
+	for _, row := range updatedBatchRows {
+		switch row.Status {
+		case batchsqlc.StatusEnumSuccess:
+			successCount++
+		case batchsqlc.StatusEnumFailed:
+			failedCount++
+		case batchsqlc.StatusEnumAborted:
+			abortedCount++
+		}
+	}
+
 	// Update the batch status to aborted and set doneat timestamp
 	fmt.Printf("batch.abort before updatebatchsummary\n")
-	err = jm.Queries.UpdateBatchSummaryOnAbort(context.Background(), batchsqlc.UpdateBatchSummaryOnAbortParams{
+	err = queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
 		ID:       batchUUID,
 		Status:   batchsqlc.StatusEnumAborted,
 		Doneat:   pgtype.Timestamp{Time: time.Now()},
-		Naborted: pgtype.Int4{Int32: int32(len(pendingRows)), Valid: true},
+		Nsuccess: pgtype.Int4{Int32: int32(successCount), Valid: true},
+		Nfailed:  pgtype.Int4{Int32: int32(failedCount), Valid: true},
+		Naborted: pgtype.Int4{Int32: int32(abortedCount), Valid: true},
 	})
 	if err != nil {
 		return "", 0, 0, 0, fmt.Errorf("failed to update batch summary: %v", err)
@@ -236,7 +259,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 		log.Printf("failed to set Redis batch status: %v", err)
 	}
 
-	return batchsqlc.StatusEnumAborted, int(batch.Nsuccess.Int32), int(batch.Nfailed.Int32), len(pendingRows), nil
+	return batchsqlc.StatusEnumAborted, successCount, failedCount, abortedCount, nil
 }
 
 func (jm *JobManager) BatchAppend(batchID string, batchinput []batchsqlc.InsertIntoBatchRowsParams, waitabit bool) (nrows int, err error) {
