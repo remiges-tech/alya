@@ -28,7 +28,7 @@ func (p *EmailBatchProcessor) DoBatchJob(initBlock batch.InitBlock, context batc
 	}
 
 	// Simulate sending the email
-	fmt.Printf("Sending email to %s with subject: %s\n", emailInput.RecipientEmail, emailInput.Subject)
+	fmt.Printf("Sending email to %s with subject %s\n", emailInput.RecipientEmail, emailInput.Subject)
 	time.Sleep(time.Second) // Simulating email sending delay
 
 	// Generate sample blobRows data

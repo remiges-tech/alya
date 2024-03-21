@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	CountBatchRowsByBatchIDAndStatus(ctx context.Context, arg CountBatchRowsByBatchIDAndStatusParams) (int64, error)
 	FetchBatchRowsData(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsDataRow, error)
 	FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error)
 	GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error)
@@ -20,6 +21,7 @@ type Querier interface {
 	GetBatchStatus(ctx context.Context, id uuid.UUID) (StatusEnum, error)
 	GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error)
 	GetPendingBatchRows(ctx context.Context, batch uuid.UUID) ([]GetPendingBatchRowsRow, error)
+	GetProcessedBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetProcessedBatchRowsByBatchIDSortedRow, error)
 	InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRowsParams) error
 	InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error)
 	UpdateBatchCounters(ctx context.Context, arg UpdateBatchCountersParams) error

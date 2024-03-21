@@ -73,6 +73,18 @@ WHERE batch = $1
 ORDER BY line
 FOR UPDATE;
 
+-- name: GetProcessedBatchRowsByBatchIDSorted :many
+SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
+FROM batchrows
+WHERE batch = $1 AND status IN ('success', 'failed')
+ORDER BY line
+FOR UPDATE;
+
+-- name: CountBatchRowsByBatchIDAndStatus :one
+SELECT COUNT(*)
+FROM batchrows
+WHERE batch = $1 AND status IN ($2, $3);
+
 -- name: UpdateBatchSummary :exec
 UPDATE batches
 SET status = $2, doneat = $3, outputfiles = $4, nsuccess = $5, nfailed = $6, naborted = $7

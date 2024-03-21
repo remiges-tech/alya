@@ -29,6 +29,20 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 		return nil
 	}
 
+	// fetch count of records where status = queued or inprogress
+	count, err := q.CountBatchRowsByBatchIDAndStatus(ctx, batchsqlc.CountBatchRowsByBatchIDAndStatusParams{
+		Batch:    batchID,
+		Status:   batchsqlc.StatusEnumQueued,
+		Status_2: batchsqlc.StatusEnumInprog,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to count batch rows by batch ID and status: %v", err)
+	}
+
+	if count > 0 {
+		return nil
+	}
+
 	// Fetch all batchrows records for the batch, sorted by "line"
 	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
 	if err != nil {
@@ -41,15 +55,21 @@ func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) er
 	// Determine the overall batch status based on the counter values
 	batchStatus := determineBatchStatus(nsuccess, nfailed, naborted)
 
+	// Fetch processed batchrows records for the batch to create temporary files
+	processedBatchRows, err := q.GetProcessedBatchRowsByBatchIDSorted(ctx, batchID)
+	if err != nil {
+		return fmt.Errorf("failed to get processed batch rows sorted: %v", err)
+	}
+
 	// Create temporary files for each unique logical file in blobrows
-	tmpFiles, err := createTemporaryFiles(batchRows)
+	tmpFiles, err := createTemporaryFiles(processedBatchRows)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary files: %v", err)
 	}
 	defer cleanupTemporaryFiles(tmpFiles)
 
 	// Append blobrows strings to the appropriate temporary files
-	err = appendBlobRowsToFiles(batchRows, tmpFiles)
+	err = appendBlobRowsToFiles(processedBatchRows, tmpFiles)
 	if err != nil {
 		return fmt.Errorf("failed to append blobrows to files: %v", err)
 	}
@@ -99,21 +119,23 @@ func determineBatchStatus(nsuccess, nfailed, naborted int64) batchsqlc.StatusEnu
 	}
 }
 
-func createTemporaryFiles(batchRows []batchsqlc.GetBatchRowsByBatchIDSortedRow) (map[string]*os.File, error) {
+func createTemporaryFiles(batchRows []batchsqlc.GetProcessedBatchRowsByBatchIDSortedRow) (map[string]*os.File, error) {
 	tmpFiles := make(map[string]*os.File)
 	for _, row := range batchRows {
-		var blobRows map[string]string
-		if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal blobrows: %v", err)
-		}
+		if len(row.Blobrows) > 0 {
+			var blobRows map[string]any
+			if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal blobrows: %v", err)
+			}
 
-		for logicalFile := range blobRows {
-			if _, exists := tmpFiles[logicalFile]; !exists {
-				file, err := os.CreateTemp("", logicalFile)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create temporary file: %v", err)
+			for logicalFile := range blobRows {
+				if _, exists := tmpFiles[logicalFile]; !exists {
+					file, err := os.CreateTemp("", logicalFile)
+					if err != nil {
+						return nil, fmt.Errorf("failed to create temporary file: %v", err)
+					}
+					tmpFiles[logicalFile] = file
 				}
-				tmpFiles[logicalFile] = file
 			}
 		}
 	}
@@ -131,7 +153,7 @@ func cleanupTemporaryFiles(tmpFiles map[string]*os.File) {
 	}
 }
 
-func appendBlobRowsToFiles(batchRows []batchsqlc.GetBatchRowsByBatchIDSortedRow, tmpFiles map[string]*os.File) error {
+func appendBlobRowsToFiles(batchRows []batchsqlc.GetProcessedBatchRowsByBatchIDSortedRow, tmpFiles map[string]*os.File) error {
 	for _, row := range batchRows {
 		var blobRows map[string]string
 		if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
@@ -140,6 +162,7 @@ func appendBlobRowsToFiles(batchRows []batchsqlc.GetBatchRowsByBatchIDSortedRow,
 
 		for logicalFile, content := range blobRows {
 			if _, err := tmpFiles[logicalFile].WriteString(content + "\n"); err != nil {
+				log.Printf("Error writing to temporary file for logical file %s: %v", logicalFile, err)
 				return fmt.Errorf("failed to write to temporary file: %v", err)
 			}
 		}

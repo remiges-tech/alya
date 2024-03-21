@@ -12,6 +12,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countBatchRowsByBatchIDAndStatus = `-- name: CountBatchRowsByBatchIDAndStatus :one
+SELECT COUNT(*)
+FROM batchrows
+WHERE batch = $1 AND status IN ($2, $3)
+`
+
+type CountBatchRowsByBatchIDAndStatusParams struct {
+	Batch    uuid.UUID  `json:"batch"`
+	Status   StatusEnum `json:"status"`
+	Status_2 StatusEnum `json:"status_2"`
+}
+
+func (q *Queries) CountBatchRowsByBatchIDAndStatus(ctx context.Context, arg CountBatchRowsByBatchIDAndStatusParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countBatchRowsByBatchIDAndStatus, arg.Batch, arg.Status, arg.Status_2)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const fetchBatchRowsData = `-- name: FetchBatchRowsData :many
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
@@ -310,6 +329,58 @@ func (q *Queries) GetPendingBatchRows(ctx context.Context, batch uuid.UUID) ([]G
 	var items []GetPendingBatchRowsRow
 	for rows.Next() {
 		var i GetPendingBatchRowsRow
+		if err := rows.Scan(
+			&i.Rowid,
+			&i.Line,
+			&i.Input,
+			&i.Status,
+			&i.Reqat,
+			&i.Doneat,
+			&i.Res,
+			&i.Blobrows,
+			&i.Messages,
+			&i.Doneby,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getProcessedBatchRowsByBatchIDSorted = `-- name: GetProcessedBatchRowsByBatchIDSorted :many
+SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
+FROM batchrows
+WHERE batch = $1 AND status IN ('success', 'failed')
+ORDER BY line
+FOR UPDATE
+`
+
+type GetProcessedBatchRowsByBatchIDSortedRow struct {
+	Rowid    int32            `json:"rowid"`
+	Line     int32            `json:"line"`
+	Input    []byte           `json:"input"`
+	Status   StatusEnum       `json:"status"`
+	Reqat    pgtype.Timestamp `json:"reqat"`
+	Doneat   pgtype.Timestamp `json:"doneat"`
+	Res      []byte           `json:"res"`
+	Blobrows []byte           `json:"blobrows"`
+	Messages []byte           `json:"messages"`
+	Doneby   pgtype.Text      `json:"doneby"`
+}
+
+func (q *Queries) GetProcessedBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetProcessedBatchRowsByBatchIDSortedRow, error) {
+	rows, err := q.db.Query(ctx, getProcessedBatchRowsByBatchIDSorted, batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProcessedBatchRowsByBatchIDSortedRow
+	for rows.Next() {
+		var i GetProcessedBatchRowsByBatchIDSortedRow
 		if err := rows.Scan(
 			&i.Rowid,
 			&i.Line,
