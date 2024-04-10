@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/remiges-tech/alya/batch"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
@@ -119,10 +121,29 @@ func main() {
 	}
 	fmt.Println(slowQuery.Queries) // just to make compiler happy while I'm developing slowquery module
 
+	// Create a new Minio client instance with the default credentials
+	minioClient, err := minio.New("localhost:9000", &minio.Options{
+		Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
+		Secure: false,
+	})
+	if err != nil {
+		log.Fatalf("Error creating Minio client: %v", err)
+	}
+	// Create the test bucket
+	bucketName := "batch-output"
+	err = minioClient.MakeBucket(context.Background(), bucketName, minio.MakeBucketOptions{})
+	if err != nil {
+		// Check if the bucket already exists
+		exists, err := minioClient.BucketExists(context.Background(), bucketName)
+		if err != nil || !exists {
+			log.Fatalf("Error creating test bucket: %v", err)
+		}
+	}
+
 	// Initialize JobManager
-	jm := batch.NewJobManager(pool, redisClient)
+	jm := batch.NewJobManager(pool, redisClient, minioClient)
 	// Register the SlowQueryProcessor for the long-running report
-	err := jm.RegisterProcessorSlowQuery("broadside", "bouncerpt", &BounceReportProcessor{})
+	err = jm.RegisterProcessorSlowQuery("broadside", "bouncerpt", &BounceReportProcessor{})
 	if err != nil {
 		fmt.Println("Failed to register SlowQueryProcessor:", err)
 		return
