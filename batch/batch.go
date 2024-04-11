@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -25,6 +26,9 @@ func (jm *JobManager) RegisterProcessorBatch(app string, op string, p BatchProce
 	mu.Lock()
 	defer mu.Unlock()
 
+	// Convert op to lowercase before inserting into the database
+	op = strings.ToLower(op)
+
 	key := app + op
 	if _, exists := jm.batchprocessorfuncs[key]; exists {
 		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
@@ -38,6 +42,9 @@ func (jm *JobManager) RegisterProcessorSlowQuery(app string, op string, s SlowQu
 	mu.Lock()
 	defer mu.Unlock()
 
+	// Convert op to lowercase before inserting into the database
+	op = strings.ToLower(op)
+
 	key := app + op
 	if _, exists := jm.slowqueryprocessorfuncs[key]; exists {
 		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
@@ -47,6 +54,9 @@ func (jm *JobManager) RegisterProcessorSlowQuery(app string, op string, s SlowQu
 	return nil
 }
 
+// BatchSubmit submits a batch.
+// It takes the following parameters:
+// - op: The operation or task to be performed on each batch row (value is converted to lowercase).
 func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput []batchsqlc.InsertIntoBatchRowsParams, waitabit bool) (batchID string, err error) {
 	// Generate a unique batch ID
 	batchUUID, err := uuid.NewUUID()
@@ -63,6 +73,9 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 	if waitabit {
 		status = batchsqlc.StatusEnumWait
 	}
+
+	// Convert op to lowercase before inserting into the database
+	op = strings.ToLower(op)
 
 	// Insert a record into the batches table
 	_, err = jm.Queries.InsertIntoBatches(context.Background(), batchsqlc.InsertIntoBatchesParams{
