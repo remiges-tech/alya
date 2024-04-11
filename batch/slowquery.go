@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -19,6 +20,9 @@ const ALYA_BATCHSTATUS_CACHEDUR_SEC = 100
 func (jm *JobManager) RegisterSlowQueryProcessor(app string, op string, p SlowQueryProcessor) error {
 	mu.Lock()
 	defer mu.Unlock()
+
+	// Convert op to lowercase before inserting into the database
+	op = strings.ToLower(op)
 
 	key := app + op
 	if _, exists := jm.slowqueryprocessorfuncs[key]; exists {
@@ -44,6 +48,9 @@ func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONst
 		log.Printf("SlowQuery.Submit uuid.NewUUID failed: %v", err)
 		return "", err
 	}
+
+	// Convert op to lowercase before inserting into the database
+	op = strings.ToLower(op)
 
 	// Use sqlc generated function to insert into batches table
 	_, err = jm.Queries.InsertIntoBatches(ctx, batchsqlc.InsertIntoBatchesParams{
