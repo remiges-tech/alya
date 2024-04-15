@@ -23,6 +23,15 @@ type InitBlock interface {
 	Close() error
 }
 
+// Initializer is an interface that allows applications to initialize and provide
+// any necessary resources or configuration for batch processing or slow queries.
+// Implementers of this interface should define a struct that holds the required
+// resources, and provide an implementation for the Init method to create and
+// initialize an instance of that struct (InitBlock).
+//
+// The Init method is expected to return an InitBlock that can be used by the
+// processing functions (BatchProcessor or SlowQueryProcessor) to access the
+// initialized resources.
 type Initializer interface {
 	Init(app string) (InitBlock, error)
 }

@@ -26,12 +26,14 @@ var ErrProcessorAlreadyRegistered = errors.New("processor already registered for
 // The processing function implements the SlowQueryProcessor interface.
 // Each (app, op) combination can only have one registered processor.
 // Attempting to register a second processor for the same combination will result in an error.
+// The 'op' parameter is case-insensitive and will be converted to lowercase before registration.
 func (jm *JobManager) RegisterProcessorSlowQuery(app string, op string, p SlowQueryProcessor) error {
 	key := app + op
-	_, loaded := jm.slowqueryprocessorfuncs.LoadOrStore(key, p)
-	if loaded {
+	_, exists := jm.slowqueryprocessorfuncs[key]
+	if exists {
 		return fmt.Errorf("%w: app=%s, op=%s", ErrProcessorAlreadyRegistered, app, op)
 	}
+	jm.slowqueryprocessorfuncs[key] = p // Add this line to store the processor
 	return nil
 }
 

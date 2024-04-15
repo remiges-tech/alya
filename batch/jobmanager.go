@@ -3,6 +3,7 @@ package batch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -29,16 +30,14 @@ var (
 )
 
 type JobManager struct {
-	Db          *pgxpool.Pool
-	Queries     batchsqlc.Querier
-	RedisClient *redis.Client
-	ObjStore    objstore.ObjectStore
-	initblocks  map[string]InitBlock
-	initfuncs   map[string]Initializer
-	// slowqueryprocessorfuncs map[string]SlowQueryProcessor
-	slowqueryprocessorfuncs sync.Map
-	// batchprocessorfuncs     map[string]BatchProcessor
-	batchprocessorfuncs sync.Map
+	Db                      *pgxpool.Pool
+	Queries                 batchsqlc.Querier
+	RedisClient             *redis.Client
+	ObjStore                objstore.ObjectStore
+	initblocks              map[string]InitBlock
+	initfuncs               map[string]Initializer
+	slowqueryprocessorfuncs map[string]SlowQueryProcessor
+	batchprocessorfuncs     map[string]BatchProcessor
 }
 
 func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client) *JobManager {
@@ -49,21 +48,31 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 		ObjStore:                objstore.NewMinioObjectStore(minioClient),
 		initblocks:              make(map[string]InitBlock),
 		initfuncs:               make(map[string]Initializer),
-		slowqueryprocessorfuncs: sync.Map{},
-		// batchprocessorfuncs:     make(map[string]BatchProcessor),
-		batchprocessorfuncs: sync.Map{},
+		slowqueryprocessorfuncs: make(map[string]SlowQueryProcessor),
+		batchprocessorfuncs:     make(map[string]BatchProcessor),
 	}
 }
 
+var ErrInitializerAlreadyRegistered = errors.New("initializer already registered for this app")
+
 // RegisterInitializer registers an initializer for a specific application.
-// This is where applications register their initial logic with Alya.
+// The initializer is responsible for initializing any required resources or state
+// needed for processing batches or slow queries for that application.
+//
+// The initializer will be called by Alya to create an InitBlock instance that
+// can be used by the processing functions (BatchProcessor or SlowQueryProcessor)
+// to access any necessary resources or configuration for the application.
+//
+// Applications must register an initializer before registering any batch processor or
+// slow query processor. It allows for proper initialization and
+// cleanup of resources used by the processing functions.
 func (jm *JobManager) RegisterInitializer(app string, initializer Initializer) error {
 	mu.Lock()
 	defer mu.Unlock()
 
 	// Check if an initializer for this app already exists to prevent accidental overwrites
 	if _, exists := jm.initfuncs[app]; exists {
-		return fmt.Errorf("initializer for app %s already registered", app)
+		return fmt.Errorf("%w: app=%s", ErrInitializerAlreadyRegistered, app)
 	}
 
 	// Register the initializer for the app
@@ -176,7 +185,7 @@ func (jm *JobManager) processRow(txQueries *batchsqlc.Queries, row batchsqlc.Fet
 func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
 	// Retrieve the SlowQueryProcessor for the app and op
-	p, exists := jm.slowqueryprocessorfuncs.Load(string(row.App) + row.Op)
+	p, exists := jm.slowqueryprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
 	}
@@ -210,7 +219,7 @@ func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsq
 
 func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	// Retrieve the BatchProcessor for the app and op
-	p, exists := jm.batchprocessorfuncs.Load(string(row.App) + row.Op)
+	p, exists := jm.batchprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
 	}

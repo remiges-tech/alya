@@ -22,22 +22,32 @@ type Batch struct {
 	RedisClient *redis.Client
 }
 
+// RegisterProcessorBatch allows applications to register a processing function for a specific batch operation type.
+// The processing function implements the BatchProcessor interface.
+// Each (app, op) combination can only have one registered processor.
+// Attempting to register a second processor for the same combination will result in an error.
+// The 'op' parameter is case-insensitive and will be converted to lowercase before registration.
 func (jm *JobManager) RegisterProcessorBatch(app string, op string, p BatchProcessor) error {
 	// Convert op to lowercase before inserting into the database
 	op = strings.ToLower(op)
 
 	key := app + op
-	_, loaded := jm.batchprocessorfuncs.LoadOrStore(key, p)
-	if loaded {
+	_, exists := jm.batchprocessorfuncs[key]
+	if exists {
 		return fmt.Errorf("%w: app=%s, op=%s", ErrProcessorAlreadyRegistered, app, op)
 	}
-
+	jm.batchprocessorfuncs[key] = p // Add this line to store the processor
 	return nil
 }
 
-// BatchSubmit submits a batch.
-// It takes the following parameters:
-// - op: The operation or task to be performed on each batch row (value is converted to lowercase).
+// BatchSubmit submits a new batch for processing.
+// It generates a unique batch ID, inserts a record into the "batches" table, and inserts multiple records
+// into the "batchrows" table corresponding to the provided batch input. The batch is then picked up and processed by the
+// JobManager's worker goroutines spawned by Run().
+// Note that the operation or task to be performed on each batch row (value is converted to lowercase).
+// The 'waitabit' parameter determines the initial status of the batch. If 'waitabit' is true, the batch
+// status will be set to 'wait', indicating that the batch should be held back from immediate processing. If
+// 'waitabit' is false, the batch status will be set to 'queued', making it available for processing.
 func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput []batchsqlc.InsertIntoBatchRowsParams, waitabit bool) (batchID string, err error) {
 	// Generate a unique batch ID
 	batchUUID, err := uuid.NewUUID()
