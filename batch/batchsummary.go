@@ -159,11 +159,12 @@ func appendBlobRowsToFiles(batchRows []batchsqlc.GetProcessedBatchRowsByBatchIDS
 		if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
 			return fmt.Errorf("failed to unmarshal blobrows: %v", err)
 		}
-
 		for logicalFile, content := range blobRows {
-			if _, err := tmpFiles[logicalFile].WriteString(content + "\n"); err != nil {
-				log.Printf("Error writing to temporary file for logical file %s: %v", logicalFile, err)
-				return fmt.Errorf("failed to write to temporary file: %v", err)
+			if content != "" {
+				if _, err := tmpFiles[logicalFile].WriteString(content + "\n"); err != nil {
+					log.Printf("Error writing to temporary file for logical file %s: %v", logicalFile, err)
+					return fmt.Errorf("failed to write to temporary file: %v", err)
+				}
 			}
 		}
 	}
