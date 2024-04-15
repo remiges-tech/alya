@@ -3,6 +3,7 @@ package batch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -17,19 +18,20 @@ import (
 
 const ALYA_BATCHSTATUS_CACHEDUR_SEC = 100
 
-func (jm *JobManager) RegisterSlowQueryProcessor(app string, op string, p SlowQueryProcessor) error {
-	mu.Lock()
-	defer mu.Unlock()
+// ErrProcessorAlreadyRegistered is returned when attempting to register a second processor
+// for the same (app, op) combination.
+var ErrProcessorAlreadyRegistered = errors.New("processor already registered for this app and operation")
 
-	// Convert op to lowercase before inserting into the database
-	op = strings.ToLower(op)
-
+// RegisterProcessorSlowQuery allows applications to register a processing function for a specific operation type.
+// The processing function implements the SlowQueryProcessor interface.
+// Each (app, op) combination can only have one registered processor.
+// Attempting to register a second processor for the same combination will result in an error.
+func (jm *JobManager) RegisterProcessorSlowQuery(app string, op string, p SlowQueryProcessor) error {
 	key := app + op
-	if _, exists := jm.slowqueryprocessorfuncs[key]; exists {
-		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
+	_, loaded := jm.slowqueryprocessorfuncs.LoadOrStore(key, p)
+	if loaded {
+		return fmt.Errorf("%w: app=%s, op=%s", ErrProcessorAlreadyRegistered, app, op)
 	}
-
-	jm.slowqueryprocessorfuncs[key] = p
 	return nil
 }
 

@@ -23,34 +23,15 @@ type Batch struct {
 }
 
 func (jm *JobManager) RegisterProcessorBatch(app string, op string, p BatchProcessor) error {
-	mu.Lock()
-	defer mu.Unlock()
-
 	// Convert op to lowercase before inserting into the database
 	op = strings.ToLower(op)
 
 	key := app + op
-	if _, exists := jm.batchprocessorfuncs[key]; exists {
-		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
+	_, loaded := jm.batchprocessorfuncs.LoadOrStore(key, p)
+	if loaded {
+		return fmt.Errorf("%w: app=%s, op=%s", ErrProcessorAlreadyRegistered, app, op)
 	}
 
-	jm.batchprocessorfuncs[key] = p
-	return nil
-}
-
-func (jm *JobManager) RegisterProcessorSlowQuery(app string, op string, s SlowQueryProcessor) error {
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Convert op to lowercase before inserting into the database
-	op = strings.ToLower(op)
-
-	key := app + op
-	if _, exists := jm.slowqueryprocessorfuncs[key]; exists {
-		return fmt.Errorf("processor for app %s and op %s already registered", app, op)
-	}
-
-	jm.slowqueryprocessorfuncs[key] = s
 	return nil
 }
 

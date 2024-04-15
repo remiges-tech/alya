@@ -29,14 +29,16 @@ var (
 )
 
 type JobManager struct {
-	Db                      *pgxpool.Pool
-	Queries                 batchsqlc.Querier
-	RedisClient             *redis.Client
-	ObjStore                objstore.ObjectStore
-	initblocks              map[string]InitBlock
-	initfuncs               map[string]Initializer
-	slowqueryprocessorfuncs map[string]SlowQueryProcessor
-	batchprocessorfuncs     map[string]BatchProcessor
+	Db          *pgxpool.Pool
+	Queries     batchsqlc.Querier
+	RedisClient *redis.Client
+	ObjStore    objstore.ObjectStore
+	initblocks  map[string]InitBlock
+	initfuncs   map[string]Initializer
+	// slowqueryprocessorfuncs map[string]SlowQueryProcessor
+	slowqueryprocessorfuncs sync.Map
+	// batchprocessorfuncs     map[string]BatchProcessor
+	batchprocessorfuncs sync.Map
 }
 
 func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client) *JobManager {
@@ -47,8 +49,9 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 		ObjStore:                objstore.NewMinioObjectStore(minioClient),
 		initblocks:              make(map[string]InitBlock),
 		initfuncs:               make(map[string]Initializer),
-		slowqueryprocessorfuncs: make(map[string]SlowQueryProcessor),
-		batchprocessorfuncs:     make(map[string]BatchProcessor),
+		slowqueryprocessorfuncs: sync.Map{},
+		// batchprocessorfuncs:     make(map[string]BatchProcessor),
+		batchprocessorfuncs: sync.Map{},
 	}
 }
 
@@ -173,9 +176,15 @@ func (jm *JobManager) processRow(txQueries *batchsqlc.Queries, row batchsqlc.Fet
 func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
 	// Retrieve the SlowQueryProcessor for the app and op
-	processor, exists := jm.slowqueryprocessorfuncs[string(row.App)+row.Op]
+	p, exists := jm.slowqueryprocessorfuncs.Load(string(row.App) + row.Op)
 	if !exists {
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
+	}
+
+	// Assert that the processor is of the correct type
+	processor, ok := p.(SlowQueryProcessor)
+	if !ok {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("invalid SlowQueryProcessor type for app %s and op %s", row.App, row.Op)
 	}
 
 	// Get or create the initblock for the app
@@ -201,9 +210,15 @@ func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsq
 
 func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	// Retrieve the BatchProcessor for the app and op
-	processor, exists := jm.batchprocessorfuncs[string(row.App)+row.Op]
+	p, exists := jm.batchprocessorfuncs.Load(string(row.App) + row.Op)
 	if !exists {
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
+	}
+
+	// Assert that the processor is of the correct type
+	processor, ok := p.(BatchProcessor)
+	if !ok {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("invalid BatchProcessor type for app %s and op %s", row.App, row.Op)
 	}
 
 	// Get or create the initblock for the app
