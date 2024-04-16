@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/batch"
 	"github.com/remiges-tech/alya/batch/examples"

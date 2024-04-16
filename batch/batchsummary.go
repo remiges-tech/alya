@@ -8,14 +8,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/remiges-tech/alya/batch/objstore"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
 )
 
-func (jm *JobManager) summarizeBatch(q *batchsqlc.Queries, batchID uuid.UUID) error {
+func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) error {
 	ctx := context.Background()
 
 	// Fetch the batch record
@@ -183,7 +183,7 @@ func moveFilesToObjectStore(tmpFiles map[string]*os.File, store objstore.ObjectS
 	return outputFiles, nil
 }
 
-func updateBatchSummary(q *batchsqlc.Queries, ctx context.Context, batchID uuid.UUID, status batchsqlc.StatusEnum, outputFiles map[string]string, nsuccess, nfailed, naborted int64) error {
+func updateBatchSummary(q batchsqlc.Querier, ctx context.Context, batchID uuid.UUID, status batchsqlc.StatusEnum, outputFiles map[string]string, nsuccess, nfailed, naborted int64) error {
 	outputFilesJSON, err := json.Marshal(outputFiles)
 	if err != nil {
 		return fmt.Errorf("failed to marshal output files: %v", err)
@@ -207,7 +207,7 @@ func updateBatchSummary(q *batchsqlc.Queries, ctx context.Context, batchID uuid.
 func updateStatusInRedis(redisClient *redis.Client, batchID uuid.UUID, status batchsqlc.StatusEnum) error {
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
 	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-	_, err := redisClient.Set(redisKey, string(status), expiry).Result()
+	_, err := redisClient.Set(context.Background(), redisKey, string(status), expiry).Result()
 	if err != nil {
 		return fmt.Errorf("failed to update status in redis: %v", err)
 	}

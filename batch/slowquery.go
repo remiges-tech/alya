@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/remiges-tech/alya/batch/pg/batchsqlc"
@@ -118,7 +118,7 @@ func getBatchStatus(status batchsqlc.StatusEnum) BatchStatus_t {
 func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, err error) {
 	// Check REDIS for the status
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
-	statusVal, err := jm.RedisClient.Get(redisKey).Result()
+	statusVal, err := jm.RedisClient.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
 		reqIDUUID, err := uuid.Parse(reqID)
@@ -141,7 +141,7 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 
 		// Insert/update REDIS with 100x expiry if not found earlier
 		expiry := 100 * ALYA_BATCHSTATUS_CACHEDUR_SEC
-		jm.RedisClient.Set(redisKey, batchStatus, time.Second*time.Duration(expiry))
+		jm.RedisClient.Set(context.Background(), redisKey, batchStatus, time.Second*time.Duration(expiry))
 
 		// Return the formatted result, messages, and nil for error
 		return status, result, messages, nil
@@ -226,7 +226,7 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	// Set the Redis batch status record to aborted with an expiry time
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
 	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-	err = jm.RedisClient.Set(redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
+	err = jm.RedisClient.Set(context.Background(), redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
 	if err != nil {
 		log.Printf("failed to set Redis batch status: %v", err)
 	}

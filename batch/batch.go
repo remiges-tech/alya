@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -103,7 +103,7 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 	var batch batchsqlc.Batch
 	// Check REDIS for the batch status
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
-	statusVal, err := jm.RedisClient.Get(redisKey).Result()
+	statusVal, err := jm.RedisClient.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
 		batch, err := jm.Queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
@@ -114,7 +114,7 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 
 		// Update REDIS with batches.status and an expiry duration
 		expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-		err = jm.RedisClient.Set(redisKey, string(batch.Status), expiry).Err()
+		err = jm.RedisClient.Set(context.Background(), redisKey, string(batch.Status), expiry).Err()
 		if err != nil {
 			// Log the error, but continue processing
 			log.Printf("Error setting REDIS key %s: %v", redisKey, err)
@@ -258,7 +258,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	// Set the Redis batch status record to aborted with an expiry time
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
 	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-	err = jm.RedisClient.Set(redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
+	err = jm.RedisClient.Set(context.Background(), redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
 	if err != nil {
 		log.Printf("failed to set Redis batch status: %v", err)
 	}
