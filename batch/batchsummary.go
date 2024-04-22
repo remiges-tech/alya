@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -128,13 +129,16 @@ func createTemporaryFiles(batchRows []batchsqlc.GetProcessedBatchRowsByBatchIDSo
 				return nil, fmt.Errorf("failed to unmarshal blobrows: %v", err)
 			}
 
-			for logicalFile := range blobRows {
-				if _, exists := tmpFiles[logicalFile]; !exists {
-					file, err := os.CreateTemp("", logicalFile)
-					if err != nil {
-						return nil, fmt.Errorf("failed to create temporary file: %v", err)
+			for logicalFile, content := range blobRows {
+				// Check if the content is not empty before creating the temporary file
+				if content != "" {
+					if _, exists := tmpFiles[logicalFile]; !exists {
+						file, err := os.CreateTemp("", logicalFile)
+						if err != nil {
+							return nil, fmt.Errorf("failed to create temporary file: %v", err)
+						}
+						tmpFiles[logicalFile] = file
 					}
-					tmpFiles[logicalFile] = file
 				}
 			}
 		}
@@ -155,15 +159,28 @@ func cleanupTemporaryFiles(tmpFiles map[string]*os.File) {
 
 func appendBlobRowsToFiles(batchRows []batchsqlc.GetProcessedBatchRowsByBatchIDSortedRow, tmpFiles map[string]*os.File) error {
 	for _, row := range batchRows {
+		if len(row.Blobrows) == 0 {
+			continue
+		}
+
 		var blobRows map[string]string
 		if err := json.Unmarshal(row.Blobrows, &blobRows); err != nil {
 			return fmt.Errorf("failed to unmarshal blobrows: %v", err)
 		}
+
 		for logicalFile, content := range blobRows {
-			if content != "" {
-				if _, err := tmpFiles[logicalFile].WriteString(content + "\n"); err != nil {
-					log.Printf("Error writing to temporary file for logical file %s: %v", logicalFile, err)
-					return fmt.Errorf("failed to write to temporary file: %v", err)
+			content = strings.TrimSpace(content)
+			if content == "" {
+				continue
+			}
+
+			if file, ok := tmpFiles[logicalFile]; ok {
+				// Only write if there's content and a new line if content was successfully written
+				if _, err := file.WriteString(content); err != nil {
+					return fmt.Errorf("failed to write content to file: %v", err)
+				}
+				if _, err := file.WriteString("\n"); err != nil {
+					return fmt.Errorf("failed to write newline to file: %v", err)
 				}
 			}
 		}
