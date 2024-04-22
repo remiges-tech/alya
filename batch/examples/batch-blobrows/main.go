@@ -62,6 +62,9 @@ func (ib *TransactionInitBlock) Close() error {
 	return nil
 }
 
+// This example demonstrates that not all input records necessarily result in output files. In `DoBatchJob`,
+// output files are generated only for every alternate line. This illustrates a flexible handling
+// of batch outputs where output generation is conditional.
 func main() {
 	// Initialize the database connection
 	pool := getDb()
