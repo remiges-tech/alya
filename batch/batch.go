@@ -124,6 +124,11 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 	} else {
 		// Key exists in REDIS, use the status value from REDIS
 		status = batchsqlc.StatusEnum(statusVal)
+		// Fetch the batch record from the database
+		batch, err = jm.Queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
+		if err != nil {
+			return batchsqlc.StatusEnumWait, nil, nil, 0, 0, 0, err
+		}
 	}
 
 	switch status {
