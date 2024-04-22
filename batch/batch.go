@@ -106,7 +106,7 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 	statusVal, err := jm.RedisClient.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
-		batch, err := jm.Queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
+		batch, err = jm.Queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
 		if err != nil {
 			return batchsqlc.StatusEnumWait, nil, nil, 0, 0, 0, err
 		}
@@ -394,4 +394,8 @@ func (jm *JobManager) WaitOff(batchID string) (string, int, error) {
 	}
 
 	return batchID, int(nrows), nil
+}
+
+func GetBatchStatusRedisKey(batchID string) string {
+	return fmt.Sprintf("batch:%s:status", batchID)
 }
