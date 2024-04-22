@@ -131,6 +131,7 @@ func (jm *JobManager) Run() {
 		})
 		if err != nil {
 			log.Println("Error fetching block of rows:", err)
+			tx.Rollback(ctx)
 			time.Sleep(getRandomSleepDuration())
 			continue
 		}
@@ -143,20 +144,57 @@ func (jm *JobManager) Run() {
 			continue
 		}
 
-		batchSet := make(map[uuid.UUID]bool)
-
 		// Process each row in the block
 		for _, row := range blockOfRows {
-			_, err := jm.processRow(txQueries, row)
+			// Update the status of the batch row to "inprog"
+			err := txQueries.UpdateBatchRowStatus(ctx, batchsqlc.UpdateBatchRowStatusParams{
+				Rowid:  row.Rowid,
+				Status: batchsqlc.StatusEnumInprog,
+			})
 			if err != nil {
-				log.Println("Error processing row:", err)
+				log.Println("Error updating batch row status:", err)
+				tx.Rollback(ctx)
+				time.Sleep(getRandomSleepDuration())
 				continue
 			}
 
-			// Add the batch ID to the batchSet if it's not a slow query
-			if row.Line != 0 {
-				batchSet[row.Batch] = true
+			// Check if the corresponding batch has "queued" status
+			batch, err := txQueries.GetBatchByID(ctx, row.Batch)
+			if err != nil {
+				log.Println("Error getting batch by ID:", err)
+				tx.Rollback(ctx)
+				time.Sleep(getRandomSleepDuration())
+				continue
 			}
+
+			if batch.Status == batchsqlc.StatusEnumQueued {
+				// Update the status of the batch to "inprog"
+				err := txQueries.UpdateBatchStatus(ctx, batchsqlc.UpdateBatchStatusParams{
+					ID:     row.Batch,
+					Status: batchsqlc.StatusEnumInprog,
+				})
+				if err != nil {
+					log.Println("Error updating batch status:", err)
+					tx.Rollback(ctx)
+					time.Sleep(getRandomSleepDuration())
+					continue
+				}
+			}
+
+			// Process the row
+			_, err = jm.processRow(txQueries, row)
+			if err != nil {
+				log.Println("Error processing row:", err)
+				tx.Rollback(ctx)
+				time.Sleep(getRandomSleepDuration())
+				continue
+			}
+		}
+
+		// Create a map to store unique batch IDs
+		batchSet := make(map[uuid.UUID]bool)
+		for _, row := range blockOfRows {
+			batchSet[row.Batch] = true
 		}
 
 		// Check for completed batches and summarize them
@@ -164,7 +202,13 @@ func (jm *JobManager) Run() {
 			log.Println("Error summarizing completed batches:", err)
 		}
 
-		tx.Commit(ctx)
+		// Commit the transaction after processing the entire block
+		err = tx.Commit(ctx)
+		if err != nil {
+			log.Println("Error committing transaction:", err)
+			time.Sleep(getRandomSleepDuration())
+			continue
+		}
 
 		// Close and clean up initblocks
 		jm.closeInitBlocks()

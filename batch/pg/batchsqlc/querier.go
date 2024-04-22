@@ -26,6 +26,7 @@ type Querier interface {
 	InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error)
 	UpdateBatchCounters(ctx context.Context, arg UpdateBatchCountersParams) error
 	UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error
+	UpdateBatchRowStatus(ctx context.Context, arg UpdateBatchRowStatusParams) error
 	UpdateBatchRowsBatchJob(ctx context.Context, arg UpdateBatchRowsBatchJobParams) error
 	UpdateBatchRowsSlowQuery(ctx context.Context, arg UpdateBatchRowsSlowQueryParams) error
 	UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRowsStatusParams) error

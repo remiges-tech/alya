@@ -487,6 +487,22 @@ func (q *Queries) UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOut
 	return err
 }
 
+const updateBatchRowStatus = `-- name: UpdateBatchRowStatus :exec
+UPDATE batchrows
+SET status = $2
+WHERE rowid = $1
+`
+
+type UpdateBatchRowStatusParams struct {
+	Rowid  int32      `json:"rowid"`
+	Status StatusEnum `json:"status"`
+}
+
+func (q *Queries) UpdateBatchRowStatus(ctx context.Context, arg UpdateBatchRowStatusParams) error {
+	_, err := q.db.Exec(ctx, updateBatchRowStatus, arg.Rowid, arg.Status)
+	return err
+}
+
 const updateBatchRowsBatchJob = `-- name: UpdateBatchRowsBatchJob :exec
 UPDATE batchrows
 SET status = $2, doneat = $3, res = $4, blobrows = $5, messages = $6, doneby = $7

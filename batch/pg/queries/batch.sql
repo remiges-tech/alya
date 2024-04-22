@@ -112,3 +112,8 @@ WHERE id = $1;
 
 -- name: GetBatchRowsCount :one
 SELECT COUNT(*) FROM batchrows WHERE batch = $1;
+
+-- name: UpdateBatchRowStatus :exec
+UPDATE batchrows
+SET status = $2
+WHERE rowid = $1;
