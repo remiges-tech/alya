@@ -29,6 +29,13 @@ var (
 	doneBy pgtype.Text
 )
 
+// JobManager is the main struct that manages the processing of batch jobs and slow queries.
+// It is responsible for fetching jobs from the database, processing them using the registered processors.
+// Life cycle of a batch job or slow query is as follows:
+// 1. Fetch a block of rows from the database
+// 2. Process each row in the block
+// 3. Update the corresponding batchrows and batches records with the results
+// 4. Check for completed batches and summarize them
 type JobManager struct {
 	Db                      *pgxpool.Pool
 	Queries                 batchsqlc.Querier
@@ -40,6 +47,8 @@ type JobManager struct {
 	batchprocessorfuncs     map[string]BatchProcessor
 }
 
+// NewJobManager creates a new instance of JobManager.
+// It initializes the necessary fields and returns a pointer to the JobManager.
 func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client) *JobManager {
 	return &JobManager{
 		Db:                      db,
@@ -80,6 +89,8 @@ func (jm *JobManager) RegisterInitializer(app string, initializer Initializer) e
 	return nil
 }
 
+// getOrCreateInitBlock retrieves an existing InitBlock for the given app, or creates a new one
+// if it doesn't exist. It ensures thread-safe access to the initblocks map using a mutex lock.
 func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 	// Lock the mutex to ensure thread-safe access to the initblocks map
 	mu.Lock()
@@ -109,6 +120,11 @@ func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 	return initBlock, nil
 }
 
+// Run is the main loop of the JobManager. It continuously fetches a block of rows from the database,
+// processes each row either as a slow query or a batch job. After processing a block, it checks for
+// completed batches and summarizes them. Fetching, processing and updating happens in the same transaction.
+// This method should be called in a separate goroutine. It is thread safe -- updates to database and Redis
+// are executed atomically (check updateStatusInRedis()).
 func (jm *JobManager) Run() {
 	for {
 		ctx := context.Background()
@@ -226,6 +242,11 @@ func (jm *JobManager) processRow(txQueries *batchsqlc.Queries, row batchsqlc.Fet
 	}
 }
 
+// processSlowQuery processes a single slow query job. It retrieves the registered SlowQueryProcessor
+// for the given app and op, fetches the associated InitBlock, and invokes the processor's DoSlowQuery
+// method. It then calls updateSlowQueryResult to update the corresponding batchrows and batches records
+// with the processing results. If the processor is not found or the processing fails, an error is returned.
+
 func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
 	// Retrieve the SlowQueryProcessor for the app and op
@@ -261,6 +282,10 @@ func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsq
 	return status, nil
 }
 
+// processBatchJob processes a single batch job. It retrieves the registered BatchProcessor for the
+// given app and op, fetches the associated InitBlock, and invokes the processor's DoBatchJob method.
+// It then calls updateBatchJobResult to update the corresponding batchrows record with the processing results.
+// If the processor is not found or the processing fails, an error is returned.
 func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	// Retrieve the BatchProcessor for the app and op
 	p, exists := jm.batchprocessorfuncs[string(row.App)+row.Op]
@@ -295,6 +320,9 @@ func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsql
 	return status, nil
 }
 
+// updateSlowQueryResult updates the batchrows and batches records with the results of a processed
+// slow query.
+// This function is called after a slow query has been processed by the registered SlowQueryProcessor.
 func updateSlowQueryResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
@@ -322,6 +350,8 @@ func updateSlowQueryResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBloc
 	return nil
 }
 
+// updateBatchJobResult updates the batchrows record with the results of a processed batch job.
+// This function is called after a batch job has been processed by the registered BatchProcessor.
 func updateBatchJobResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte

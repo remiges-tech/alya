@@ -113,10 +113,8 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 		status = batch.Status
 
 		// Update REDIS with batches.status and an expiry duration
-		expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-		err = jm.RedisClient.Set(context.Background(), redisKey, string(batch.Status), expiry).Err()
+		err = updateStatusInRedis(jm.RedisClient, uuid.MustParse(batchID), status)
 		if err != nil {
-			// Log the error, but continue processing
 			log.Printf("Error setting REDIS key %s: %v", redisKey, err)
 		}
 	} else if err != nil {
@@ -260,14 +258,11 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 		return "", 0, 0, 0, fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
-	// Set the Redis batch status record to aborted with an expiry time
-	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
-	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
-	err = jm.RedisClient.Set(context.Background(), redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
+	// Update status in Redis
+	err = updateStatusInRedis(jm.RedisClient, batchUUID, batchsqlc.StatusEnumAborted)
 	if err != nil {
-		log.Printf("failed to set Redis batch status: %v", err)
+		log.Printf("failed to update status in Redis: %v", err)
 	}
-
 	return batchsqlc.StatusEnumAborted, successCount, failedCount, abortedCount, nil
 }
 

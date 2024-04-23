@@ -19,6 +19,7 @@ type BatchJob_t struct {
 }
 
 // maybe combine initblock and initializer
+// InitBlock is used to store and manage resources needed for processing batch jobs and slow queries.
 type InitBlock interface {
 	Close() error
 }
