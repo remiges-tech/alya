@@ -20,6 +20,14 @@ import (
 	"github.com/remiges-tech/logharbour/logharbour"
 )
 
+const (
+	ErrMsgIDInvalidJSON      = 1000
+	ErrMsgIDInvalidTransType = 1001
+
+	ErrCodeInvalidJSON      = "invalid_json"
+	ErrCodeInvalidTransType = "invalid_transaction_type"
+)
+
 type TransactionInput struct {
 	TransactionID string  `json:"transactionID"`
 	Type          string  `json:"type"`
@@ -35,15 +43,20 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchct
 	err = json.Unmarshal([]byte(input.String()), &txInput)
 	if err != nil {
 		result, _ := jobs.NewJSONstr("")
-		return batchsqlc.StatusEnumFailed, result, nil, nil, err
+		errMsg := wscutils.ErrorMessage{
+			MsgID:   ErrMsgIDInvalidJSON,
+			ErrCode: ErrCodeInvalidJSON,
+		}
+		messages = append(messages, errMsg)
+		return batchsqlc.StatusEnumFailed, result, messages, nil, err
 	}
 
 	// Validate transaction type
 	if txInput.Type != "DEPOSIT" && txInput.Type != "WITHDRAWAL" {
 		result, _ := jobs.NewJSONstr("")
 		errMsg := wscutils.ErrorMessage{
-			MsgID:   1001,
-			ErrCode: "INVALID_TRANSACTION_TYPE",
+			MsgID:   ErrMsgIDInvalidTransType,
+			ErrCode: ErrCodeInvalidTransType,
 			Field:   stringPtr("type"),
 			Vals:    []string{txInput.Type},
 		}
