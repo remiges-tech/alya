@@ -16,7 +16,7 @@ require (
 	github.com/nyaruka/phonenumbers v1.3.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/redis/go-redis/v9 v9.3.0
-	github.com/remiges-tech/logharbour v0.14.0
+	github.com/remiges-tech/logharbour v0.15.0
 	github.com/remiges-tech/rigel v0.12.0
 	github.com/stretchr/testify v1.9.0
 	go.etcd.io/etcd/client/v3 v3.5.10

@@ -75,7 +75,7 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchct
 	}
 
 	// Simulate processing the transaction
-	log := fmt.Sprintf("Processing transaction %s of type %s with amount %.2f from file %s\n", txInput.TransactionID, txInput.Type, txInput.Amount, batchCtx.Filename)
+	log := fmt.Sprintf("Processing transaction %s of type %s with amount %.2f from file %s", txInput.TransactionID, txInput.Type, txInput.Amount, batchCtx.Filename)
 	logger.Log(log)
 	time.Sleep(time.Second) // Simulating processing delay
 
