@@ -73,7 +73,7 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 		ID:      batchUUID,
 		App:     app,
 		Op:      op,
-		Context: []byte(batchctx),
+		Context: []byte(batchctx.String()),
 		Status:  status,
 	})
 	if err != nil {

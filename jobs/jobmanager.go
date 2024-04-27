@@ -18,6 +18,7 @@ import (
 	"github.com/remiges-tech/alya/jobs/objstore"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
 
 const ALYA_BATCHCHUNK_NROWS = 10
@@ -45,11 +46,12 @@ type JobManager struct {
 	initfuncs               map[string]Initializer
 	slowqueryprocessorfuncs map[string]SlowQueryProcessor
 	batchprocessorfuncs     map[string]BatchProcessor
+	Logger                  *logharbour.Logger
 }
 
 // NewJobManager creates a new instance of JobManager.
 // It initializes the necessary fields and returns a pointer to the JobManager.
-func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client) *JobManager {
+func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client, logger *logharbour.Logger) *JobManager {
 	return &JobManager{
 		Db:                      db,
 		Queries:                 batchsqlc.New(db),
@@ -59,6 +61,7 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 		initfuncs:               make(map[string]Initializer),
 		slowqueryprocessorfuncs: make(map[string]SlowQueryProcessor),
 		batchprocessorfuncs:     make(map[string]BatchProcessor),
+		Logger:                  logger,
 	}
 }
 
@@ -100,7 +103,6 @@ func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 	if initBlock, exists := jm.initblocks[app]; exists {
 		return initBlock, nil
 	}
-
 	// Check if an Initializer is registered for the app
 	initializer, exists := jm.initfuncs[app]
 	if !exists {
@@ -174,17 +176,17 @@ func (jm *JobManager) Run() {
 				continue
 			}
 
-			// Check if the corresponding batch has "queued" status
-			batch, err := txQueries.GetBatchByID(ctx, row.Batch)
-			if err != nil {
-				log.Println("Error getting batch by ID:", err)
-				tx.Rollback(ctx)
-				time.Sleep(getRandomSleepDuration())
-				continue
-			}
-
-			if batch.Status == batchsqlc.StatusEnumQueued {
+			if row.Status == batchsqlc.StatusEnumQueued {
 				// Update the status of the batch to "inprog"
+				// Log the status change
+				changeDetails := logharbour.ChangeInfo{
+					Entity: "BatchRow",
+					Op:     "StatusUpdated",
+					Changes: []logharbour.ChangeDetail{
+						{"status", batchsqlc.StatusEnumQueued, batchsqlc.StatusEnumInprog},
+					},
+				}
+				jm.Logger.LogDataChange("Batch row status updated to inprog", changeDetails)
 				err := txQueries.UpdateBatchStatus(ctx, batchsqlc.UpdateBatchStatusParams{
 					ID:     row.Batch,
 					Status: batchsqlc.StatusEnumInprog,
@@ -197,15 +199,37 @@ func (jm *JobManager) Run() {
 				}
 			}
 
-			// Process the row
-			_, err = jm.processRow(txQueries, row)
+		}
+
+		// let us commit the transaction
+		err = tx.Commit(ctx)
+		if err != nil {
+			log.Println("Error committing transaction:", err)
+			time.Sleep(getRandomSleepDuration())
+			continue
+		}
+
+		// Process the rows
+		for _, row := range blockOfRows {
+			// send queries instance, not transaction
+			q := jm.Queries
+			_, err = jm.processRow(q, row)
 			if err != nil {
 				log.Println("Error processing row:", err)
-				tx.Rollback(ctx)
 				time.Sleep(getRandomSleepDuration())
 				continue
 			}
 		}
+
+		// create a new transaction for the summarizeCompletedBatches
+		tx, err = jm.Db.Begin(ctx)
+		if err != nil {
+			log.Println("Error starting transaction:", err)
+			time.Sleep(getRandomSleepDuration())
+			continue
+		}
+
+		txQueries = batchsqlc.New(tx)
 
 		// Create a map to store unique batch IDs
 		batchSet := make(map[uuid.UUID]bool)
@@ -231,7 +255,7 @@ func (jm *JobManager) Run() {
 	}
 }
 
-func (jm *JobManager) processRow(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	fmt.Printf("jobmanager inside processrow\n")
 
 	// Process the row based on its type (slow query or batch job)
@@ -247,7 +271,7 @@ func (jm *JobManager) processRow(txQueries *batchsqlc.Queries, row batchsqlc.Fet
 // method. It then calls updateSlowQueryResult to update the corresponding batchrows and batches records
 // with the processing results. If the processor is not found or the processing fails, an error is returned.
 
-func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	log.Printf("processing slow query for app %s and op %s", row.App, row.Op)
 	// Retrieve the SlowQueryProcessor for the app and op
 	p, exists := jm.slowqueryprocessorfuncs[string(row.App)+row.Op]
@@ -269,7 +293,15 @@ func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsq
 	}
 
 	// Process the slow query using the registered processor
-	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, JSONstr(string(row.Context)), JSONstr(string(row.Input)))
+	rowContext, err := NewJSONstr(string(row.Context))
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
+	}
+	rowInput, err := NewJSONstr(string(row.Input))
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
+	}
+	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, rowContext, rowInput)
 	if err != nil {
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 	}
@@ -286,7 +318,7 @@ func (jm *JobManager) processSlowQuery(txQueries *batchsqlc.Queries, row batchsq
 // given app and op, fetches the associated InitBlock, and invokes the processor's DoBatchJob method.
 // It then calls updateBatchJobResult to update the corresponding batchrows record with the processing results.
 // If the processor is not found or the processing fails, an error is returned.
-func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
 	// Retrieve the BatchProcessor for the app and op
 	p, exists := jm.batchprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
@@ -307,13 +339,21 @@ func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsql
 	}
 
 	// Process the batch job using the registered processor
-	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, JSONstr(string(row.Context)), int(row.Line), JSONstr(string(row.Input)))
+	rowContext, err := NewJSONstr(string(row.Context))
 	if err != nil {
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 	}
+	rowInput, err := NewJSONstr(string(row.Input))
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
+	}
+	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, rowContext, int(row.Line), rowInput)
+	// if err != nil {
+	// 	return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
+	// }
 
 	// Update the corresponding batchrows record with the results
-	if err := updateBatchJobResult(txQueries, row, status, result, messages, blobRows); err != nil {
+	if err := jm.updateBatchJobResult(txQueries, row, status, result, messages, blobRows); err != nil {
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
@@ -323,7 +363,7 @@ func (jm *JobManager) processBatchJob(txQueries *batchsqlc.Queries, row batchsql
 // updateSlowQueryResult updates the batchrows and batches records with the results of a processed
 // slow query.
 // This function is called after a slow query has been processed by the registered SlowQueryProcessor.
-func updateSlowQueryResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
+func updateSlowQueryResult(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
 	if len(messages) > 0 {
@@ -339,7 +379,7 @@ func updateSlowQueryResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBloc
 		Rowid:    int32(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
 		Doneat:   pgtype.Timestamp{Time: time.Now()},
-		Res:      []byte(result),
+		Res:      []byte(result.String()),
 		Messages: messagesJSON,
 		Doneby:   doneBy,
 	})
@@ -352,7 +392,7 @@ func updateSlowQueryResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBloc
 
 // updateBatchJobResult updates the batchrows record with the results of a processed batch job.
 // This function is called after a batch job has been processed by the registered BatchProcessor.
-func updateBatchJobResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
+func (jm *JobManager) updateBatchJobResult(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string) error {
 	// Marshal messages to JSON
 	var messagesJSON []byte
 	if len(messages) > 0 {
@@ -374,11 +414,18 @@ func updateBatchJobResult(txQueries *batchsqlc.Queries, row batchsqlc.FetchBlock
 	}
 
 	// Update the batchrows record with the results
+	jm.Logger.LogDataChange("Batch row updated", logharbour.ChangeInfo{
+		Entity: "BatchRow",
+		Op:     "Update",
+		Changes: []logharbour.ChangeDetail{
+			{"status", row.Status, batchsqlc.StatusEnum(status)},
+		},
+	})
 	err := txQueries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
 		Rowid:    int32(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
 		Doneat:   pgtype.Timestamp{Time: time.Now()},
-		Res:      []byte(result),
+		Res:      []byte(result.String()),
 		Blobrows: blobRowsJSON,
 		Messages: messagesJSON,
 		Doneby:   doneBy,

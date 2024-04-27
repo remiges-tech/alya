@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -16,6 +17,7 @@ import (
 	"github.com/remiges-tech/alya/jobs/examples"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
 
 type TransactionInput struct {
@@ -27,42 +29,78 @@ type TransactionInput struct {
 type TransactionBatchProcessor struct{}
 
 func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchctx jobs.JSONstr, line int, input jobs.JSONstr) (status batchsqlc.StatusEnum, result jobs.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
+	logger := initBlock.(*TransactionInitBlock).Logger
 	// Parse the input JSON
 	var txInput TransactionInput
-	err = json.Unmarshal([]byte(input), &txInput)
+	err = json.Unmarshal([]byte(input.String()), &txInput)
 	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+		result, _ := jobs.NewJSONstr("")
+		return batchsqlc.StatusEnumFailed, result, nil, nil, err
+	}
+
+	// Parse the batchctx JSON to get the filename
+	var batchCtx struct {
+		Filename string `json:"filename"`
+	}
+	err = json.Unmarshal([]byte(batchctx.String()), &batchCtx)
+	if err != nil {
+		result, _ := jobs.NewJSONstr("")
+		return batchsqlc.StatusEnumFailed, result, nil, nil, fmt.Errorf("failed to parse batchctx: %v", err)
 	}
 
 	// Simulate processing the transaction
-	fmt.Printf("Processing transaction %s of type %s with amount %.2f\n", txInput.TransactionID, txInput.Type, txInput.Amount)
+	log := fmt.Sprintf("Processing transaction %s of type %s with amount %.2f from file %s\n", txInput.TransactionID, txInput.Type, txInput.Amount, batchCtx.Filename)
+	logger.Log(log)
 	time.Sleep(time.Second) // Simulating processing delay
 
 	// Update the balance in Redis based on the transaction type
 	redisClient := initBlock.(*TransactionInitBlock).RedisClient
-	balanceKey := "batch:balance"
+	balanceKey := fmt.Sprintf("batch:%s:balance", batchCtx.Filename)
 
-	// Perform the balance update operation in Redis
-	err = redisClient.Watch(context.Background(), func(tx *redis.Tx) error {
-		balance, err := tx.Get(context.Background(), balanceKey).Float64()
-		if err != nil && err != redis.Nil {
+	const maxRetries = 50
+
+	for retry := 0; retry < maxRetries; retry++ {
+		err = redisClient.Watch(context.Background(), func(tx *redis.Tx) error {
+			balance, err := tx.Get(context.Background(), balanceKey).Float64()
+			if err != nil && err != redis.Nil {
+				return err
+			}
+
+			var newBalance float64
+			if txInput.Type == "DEPOSIT" {
+				newBalance = balance + txInput.Amount
+			} else if txInput.Type == "WITHDRAWAL" {
+				newBalance = balance - txInput.Amount
+			}
+
+			_, err = tx.TxPipelined(context.Background(), func(pipe redis.Pipeliner) error {
+				pipe.Set(context.Background(), balanceKey, newBalance, 0)
+				return nil
+			})
 			return err
+		}, balanceKey)
+
+		if err == nil {
+			// Transaction succeeded, break the loop
+			break
 		}
 
-		if txInput.Type == "DEPOSIT" {
-			balance += txInput.Amount
-		} else if txInput.Type == "WITHDRAWAL" {
-			balance -= txInput.Amount
+		if err == redis.TxFailedErr {
+			// Transaction failed due to key being updated, retry
+			continue
 		}
 
-		_, err = tx.TxPipelined(context.Background(), func(pipe redis.Pipeliner) error {
-			pipe.Set(context.Background(), balanceKey, balance, 0)
-			return nil
-		})
-		return err
-	})
+		// Handle other errors
+		result, _ := jobs.NewJSONstr("")
+		return batchsqlc.StatusEnumFailed, result, nil, nil, fmt.Errorf("failed to update balance in Redis: %v", err)
+	}
+
 	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, fmt.Errorf("failed to update balance in Redis: %v", err)
+		// Maximum retries exceeded
+		log := fmt.Sprintf("Failed to update balance in Redis for txn %s after %d retries: %v", txInput.TransactionID, maxRetries, err)
+		logger.LogActivity(log, "")
+		result, _ := jobs.NewJSONstr("")
+		return batchsqlc.StatusEnumFailed, result, nil, nil, fmt.Errorf("failed to update balance in Redis for txn %s after %d retries: %v", txInput.TransactionID, maxRetries, err)
 	}
 
 	// Generate blobRows data
@@ -71,7 +109,8 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchct
 	}
 
 	// Return success status
-	return batchsqlc.StatusEnumSuccess, jobs.JSONstr(`{"message": "Transaction processed successfully"}`), nil, blobRows, nil
+	result, _ = jobs.NewJSONstr(`{"message": "Transaction processed successfully"}`)
+	return batchsqlc.StatusEnumSuccess, result, nil, blobRows, nil
 }
 
 type TransactionInitializer struct{}
@@ -82,11 +121,16 @@ func (i *TransactionInitializer) Init(app string) (jobs.InitBlock, error) {
 		Addr: "localhost:6379",
 	})
 
-	return &TransactionInitBlock{RedisClient: redisClient}, nil
+	// Create a new logger that writes to stdout
+	lctx := logharbour.LoggerContext{}
+	logger := logharbour.NewLogger(&lctx, "TransactionBatchProcessor", os.Stdout)
+
+	return &TransactionInitBlock{RedisClient: redisClient, Logger: logger}, nil
 }
 
 type TransactionInitBlock struct {
 	RedisClient *redis.Client
+	Logger      *logharbour.Logger
 }
 
 func (ib *TransactionInitBlock) Close() error {
@@ -150,8 +194,12 @@ func main() {
 	// Create a new Minio client instance with the default credentials
 	minioClient := examples.CreateMinioClient()
 
+	// Create a new logger that writes to stdout
+	lctx := logharbour.LoggerContext{}
+	logger := logharbour.NewLogger(&lctx, "JobManager", os.Stdout)
+
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, minioClient)
+	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger)
 
 	// Register the batch processor and initializer
 	err := jm.RegisterProcessorBatch("transactionapp", "processtransactions", &TransactionBatchProcessor{})
@@ -170,15 +218,51 @@ func main() {
 		log.Fatal("Failed to load batch input from CSV:", err)
 	}
 
+	// Prepare the batch context with the filename
+	filename := "transactions.csv"
+	batchCtx, _ := jobs.NewJSONstr(fmt.Sprintf(`{"filename": "%s"}`, filename))
+
+	// Set the initial balance in Redis to 0
+	balanceKey := "batch:transactions.csv:balance"
+	err = redisClient.Set(context.Background(), balanceKey, 0, 0).Err()
+	if err != nil {
+		log.Fatal("Failed to set initial balance in Redis:", err)
+	}
+
 	// Submit the batch
-	batchID, err := jm.BatchSubmit("transactionapp", "processtransactions", jobs.JSONstr("{}"), batchInput, false)
+	batchID, err := jm.BatchSubmit("transactionapp", "processtransactions", batchCtx, batchInput, false)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)
 	}
 	fmt.Println("Batch submitted. Batch ID:", batchID)
 
-	// Start the JobManager in a separate goroutine
-	go jm.Run()
+	// Create a wait group to synchronize goroutines
+	var wg sync.WaitGroup
+
+	// Launch multiple instances of JobManager concurrently
+	numInstances := 8 // Adjust the number of instances as needed
+	for i := 0; i < numInstances; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Initialize a new JobManager instance for each goroutine
+			jm := jobs.NewJobManager(pool, redisClient, minioClient, logger)
+
+			// Register the batch processor and initializer
+			err := jm.RegisterProcessorBatch("transactionapp", "processtransactions", &TransactionBatchProcessor{})
+			if err != nil {
+				log.Fatal("Failed to register batch processor:", err)
+			}
+			err = jm.RegisterInitializer("transactionapp", &TransactionInitializer{})
+			if err != nil {
+				log.Fatal("Failed to register initializer:", err)
+			}
+
+			// Run the JobManager
+			jm.Run()
+		}()
+	}
 
 	// Poll for the batch completion status
 	for {

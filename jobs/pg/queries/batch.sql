@@ -35,12 +35,12 @@ WHERE rowid = $1;
 
 
 -- name: FetchBlockOfRows :many
-SELECT batches.app, batches.op, batches.context, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
+SELECT batches.app, batches.status, batches.op, batches.context, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
 FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1 AND batches.status != 'wait'
 LIMIT $2
-FOR UPDATE SKIP LOCKED;
+FOR UPDATE OF batchrows SKIP LOCKED;
 
 
 -- name: UpdateBatchRowsStatus :exec

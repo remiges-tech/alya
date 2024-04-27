@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -61,7 +60,7 @@ func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONst
 		ID:      batchId,
 		App:     app,
 		Op:      op,
-		Context: []byte(string(inputContext)),
+		Context: []byte(inputContext.String()),
 		Status:  batchsqlc.StatusEnumQueued,
 	})
 	if err != nil {
@@ -73,7 +72,7 @@ func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONst
 	err = jm.Queries.InsertIntoBatchRows(ctx, batchsqlc.InsertIntoBatchRowsParams{
 		Batch: batchId,
 		Line:  0,
-		Input: json.RawMessage(input),
+		Input: []byte(input.String()),
 	})
 	if err != nil {
 		log.Printf("SlowQuery.Submit InsertIntoBatchRowsFailed: %v", err)
@@ -124,12 +123,14 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		reqIDUUID, err := uuid.Parse(reqID)
 		if err != nil {
 			log.Printf("SlowQuery.Done invalid request ID: %v", err)
-			return BatchTryLater, "", nil, fmt.Errorf("invalid request ID: %v", err)
+			result, _ := NewJSONstr("")
+			return BatchTryLater, result, nil, fmt.Errorf("invalid request ID: %v", err)
 		}
 		batchStatus, err := jm.Queries.GetBatchStatus(context.Background(), reqIDUUID)
 		if err != nil {
 			log.Printf("SlowQuery.Done GetBatchStatusFailed for request %v: %v", reqID, err)
-			return BatchTryLater, "", nil, err // Assuming GetBatchStatus returns an error if not found
+			result, _ := NewJSONstr("")
+			return BatchTryLater, result, nil, err // Assuming GetBatchStatus returns an error if not found
 		}
 
 		// Convert string to StatusEnum if necessary
@@ -147,7 +148,8 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		return status, result, messages, nil
 
 	} else if err != nil {
-		return BatchTryLater, "", nil, err
+		result, _ := NewJSONstr("")
+		return BatchTryLater, result, nil, err
 	} else {
 		// Key exists in REDIS, determine the action based on its value
 		var enumStatus batchsqlc.StatusEnum

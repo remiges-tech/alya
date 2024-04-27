@@ -13,7 +13,11 @@ import (
 type mockSlowQueryProcessor struct{}
 
 func (m *mockSlowQueryProcessor) DoSlowQuery(initBlock jobs.InitBlock, context jobs.JSONstr, input jobs.JSONstr) (batchsqlc.StatusEnum, jobs.JSONstr, []wscutils.ErrorMessage, map[string]string, error) {
-	return batchsqlc.StatusEnumSuccess, "", nil, nil, nil
+	result, err := jobs.NewJSONstr("{}")
+	if err != nil {
+		return batchsqlc.StatusEnumFailed, jobs.JSONstr{}, nil, nil, err
+	}
+	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
 }
 
 func TestRegisterSlowQueryProcessor(t *testing.T) {

@@ -20,7 +20,8 @@ import (
 type mockBatchProcessor struct{}
 
 func (m *mockBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.JSONstr, line int, input jobs.JSONstr) (batchsqlc.StatusEnum, jobs.JSONstr, []wscutils.ErrorMessage, map[string]string, error) {
-	return batchsqlc.StatusEnumSuccess, "", nil, nil, nil
+	result, _ := jobs.NewJSONstr("")
+	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
 }
 func TestRegisterBatchProcessor(t *testing.T) {
 	jm := jobs.NewJobManager(nil, nil, nil)

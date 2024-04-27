@@ -83,12 +83,12 @@ func (q *Queries) FetchBatchRowsData(ctx context.Context, batch uuid.UUID) ([]Fe
 }
 
 const fetchBlockOfRows = `-- name: FetchBlockOfRows :many
-SELECT batches.app, batches.op, batches.context, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
+SELECT batches.app, batches.status, batches.op, batches.context, batchrows.batch, batchrows.rowid, batchrows.line, batchrows.input
 FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1 AND batches.status != 'wait'
 LIMIT $2
-FOR UPDATE SKIP LOCKED
+FOR UPDATE OF batchrows SKIP LOCKED
 `
 
 type FetchBlockOfRowsParams struct {
@@ -97,13 +97,14 @@ type FetchBlockOfRowsParams struct {
 }
 
 type FetchBlockOfRowsRow struct {
-	App     string    `json:"app"`
-	Op      string    `json:"op"`
-	Context []byte    `json:"context"`
-	Batch   uuid.UUID `json:"batch"`
-	Rowid   int32     `json:"rowid"`
-	Line    int32     `json:"line"`
-	Input   []byte    `json:"input"`
+	App     string     `json:"app"`
+	Status  StatusEnum `json:"status"`
+	Op      string     `json:"op"`
+	Context []byte     `json:"context"`
+	Batch   uuid.UUID  `json:"batch"`
+	Rowid   int32      `json:"rowid"`
+	Line    int32      `json:"line"`
+	Input   []byte     `json:"input"`
 }
 
 func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error) {
@@ -117,6 +118,7 @@ func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsPara
 		var i FetchBlockOfRowsRow
 		if err := rows.Scan(
 			&i.App,
+			&i.Status,
 			&i.Op,
 			&i.Context,
 			&i.Batch,

@@ -1,6 +1,8 @@
 package jobs
 
 import (
+	"encoding/json"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,4 +53,27 @@ type SlowQuery struct {
 	RedisClient *redis.Client
 }
 
-type JSONstr string
+type JSONstr struct {
+	value string
+	valid bool
+}
+
+func NewJSONstr(s string) (JSONstr, error) {
+	if s == "" {
+		return JSONstr{value: "{}", valid: true}, nil
+	}
+	var js json.RawMessage
+	err := json.Unmarshal([]byte(s), &js)
+	if err != nil {
+		return JSONstr{}, err
+	}
+	return JSONstr{value: s, valid: true}, nil
+}
+
+func (j JSONstr) String() string {
+	return j.value
+}
+
+func (j JSONstr) IsValid() bool {
+	return j.valid
+}
