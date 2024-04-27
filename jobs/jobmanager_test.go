@@ -9,7 +9,7 @@ import (
 )
 
 func TestRegisterInitializer(t *testing.T) {
-	jm := jobs.NewJobManager(nil, nil, nil)
+	jm := jobs.NewJobManager(nil, nil, nil, nil)
 
 	// Create a mock initializer
 	mockInitializer := &MockInitializer{}

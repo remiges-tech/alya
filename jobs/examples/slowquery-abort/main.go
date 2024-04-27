@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -12,6 +13,7 @@ import (
 	"github.com/remiges-tech/alya/jobs/examples"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
 
 // create mock solr client with open, close and query functions. use interface
@@ -69,7 +71,8 @@ func (p *SlowReportProcessor) DoSlowQuery(initBlock jobs.InitBlock, context jobs
 	time.Sleep(10 * time.Second)
 
 	// Return success status
-	return batchsqlc.StatusEnumSuccess, jobs.JSONstr(`{"message": "Slow report processed successfully"}`), nil, nil, nil
+	result, _ = jobs.NewJSONstr(`{"message": "Slow report processed successfully"}`)
+	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
 }
 
 func main() {
@@ -92,8 +95,11 @@ func main() {
 
 	store := examples.CreateMinioClient()
 
+	lctx := logharbour.NewLoggerContext(logharbour.DefaultPriority)
+	logger := logharbour.NewLogger(lctx, "JobManager", os.Stdout)
+
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, store)
+	jm := jobs.NewJobManager(pool, redisClient, store, logger)
 
 	// Register the SlowQueryProcessor for the long-running report
 	err := jm.RegisterProcessorSlowQuery("broadside", "slowreport", &SlowReportProcessor{})
@@ -111,8 +117,8 @@ func main() {
 	}
 
 	// Submit a slow query request
-	context := jobs.JSONstr(`{"userId": 123}`)
-	input := jobs.JSONstr(`{"startDate": "2023-01-01", "endDate": "2023-12-31"}`)
+	context, _ := jobs.NewJSONstr(`{"userId": 123}`)
+	input, _ := jobs.NewJSONstr(`{"startDate": "2023-01-01", "endDate": "2023-12-31"}`)
 	reqID, err := jm.SlowQuerySubmit("broadside", "slowreport", context, input)
 	if err != nil {
 		fmt.Println("Failed to submit slow query:", err)

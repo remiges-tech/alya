@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -13,6 +14,7 @@ import (
 	"github.com/remiges-tech/alya/jobs/examples"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
 
 type EmailInput struct {
@@ -26,9 +28,10 @@ type EmailBatchProcessor struct{}
 func (p *EmailBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.JSONstr, line int, input jobs.JSONstr) (status batchsqlc.StatusEnum, result jobs.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
 	// Parse the input JSON
 	var emailInput EmailInput
-	err = json.Unmarshal([]byte(input), &emailInput)
+	err = json.Unmarshal([]byte(input.String()), &emailInput)
 	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+		emptyJson, _ := jobs.NewJSONstr("")
+		return batchsqlc.StatusEnumFailed, emptyJson, nil, nil, err
 	}
 
 	// Simulate sending the email
@@ -41,7 +44,8 @@ func (p *EmailBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.
 	}
 
 	// Return success status
-	return batchsqlc.StatusEnumSuccess, jobs.JSONstr(`{"message": "Email sent successfully"}`), nil, blobRows, nil
+	result, _ = jobs.NewJSONstr(`{"message": "Email sent successfully"}`)
+	return batchsqlc.StatusEnumSuccess, result, nil, blobRows, nil
 }
 
 type EmailInitializer struct{}
@@ -68,9 +72,11 @@ func main() {
 	})
 
 	store := examples.CreateMinioClient()
+	lctx := logharbour.NewLoggerContext(logharbour.DefaultPriority)
+	logger := logharbour.NewLogger(lctx, "JobManager", os.Stdout)
 
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, store)
+	jm := jobs.NewJobManager(pool, redisClient, store, logger)
 
 	// Register the batch processor and initializer
 	err := jm.RegisterProcessorBatch("emailapp", "sendbulkemail", &EmailBatchProcessor{})
@@ -96,7 +102,8 @@ func main() {
 	// Generate the batch input data using the template and number of records
 	batchInput := examples.GenerateBatchInput(numRecords, emailTemplate)
 	// Submit the batch
-	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", jobs.JSONstr("{}"), batchInput, false)
+	emptyJson, _ := jobs.NewJSONstr("{}")
+	batchID, err := jm.BatchSubmit("emailapp", "sendbulkemail", emptyJson, batchInput, false)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)
 	}

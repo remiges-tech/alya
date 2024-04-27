@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -14,6 +15,7 @@ import (
 	"github.com/remiges-tech/alya/jobs"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
 
 // create mock solr client with open, close and query functions. use interface
@@ -71,25 +73,29 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock jobs.InitBlock, context jo
 		FromEmail string `json:"fromEmail"`
 	}
 
-	err = json.Unmarshal([]byte(context), &contextData)
+	err = json.Unmarshal([]byte(context.String()), &contextData)
 	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+		emptyJson, _ := jobs.NewJSONstr("{}")
+		return batchsqlc.StatusEnumFailed, emptyJson, nil, nil, err
 	}
 
-	err = json.Unmarshal([]byte(input), &inputData)
+	err = json.Unmarshal([]byte(input.String()), &inputData)
 	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+		emptyJson, _ := jobs.NewJSONstr("{}")
+		return batchsqlc.StatusEnumFailed, emptyJson, nil, nil, err
 	}
 
 	// assert that initBlock is of type InitBlock
 	if _, ok := initBlock.(*InitBlock); !ok {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, fmt.Errorf("initBlock is not of type InitBlock")
+		emptyJson, _ := jobs.NewJSONstr("{}")
+		return batchsqlc.StatusEnumFailed, emptyJson, nil, nil, fmt.Errorf("initBlock is not of type InitBlock")
 	}
 
 	ib := initBlock.(*InitBlock)
 	report, err := ib.SolrClient.Query("")
 	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+		emptyJson, _ := jobs.NewJSONstr("{}")
+		return batchsqlc.StatusEnumFailed, emptyJson, nil, nil, err
 	}
 	fmt.Printf("Report: %s", report)
 
@@ -98,7 +104,8 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock jobs.InitBlock, context jo
 		contextData.UserID, inputData.FromEmail)
 	res := fmt.Sprintf(`{"report": "%s"}`, reportResult)
 
-	return batchsqlc.StatusEnumSuccess, jobs.JSONstr(res), nil, nil, nil
+	result, _ = jobs.NewJSONstr(res)
+	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
 }
 
 func main() {
@@ -140,8 +147,11 @@ func main() {
 		}
 	}
 
+	lctx := logharbour.NewLoggerContext(logharbour.DefaultPriority)
+	logger := logharbour.NewLogger(lctx, "JobManager", os.Stdout)
+
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, minioClient)
+	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger)
 	// Register the SlowQueryProcessor for the long-running report
 	err = jm.RegisterProcessorSlowQuery("broadside", "bouncerpt", &BounceReportProcessor{})
 	if err != nil {
@@ -158,8 +168,8 @@ func main() {
 	}
 
 	// Submit a slow query request
-	context := jobs.JSONstr(`{"userId": 123}`)
-	input := jobs.JSONstr(`{"startDate": "2023-01-01", "endDate": "2023-12-31"}`)
+	context, _ := jobs.NewJSONstr(`{"userId": 123}`)
+	input, _ := jobs.NewJSONstr(`{"startDate": "2023-01-01", "endDate": "2023-12-31"}`)
 	reqID, err := jm.SlowQuerySubmit("broadside", "bouncerpt", context, input)
 	if err != nil {
 		fmt.Println("Failed to submit slow query:", err)

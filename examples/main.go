@@ -68,7 +68,8 @@ func main() {
 
 	// logger
 	fallbackWriter := logharbour.NewFallbackWriter(os.Stdout, os.Stdout)
-	lh := logharbour.NewLogger("MyApp", fallbackWriter)
+	lctx := logharbour.NewLoggerContext(logharbour.DefaultPriority)
+	lh := logharbour.NewLogger(lctx, "MyApp", fallbackWriter)
 	lh.WithPriority(logharbour.Debug2)
 	fl := logger.NewFileLogger("/tmp/idshield.log")
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -15,6 +16,7 @@ import (
 	"github.com/remiges-tech/alya/jobs"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
 
 type TransactionInput struct {
@@ -28,9 +30,10 @@ type TransactionBatchProcessor struct{}
 func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.JSONstr, line int, input jobs.JSONstr) (status batchsqlc.StatusEnum, result jobs.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
 	// Parse the input JSON
 	var txInput TransactionInput
-	err = json.Unmarshal([]byte(input), &txInput)
+	err = json.Unmarshal([]byte(input.String()), &txInput)
 	if err != nil {
-		return batchsqlc.StatusEnumFailed, "", nil, nil, err
+		emptyJson, _ := jobs.NewJSONstr("{}")
+		return batchsqlc.StatusEnumFailed, emptyJson, nil, nil, err
 	}
 
 	// Simulate processing the transaction
@@ -45,7 +48,8 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context
 	}
 
 	// Return success status
-	return batchsqlc.StatusEnumSuccess, jobs.JSONstr(`{"message": "Transaction processed successfully"}`), nil, blobRows, nil
+	result, _ = jobs.NewJSONstr(`{"message": "Transaction processed successfully"}`)
+	return batchsqlc.StatusEnumSuccess, result, nil, blobRows, nil
 }
 
 type TransactionInitializer struct{}
@@ -94,8 +98,11 @@ func main() {
 		}
 	}
 
+	lctx := logharbour.NewLoggerContext(logharbour.DefaultPriority)
+	logger := logharbour.NewLogger(lctx, "JobManager", os.Stdout)
+
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, minioClient)
+	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger)
 
 	// Register the batch processor and initializer
 	err = jm.RegisterProcessorBatch("transactionapp", "processtransactions", &TransactionBatchProcessor{})
@@ -129,7 +136,8 @@ func main() {
 	}
 
 	// Submit the batch
-	batchID, err := jm.BatchSubmit("transactionapp", "processtransactions", jobs.JSONstr("{}"), batchInput, false)
+	emptyJson, _ := jobs.NewJSONstr("{}")
+	batchID, err := jm.BatchSubmit("transactionapp", "processtransactions", emptyJson, batchInput, false)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)
 	}
