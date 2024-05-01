@@ -12,7 +12,7 @@ import (
 
 type Querier interface {
 	CountBatchRowsByBatchIDAndStatus(ctx context.Context, arg CountBatchRowsByBatchIDAndStatusParams) (int64, error)
-	FetchBatchRowsData(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsDataRow, error)
+	FetchBatchRowsForBatchDone(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsForBatchDoneRow, error)
 	FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error)
 	GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error)
 	GetBatchRowsByBatchID(ctx context.Context, batch uuid.UUID) ([]Batchrow, error)

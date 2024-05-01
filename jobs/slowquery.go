@@ -96,6 +96,9 @@ const (
 	BatchSuccess
 	BatchFailed
 	BatchAborted
+	BatchWait
+	BatchQueued
+	BatchInProgress
 )
 
 // determineBatchStatus converts a batch status from the database or Redis

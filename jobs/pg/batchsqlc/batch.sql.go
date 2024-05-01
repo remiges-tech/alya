@@ -31,46 +31,33 @@ func (q *Queries) CountBatchRowsByBatchIDAndStatus(ctx context.Context, arg Coun
 	return count, err
 }
 
-const fetchBatchRowsData = `-- name: FetchBatchRowsData :many
-SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
+const fetchBatchRowsForBatchDone = `-- name: FetchBatchRowsForBatchDone :many
+SELECT line, status, res, messages
 FROM batchrows
 WHERE batch = $1
-FOR UPDATE SKIP LOCKED
 `
 
-type FetchBatchRowsDataRow struct {
-	Rowid    int32            `json:"rowid"`
-	Line     int32            `json:"line"`
-	Input    []byte           `json:"input"`
-	Status   StatusEnum       `json:"status"`
-	Reqat    pgtype.Timestamp `json:"reqat"`
-	Doneat   pgtype.Timestamp `json:"doneat"`
-	Res      []byte           `json:"res"`
-	Blobrows []byte           `json:"blobrows"`
-	Messages []byte           `json:"messages"`
-	Doneby   pgtype.Text      `json:"doneby"`
+type FetchBatchRowsForBatchDoneRow struct {
+	Line     int32      `json:"line"`
+	Status   StatusEnum `json:"status"`
+	Res      []byte     `json:"res"`
+	Messages []byte     `json:"messages"`
 }
 
-func (q *Queries) FetchBatchRowsData(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsDataRow, error) {
-	rows, err := q.db.Query(ctx, fetchBatchRowsData, batch)
+func (q *Queries) FetchBatchRowsForBatchDone(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsForBatchDoneRow, error) {
+	rows, err := q.db.Query(ctx, fetchBatchRowsForBatchDone, batch)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []FetchBatchRowsDataRow
+	var items []FetchBatchRowsForBatchDoneRow
 	for rows.Next() {
-		var i FetchBatchRowsDataRow
+		var i FetchBatchRowsForBatchDoneRow
 		if err := rows.Scan(
-			&i.Rowid,
 			&i.Line,
-			&i.Input,
 			&i.Status,
-			&i.Reqat,
-			&i.Doneat,
 			&i.Res,
-			&i.Blobrows,
 			&i.Messages,
-			&i.Doneby,
 		); err != nil {
 			return nil, err
 		}

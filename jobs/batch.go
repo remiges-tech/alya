@@ -22,6 +22,13 @@ type Batch struct {
 	RedisClient *redis.Client
 }
 
+type BatchOutput_t struct {
+	Line     int
+	Status   BatchStatus_t
+	Res      JSONstr
+	Messages JSONstr
+}
+
 // RegisterProcessorBatch allows applications to register a processing function for a specific batch operation type.
 // The processing function implements the BatchProcessor interface.
 // Each (app, op) combination can only have one registered processor.
@@ -99,7 +106,7 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 	return batchUUID.String(), nil
 }
 
-func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, batchOutput []batchsqlc.FetchBatchRowsDataRow, outputFiles map[string]string, nsuccess, nfailed, naborted int, err error) {
+func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, batchOutput []BatchOutput_t, outputFiles map[string]string, nsuccess, nfailed, naborted int, err error) {
 	var batch batchsqlc.Batch
 	// Check REDIS for the batch status
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
@@ -132,9 +139,28 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 	switch status {
 	case batchsqlc.StatusEnumAborted, batchsqlc.StatusEnumFailed, batchsqlc.StatusEnumSuccess:
 		// Fetch batch rows data
-		batchOutput, err = jm.Queries.FetchBatchRowsData(context.Background(), uuid.MustParse(batchID))
+		batchRowsData, err := jm.Queries.FetchBatchRowsForBatchDone(context.Background(), uuid.MustParse(batchID))
 		if err != nil {
 			return status, nil, nil, 0, 0, 0, err
+		}
+
+		// Convert batchRowsData to BatchOutput_t
+		batchOutput = make([]BatchOutput_t, len(batchRowsData))
+		for i, row := range batchRowsData {
+			res, err := NewJSONstr(string(row.Res))
+			if err != nil {
+				return status, nil, nil, 0, 0, 0, fmt.Errorf("failed to parse Res JSON for line %d: %v", row.Line, err)
+			}
+			messages, err := NewJSONstr(string(row.Messages))
+			if err != nil {
+				return status, nil, nil, 0, 0, 0, fmt.Errorf("failed to parse Messages JSON for line %d: %v", row.Line, err)
+			}
+			batchOutput[i] = BatchOutput_t{
+				Line:     int(row.Line),
+				Status:   mapStatusEnum(row.Status),
+				Res:      res,
+				Messages: messages,
+			}
 		}
 
 		// Fetch output files from the batches table
@@ -393,4 +419,23 @@ func (jm *JobManager) WaitOff(batchID string) (string, int, error) {
 
 func GetBatchStatusRedisKey(batchID string) string {
 	return fmt.Sprintf("batch:%s:status", batchID)
+}
+
+func mapStatusEnum(status batchsqlc.StatusEnum) BatchStatus_t {
+	switch status {
+	case batchsqlc.StatusEnumWait:
+		return BatchWait
+	case batchsqlc.StatusEnumQueued:
+		return BatchQueued
+	case batchsqlc.StatusEnumInprog:
+		return BatchInProgress
+	case batchsqlc.StatusEnumSuccess:
+		return BatchSuccess
+	case batchsqlc.StatusEnumFailed:
+		return BatchFailed
+	case batchsqlc.StatusEnumAborted:
+		return BatchAborted
+	default:
+		return BatchTryLater
+	}
 }

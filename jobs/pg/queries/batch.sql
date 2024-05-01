@@ -12,11 +12,10 @@ SELECT status
 FROM batches
 WHERE id = $1;
 
--- name: FetchBatchRowsData :many
-SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
+-- name: FetchBatchRowsForBatchDone :many
+SELECT line, status, res, messages
 FROM batchrows
-WHERE batch = $1
-FOR UPDATE SKIP LOCKED;
+WHERE batch = $1;
 
 -- name: UpdateBatchRowsSlowQuery :exec
 UPDATE batchrows
