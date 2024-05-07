@@ -88,16 +88,19 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 	}
 
 	// Insert records into the batchrows table
-	// TODO: do it in bulk
-	for _, input := range batchInput {
-		err := jm.Queries.InsertIntoBatchRows(context.Background(), batchsqlc.InsertIntoBatchRowsParams{
-			Batch: batchUUID,
-			Line:  int32(input.Line),
-			Input: []byte(input.Input.String()),
-		})
-		if err != nil {
-			return "", err
-		}
+	batchRowsParam := batchsqlc.BulkInsertIntoBatchRowsParams{
+		Batch: make([]uuid.UUID, len(batchInput)),
+		Line:  make([]int32, len(batchInput)),
+		Input: make([][]byte, len(batchInput)),
+	}
+	for i, input := range batchInput {
+		batchRowsParam.Batch[i] = batchUUID
+		batchRowsParam.Line[i] = int32(input.Line)
+		batchRowsParam.Input[i] = []byte(input.Input.String())
+	}
+	_, err = jm.Queries.BulkInsertIntoBatchRows(context.Background(), batchRowsParam)
+	if err != nil {
+		return "", err
 	}
 
 	// Commit the transaction

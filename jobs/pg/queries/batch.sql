@@ -7,6 +7,11 @@ RETURNING id;
 INSERT INTO batchrows (batch, line, input, status, reqat)
 VALUES ($1, $2, $3, 'queued', NOW());
 
+-- name: BulkInsertIntoBatchRows :execrows
+INSERT INTO batchrows (batch, line, input, status, reqat) 
+VALUES 
+    (unnest(@batch::uuid[]), unnest(@line::int[]), unnest(@input::jsonb[]), 'queued', NOW());
+
 -- name: GetBatchStatus :one
 SELECT status
 FROM batches

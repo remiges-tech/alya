@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	BulkInsertIntoBatchRows(ctx context.Context, arg BulkInsertIntoBatchRowsParams) (int64, error)
 	CountBatchRowsByBatchIDAndStatus(ctx context.Context, arg CountBatchRowsByBatchIDAndStatusParams) (int64, error)
 	FetchBatchRowsForBatchDone(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsForBatchDoneRow, error)
 	FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error)

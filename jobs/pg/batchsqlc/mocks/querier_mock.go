@@ -20,6 +20,9 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //
 //		// make and configure a mocked batchsqlc.Querier
 //		mockedQuerier := &QuerierMock{
+//			BulkInsertIntoBatchRowsFunc: func(ctx context.Context, arg batchsqlc.BulkInsertIntoBatchRowsParams) (int64, error) {
+//				panic("mock out the BulkInsertIntoBatchRows method")
+//			},
 //			CountBatchRowsByBatchIDAndStatusFunc: func(ctx context.Context, arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams) (int64, error) {
 //				panic("mock out the CountBatchRowsByBatchIDAndStatus method")
 //			},
@@ -93,6 +96,9 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //
 //	}
 type QuerierMock struct {
+	// BulkInsertIntoBatchRowsFunc mocks the BulkInsertIntoBatchRows method.
+	BulkInsertIntoBatchRowsFunc func(ctx context.Context, arg batchsqlc.BulkInsertIntoBatchRowsParams) (int64, error)
+
 	// CountBatchRowsByBatchIDAndStatusFunc mocks the CountBatchRowsByBatchIDAndStatus method.
 	CountBatchRowsByBatchIDAndStatusFunc func(ctx context.Context, arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams) (int64, error)
 
@@ -161,6 +167,13 @@ type QuerierMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// BulkInsertIntoBatchRows holds details about calls to the BulkInsertIntoBatchRows method.
+		BulkInsertIntoBatchRows []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Arg is the arg argument value.
+			Arg batchsqlc.BulkInsertIntoBatchRowsParams
+		}
 		// CountBatchRowsByBatchIDAndStatus holds details about calls to the CountBatchRowsByBatchIDAndStatus method.
 		CountBatchRowsByBatchIDAndStatus []struct {
 			// Ctx is the ctx argument value.
@@ -314,6 +327,7 @@ type QuerierMock struct {
 			Arg batchsqlc.UpdateBatchSummaryOnAbortParams
 		}
 	}
+	lockBulkInsertIntoBatchRows              sync.RWMutex
 	lockCountBatchRowsByBatchIDAndStatus     sync.RWMutex
 	lockFetchBatchRowsForBatchDone           sync.RWMutex
 	lockFetchBlockOfRows                     sync.RWMutex
@@ -336,6 +350,42 @@ type QuerierMock struct {
 	lockUpdateBatchStatus                    sync.RWMutex
 	lockUpdateBatchSummary                   sync.RWMutex
 	lockUpdateBatchSummaryOnAbort            sync.RWMutex
+}
+
+// BulkInsertIntoBatchRows calls BulkInsertIntoBatchRowsFunc.
+func (mock *QuerierMock) BulkInsertIntoBatchRows(ctx context.Context, arg batchsqlc.BulkInsertIntoBatchRowsParams) (int64, error) {
+	if mock.BulkInsertIntoBatchRowsFunc == nil {
+		panic("QuerierMock.BulkInsertIntoBatchRowsFunc: method is nil but Querier.BulkInsertIntoBatchRows was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		Arg batchsqlc.BulkInsertIntoBatchRowsParams
+	}{
+		Ctx: ctx,
+		Arg: arg,
+	}
+	mock.lockBulkInsertIntoBatchRows.Lock()
+	mock.calls.BulkInsertIntoBatchRows = append(mock.calls.BulkInsertIntoBatchRows, callInfo)
+	mock.lockBulkInsertIntoBatchRows.Unlock()
+	return mock.BulkInsertIntoBatchRowsFunc(ctx, arg)
+}
+
+// BulkInsertIntoBatchRowsCalls gets all the calls that were made to BulkInsertIntoBatchRows.
+// Check the length with:
+//
+//	len(mockedQuerier.BulkInsertIntoBatchRowsCalls())
+func (mock *QuerierMock) BulkInsertIntoBatchRowsCalls() []struct {
+	Ctx context.Context
+	Arg batchsqlc.BulkInsertIntoBatchRowsParams
+} {
+	var calls []struct {
+		Ctx context.Context
+		Arg batchsqlc.BulkInsertIntoBatchRowsParams
+	}
+	mock.lockBulkInsertIntoBatchRows.RLock()
+	calls = mock.calls.BulkInsertIntoBatchRows
+	mock.lockBulkInsertIntoBatchRows.RUnlock()
+	return calls
 }
 
 // CountBatchRowsByBatchIDAndStatus calls CountBatchRowsByBatchIDAndStatusFunc.

@@ -12,6 +12,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const bulkInsertIntoBatchRows = `-- name: BulkInsertIntoBatchRows :execrows
+INSERT INTO batchrows (batch, line, input, status, reqat) 
+VALUES 
+    (unnest($1::uuid[]), unnest($2::int[]), unnest($3::jsonb[]), 'queued', NOW())
+`
+
+type BulkInsertIntoBatchRowsParams struct {
+	Batch []uuid.UUID `json:"batch"`
+	Line  []int32     `json:"line"`
+	Input [][]byte    `json:"input"`
+}
+
+func (q *Queries) BulkInsertIntoBatchRows(ctx context.Context, arg BulkInsertIntoBatchRowsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, bulkInsertIntoBatchRows, arg.Batch, arg.Line, arg.Input)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countBatchRowsByBatchIDAndStatus = `-- name: CountBatchRowsByBatchIDAndStatus :one
 SELECT COUNT(*)
 FROM batchrows
