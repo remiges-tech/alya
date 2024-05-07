@@ -201,6 +201,10 @@ func setupAuthMiddleware(fl *logger.FileLogger) *router.AuthMiddleware {
 	// The error code "TOKEN_CACHE_FAILED" is used in the error response to clearly indicate that the error was due to a token cache operation failure.
 	router.RegisterAuthErrCode(router.TokenCacheFailed, "token_cache_failed")
 
+	// Set custom message ID and error code for request timeouts
+	router.RegisterMiddlewareMsgID(router.RequestTimeout, 1000)
+	router.RegisterMiddlewareErrCode(router.RequestTimeout, "request_timeout")
+
 	cache := router.NewRedisTokenCache("localhost:6379", "", 0, 0)
 	authMiddleware, err := router.LoadAuthMiddleware("alyatest", "https://lemur-7.cloud-iam.com/auth/realms/cool5", cache, fl)
 	if err != nil {

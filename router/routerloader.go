@@ -9,8 +9,15 @@ import (
 	"github.com/remiges-tech/alya/logger"
 )
 
+const (
+	timeout = 60 * time.Second
+)
+
 func SetupRouter(useOIDCAuth bool, l logger.Logger, authMiddleware *AuthMiddleware) (*gin.Engine, error) {
 	r := gin.Default()
+
+	// Apply timeout middleware globally
+	r.Use(TimeoutMiddleware(timeout))
 
 	if useOIDCAuth {
 		r.Use(authMiddleware.MiddlewareFunc())
