@@ -115,23 +115,39 @@ func main() {
 		log.Fatal("Failed to register initializer:", err)
 	}
 
+	input1, err := jobs.NewJSONstr(`{"transactionID": "TX001", "type": "DEPOSIT", "amount": "1000.00"}`)
+	if err != nil {
+		log.Fatal("Error creating JSONstr for transaction input at line 1:", err)
+	}
+	input2, err := jobs.NewJSONstr(`{"transactionID": "TX002", "type": "WITHDRAWAL", "amount": "500.00"}`)
+	if err != nil {
+		log.Fatal("Error creating JSONstr for transaction input at line 2:", err)
+	}
+	input3, err := jobs.NewJSONstr(`{"transactionID": "TX003", "type": "TRANSFER", "amount": "750.00"}`)
+	if err != nil {
+		log.Fatal("Error creating JSONstr for transaction input at line 3:", err)
+	}
+	input4, err := jobs.NewJSONstr(`{"transactionID": "TX004", "type": "PAYMENT", "amount": "250.00"}`)
+	if err != nil {
+		log.Fatal("Error creating JSONstr for transaction input at line 4:", err)
+	}
 	// Prepare the batch input data
-	batchInput := []batchsqlc.InsertIntoBatchRowsParams{
+	batchInput := []jobs.BatchInput_t{
 		{
 			Line:  1,
-			Input: []byte(`{"transactionID": "TX001", "type": "DEPOSIT", "amount": "1000.00"}`),
+			Input: input1,
 		},
 		{
 			Line:  2,
-			Input: []byte(`{"transactionID": "TX002", "type": "WITHDRAWAL", "amount": "500.00"}`),
+			Input: input2,
 		},
 		{
 			Line:  3,
-			Input: []byte(`{"transactionID": "TX003", "type": "TRANSFER", "amount": "750.00"}`),
+			Input: input3,
 		},
 		{
 			Line:  4,
-			Input: []byte(`{"transactionID": "TX004", "type": "PAYMENT", "amount": "250.00"}`),
+			Input: input4,
 		},
 	}
 

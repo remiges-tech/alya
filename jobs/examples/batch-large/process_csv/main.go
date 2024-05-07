@@ -164,7 +164,7 @@ func (ib *TransactionInitBlock) Close() error {
 	return ib.RedisClient.Close()
 }
 
-func loadBatchInputFromCSV(csvFile string) ([]batchsqlc.InsertIntoBatchRowsParams, error) {
+func loadBatchInputFromCSV(csvFile string) ([]jobs.BatchInput_t, error) {
 	file, err := os.Open(csvFile)
 	if err != nil {
 		return nil, fmt.Errorf("error opening CSV file: %v", err)
@@ -177,7 +177,7 @@ func loadBatchInputFromCSV(csvFile string) ([]batchsqlc.InsertIntoBatchRowsParam
 		return nil, fmt.Errorf("error reading CSV records: %v", err)
 	}
 
-	var batchInput []batchsqlc.InsertIntoBatchRowsParams
+	var batchInput []jobs.BatchInput_t
 	for i, record := range records {
 		if len(record) != 3 {
 			return nil, fmt.Errorf("invalid CSV record at line %d", i+1)
@@ -199,9 +199,13 @@ func loadBatchInputFromCSV(csvFile string) ([]batchsqlc.InsertIntoBatchRowsParam
 			return nil, fmt.Errorf("error marshalling transaction input at line %d: %v", i+1, err)
 		}
 
-		batchInput = append(batchInput, batchsqlc.InsertIntoBatchRowsParams{
-			Line:  int32(i + 1),
-			Input: txInputBytes,
+		input, err := jobs.NewJSONstr(string(txInputBytes))
+		if err != nil {
+			return nil, fmt.Errorf("error creating JSONstr for transaction input at line %d: %v", i+1, err)
+		}
+		batchInput = append(batchInput, jobs.BatchInput_t{
+			Line:  i + 1,
+			Input: input,
 		})
 	}
 

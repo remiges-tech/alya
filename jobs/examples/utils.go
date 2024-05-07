@@ -8,7 +8,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
+	"github.com/remiges-tech/alya/jobs"
 )
 
 func CreateMinioClient() *minio.Client {
@@ -50,8 +50,8 @@ type EmailTemplate struct {
 // GenerateBatchInput generates a slice of InsertIntoBatchRowsParams for batch processing.
 // numRecords specifies the number of records to generate.
 // emailTemplate is the base template for generating the email records.
-func GenerateBatchInput(numRecords int, emailTemplate EmailTemplate) []batchsqlc.InsertIntoBatchRowsParams {
-	var batchInput []batchsqlc.InsertIntoBatchRowsParams
+func GenerateBatchInput(numRecords int, emailTemplate EmailTemplate) []jobs.BatchInput_t {
+	var batchInput []jobs.BatchInput_t
 
 	for i := 1; i <= numRecords; i++ {
 		emailInput := EmailInput{
@@ -67,9 +67,13 @@ func GenerateBatchInput(numRecords int, emailTemplate EmailTemplate) []batchsqlc
 			continue
 		}
 
-		batchInput = append(batchInput, batchsqlc.InsertIntoBatchRowsParams{
-			Line:  int32(i),
-			Input: emailInputBytes,
+		input, err := jobs.NewJSONstr(string(emailInputBytes))
+		if err != nil {
+			return nil
+		}
+		batchInput = append(batchInput, jobs.BatchInput_t{
+			Line:  i,
+			Input: input,
 		})
 	}
 

@@ -55,7 +55,7 @@ func (jm *JobManager) RegisterProcessorBatch(app string, op string, p BatchProce
 // The 'waitabit' parameter determines the initial status of the batch. If 'waitabit' is true, the batch
 // status will be set to 'wait', indicating that the batch should be held back from immediate processing. If
 // 'waitabit' is false, the batch status will be set to 'queued', making it available for processing.
-func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput []batchsqlc.InsertIntoBatchRowsParams, waitabit bool) (batchID string, err error) {
+func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput []BatchInput_t, waitabit bool) (batchID string, err error) {
 	// Generate a unique batch ID
 	batchUUID, err := uuid.NewUUID()
 
@@ -90,8 +90,11 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 	// Insert records into the batchrows table
 	// TODO: do it in bulk
 	for _, input := range batchInput {
-		input.Batch = batchUUID
-		err := jm.Queries.InsertIntoBatchRows(context.Background(), input)
+		err := jm.Queries.InsertIntoBatchRows(context.Background(), batchsqlc.InsertIntoBatchRowsParams{
+			Batch: batchUUID,
+			Line:  int32(input.Line),
+			Input: []byte(input.Input.String()),
+		})
 		if err != nil {
 			return "", err
 		}

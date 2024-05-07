@@ -166,17 +166,26 @@ func main() {
 }
 
 func submitBatch(jm *jobs.JobManager) uuid.UUID {
+
+	input1, err := jobs.NewJSONstr(`{"recipientEmail": "user1@example.com", "subject": "Batch Email 1", "body": "Hello, this is batch email 1."}`)
+	if err != nil {
+		log.Fatal("Error creating JSONstr for transaction input at line 1:", err)
+	}
+	input2, err := jobs.NewJSONstr(`{"recipientEmail": "user2@example.com", "subject": "Batch Email 2", "body": "Hello, this is batch email 2."}`)
+	if err != nil {
+		log.Fatal("Error creating JSONstr for transaction input at line 2:", err)
+	}
+
 	// Prepare the batch input data
-	batchInput := []batchsqlc.InsertIntoBatchRowsParams{
+	batchInput := []jobs.BatchInput_t{
 		{
 			Line:  1,
-			Input: []byte(`{"recipientEmail": "user1@example.com", "subject": "Batch Email 1", "body": "Hello, this is batch email 1."}`),
+			Input: input1,
 		},
 		{
 			Line:  2,
-			Input: []byte(`{"recipientEmail": "user2@example.com", "subject": "Batch Email 2", "body": "Hello, this is batch email 2."}`),
+			Input: input2,
 		},
-		// Add more batch input records as needed
 	}
 
 	// Submit the batch

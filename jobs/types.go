@@ -20,6 +20,12 @@ type BatchJob_t struct {
 	Input   JSONstr
 }
 
+// BatchInput_t represents a single input row for a batch job.
+type BatchInput_t struct {
+	Line  int     `json:"line"`
+	Input JSONstr `json:"input"`
+}
+
 // maybe combine initblock and initializer
 // InitBlock is used to store and manage resources needed for processing batch jobs and slow queries.
 type InitBlock interface {
@@ -54,10 +60,13 @@ type SlowQuery struct {
 }
 
 type JSONstr struct {
-	value string
-	valid bool
+	value string // value is the string representation of the JSON data
+	valid bool   // valid is true if the JSON data is valid, false otherwise.
 }
 
+// JSONstr is a custom type that represents a JSON string.
+// It provides methods to create a new JSONstr from a string,
+// convert it back to a string, and check if it contains valid JSON.
 func NewJSONstr(s string) (JSONstr, error) {
 	if s == "" {
 		return JSONstr{value: "{}", valid: true}, nil
@@ -70,10 +79,12 @@ func NewJSONstr(s string) (JSONstr, error) {
 	return JSONstr{value: s, valid: true}, nil
 }
 
+// String returns the string representation of the JSONstr.
 func (j JSONstr) String() string {
 	return j.value
 }
 
+// IsValid returns true if the JSONstr is valid, false otherwise.
 func (j JSONstr) IsValid() bool {
 	return j.valid
 }
