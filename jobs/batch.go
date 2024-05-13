@@ -274,7 +274,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	err = queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
 		ID:       batchUUID,
 		Status:   batchsqlc.StatusEnumAborted,
-		Doneat:   pgtype.Timestamp{Time: time.Now()},
+		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Nsuccess: pgtype.Int4{Int32: int32(successCount), Valid: true},
 		Nfailed:  pgtype.Int4{Int32: int32(failedCount), Valid: true},
 		Naborted: pgtype.Int4{Int32: int32(abortedCount), Valid: true},

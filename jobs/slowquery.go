@@ -195,7 +195,7 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	err = jm.Queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
 		ID:     reqIDUUID,
 		Status: batchsqlc.StatusEnumAborted,
-		Doneat: pgtype.Timestamp{Time: time.Now()},
+		Doneat: pgtype.Timestamp{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update batch summary: %v", err)

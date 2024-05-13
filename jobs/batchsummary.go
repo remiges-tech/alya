@@ -209,7 +209,7 @@ func updateBatchSummary(q batchsqlc.Querier, ctx context.Context, batchID uuid.U
 	err = q.UpdateBatchSummary(ctx, batchsqlc.UpdateBatchSummaryParams{
 		ID:          batchID,
 		Status:      status,
-		Doneat:      pgtype.Timestamp{Time: time.Now()},
+		Doneat:      pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Outputfiles: outputFilesJSON,
 		Nsuccess:    pgtype.Int4{Int32: int32(nsuccess), Valid: true},
 		Nfailed:     pgtype.Int4{Int32: int32(nfailed), Valid: true},
