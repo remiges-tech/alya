@@ -62,6 +62,7 @@ func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONst
 		Op:      op,
 		Context: []byte(inputContext.String()),
 		Status:  batchsqlc.StatusEnumQueued,
+		Reqat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		log.Printf("SlowQuery.Submit InsertIntoBatchesFailed: %v", err)
@@ -73,6 +74,7 @@ func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONst
 		Batch: batchId,
 		Line:  0,
 		Input: []byte(input.String()),
+		Reqat: pgtype.Timestamp{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		log.Printf("SlowQuery.Submit InsertIntoBatchRowsFailed: %v", err)

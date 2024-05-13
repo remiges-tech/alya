@@ -82,6 +82,7 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 		Op:      op,
 		Context: []byte(batchctx.String()),
 		Status:  status,
+		Reqat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		return "", err
@@ -92,11 +93,13 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 		Batch: make([]uuid.UUID, len(batchInput)),
 		Line:  make([]int32, len(batchInput)),
 		Input: make([][]byte, len(batchInput)),
+		Reqat: make([]pgtype.Timestamp, len(batchInput)),
 	}
 	for i, input := range batchInput {
 		batchRowsParam.Batch[i] = batchUUID
 		batchRowsParam.Line[i] = int32(input.Line)
 		batchRowsParam.Input[i] = []byte(input.Input.String())
+		batchRowsParam.Reqat[i] = pgtype.Timestamp{Time: time.Now(), Valid: true}
 	}
 	_, err = jm.Queries.BulkInsertIntoBatchRows(context.Background(), batchRowsParam)
 	if err != nil {

@@ -1,16 +1,16 @@
 -- name: InsertIntoBatches :one
 INSERT INTO batches (id, app, op, context, status, reqat)
-VALUES ($1, $2, $3, $4, $5, NOW())
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id;
 
 -- name: InsertIntoBatchRows :exec
 INSERT INTO batchrows (batch, line, input, status, reqat)
-VALUES ($1, $2, $3, 'queued', NOW());
+VALUES ($1, $2, $3, 'queued', $4);
 
 -- name: BulkInsertIntoBatchRows :execrows
 INSERT INTO batchrows (batch, line, input, status, reqat) 
 VALUES 
-    (unnest(@batch::uuid[]), unnest(@line::int[]), unnest(@input::jsonb[]), 'queued', NOW());
+    (unnest(@batch::uuid[]), unnest(@line::int[]), unnest(@input::jsonb[]), 'queued', unnest(@reqat::timestamp[]));
 
 -- name: GetBatchStatus :one
 SELECT status

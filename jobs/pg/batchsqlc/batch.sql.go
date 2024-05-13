@@ -15,17 +15,23 @@ import (
 const bulkInsertIntoBatchRows = `-- name: BulkInsertIntoBatchRows :execrows
 INSERT INTO batchrows (batch, line, input, status, reqat) 
 VALUES 
-    (unnest($1::uuid[]), unnest($2::int[]), unnest($3::jsonb[]), 'queued', NOW())
+    (unnest($1::uuid[]), unnest($2::int[]), unnest($3::jsonb[]), 'queued', unnest($4::timestamp[]))
 `
 
 type BulkInsertIntoBatchRowsParams struct {
-	Batch []uuid.UUID `json:"batch"`
-	Line  []int32     `json:"line"`
-	Input [][]byte    `json:"input"`
+	Batch []uuid.UUID        `json:"batch"`
+	Line  []int32            `json:"line"`
+	Input [][]byte           `json:"input"`
+	Reqat []pgtype.Timestamp `json:"reqat"`
 }
 
 func (q *Queries) BulkInsertIntoBatchRows(ctx context.Context, arg BulkInsertIntoBatchRowsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, bulkInsertIntoBatchRows, arg.Batch, arg.Line, arg.Input)
+	result, err := q.db.Exec(ctx, bulkInsertIntoBatchRows,
+		arg.Batch,
+		arg.Line,
+		arg.Input,
+		arg.Reqat,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -414,32 +420,39 @@ func (q *Queries) GetProcessedBatchRowsByBatchIDSorted(ctx context.Context, batc
 
 const insertIntoBatchRows = `-- name: InsertIntoBatchRows :exec
 INSERT INTO batchrows (batch, line, input, status, reqat)
-VALUES ($1, $2, $3, 'queued', NOW())
+VALUES ($1, $2, $3, 'queued', $4)
 `
 
 type InsertIntoBatchRowsParams struct {
-	Batch uuid.UUID `json:"batch"`
-	Line  int32     `json:"line"`
-	Input []byte    `json:"input"`
+	Batch uuid.UUID        `json:"batch"`
+	Line  int32            `json:"line"`
+	Input []byte           `json:"input"`
+	Reqat pgtype.Timestamp `json:"reqat"`
 }
 
 func (q *Queries) InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRowsParams) error {
-	_, err := q.db.Exec(ctx, insertIntoBatchRows, arg.Batch, arg.Line, arg.Input)
+	_, err := q.db.Exec(ctx, insertIntoBatchRows,
+		arg.Batch,
+		arg.Line,
+		arg.Input,
+		arg.Reqat,
+	)
 	return err
 }
 
 const insertIntoBatches = `-- name: InsertIntoBatches :one
 INSERT INTO batches (id, app, op, context, status, reqat)
-VALUES ($1, $2, $3, $4, $5, NOW())
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id
 `
 
 type InsertIntoBatchesParams struct {
-	ID      uuid.UUID  `json:"id"`
-	App     string     `json:"app"`
-	Op      string     `json:"op"`
-	Context []byte     `json:"context"`
-	Status  StatusEnum `json:"status"`
+	ID      uuid.UUID        `json:"id"`
+	App     string           `json:"app"`
+	Op      string           `json:"op"`
+	Context []byte           `json:"context"`
+	Status  StatusEnum       `json:"status"`
+	Reqat   pgtype.Timestamp `json:"reqat"`
 }
 
 func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error) {
@@ -449,6 +462,7 @@ func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesPa
 		arg.Op,
 		arg.Context,
 		arg.Status,
+		arg.Reqat,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
