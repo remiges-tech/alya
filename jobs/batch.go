@@ -129,7 +129,12 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 		status = batch.Status
 
 		// Update REDIS with batches.status and an expiry duration
-		err = updateStatusInRedis(jm.RedisClient, uuid.MustParse(batchID), status)
+		expirySec := jm.Config.BatchStatusCacheDurSec
+		if status == batchsqlc.StatusEnumSuccess || status == batchsqlc.StatusEnumFailed || status == batchsqlc.StatusEnumAborted {
+			// final status, set expiry to 100 times the cache duration
+			expirySec = 100 * jm.Config.BatchStatusCacheDurSec
+		}
+		err = updateStatusInRedis(jm.RedisClient, uuid.MustParse(batchID), status, expirySec)
 		if err != nil {
 			log.Printf("Error setting REDIS key %s: %v", redisKey, err)
 		}
@@ -294,7 +299,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	}
 
 	// Update status in Redis
-	err = updateStatusInRedis(jm.RedisClient, batchUUID, batchsqlc.StatusEnumAborted)
+	err = updateStatusInRedis(jm.RedisClient, batchUUID, batchsqlc.StatusEnumAborted, 100*jm.Config.BatchStatusCacheDurSec)
 	if err != nil {
 		log.Printf("failed to update status in Redis: %v", err)
 	}

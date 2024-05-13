@@ -15,8 +15,6 @@ import (
 	"github.com/remiges-tech/alya/wscutils"
 )
 
-const ALYA_BATCHSTATUS_CACHEDUR_SEC = 100
-
 // ErrProcessorAlreadyRegistered is returned when attempting to register a second processor
 // for the same (app, op) combination.
 var ErrProcessorAlreadyRegistered = errors.New("processor already registered for this app and operation")
@@ -146,8 +144,11 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		status := getBatchStatus(enumStatus)
 
 		// Insert/update REDIS with 100x expiry if not found earlier
-		expiry := 100 * ALYA_BATCHSTATUS_CACHEDUR_SEC
-		jm.RedisClient.Set(context.Background(), redisKey, batchStatus, time.Second*time.Duration(expiry))
+		expirySec := jm.Config.BatchStatusCacheDurSec
+		if status == BatchSuccess || status == BatchFailed || status == BatchAborted {
+			expirySec = 100 * jm.Config.BatchStatusCacheDurSec
+		}
+		updateStatusInRedis(jm.RedisClient, reqIDUUID, batchStatus, expirySec)
 
 		// Return the formatted result, messages, and nil for error
 		return status, result, messages, nil
@@ -232,7 +233,7 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 
 	// Set the Redis batch status record to aborted with an expiry time
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
-	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
+	expiry := time.Duration(jm.Config.BatchStatusCacheDurSec*100) * time.Second
 	err = jm.RedisClient.Set(context.Background(), redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
 	if err != nil {
 		log.Printf("failed to set Redis batch status: %v", err)

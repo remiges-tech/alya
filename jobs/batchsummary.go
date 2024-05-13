@@ -88,7 +88,7 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	}
 
 	// Update status in redis
-	err = updateStatusInRedis(jm.RedisClient, batchID, batchStatus)
+	err = updateStatusInRedis(jm.RedisClient, batchID, batchStatus, 100*jm.Config.BatchStatusCacheDurSec)
 	if err != nil {
 		return fmt.Errorf("failed to update status in redis: %v", err)
 	}
@@ -237,9 +237,9 @@ func updateBatchSummary(q batchsqlc.Querier, ctx context.Context, batchID uuid.U
 // 127.0.0.1:6379> MULTI // Start a transaction
 // 127.0.0.1:6379> SET ALYA_BATCHSTATUS_batchID 110
 // 127.0.0.1:6379> EXEC // Execute the transaction
-func updateStatusInRedis(redisClient *redis.Client, batchID uuid.UUID, status batchsqlc.StatusEnum) error {
+func updateStatusInRedis(redisClient *redis.Client, batchID uuid.UUID, status batchsqlc.StatusEnum, expirySec int) error {
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
-	expiry := time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100) * time.Second
+	expiry := time.Duration(expirySec) * time.Second
 
 	err := redisClient.Watch(context.Background(), func(tx *redis.Tx) error {
 		// Check the current status of the batch in Redis

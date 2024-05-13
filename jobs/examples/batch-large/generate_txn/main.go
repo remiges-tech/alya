@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	numTransactions := 1000
+	numTransactions := 100000
 	outputFile := "transactions.csv"
 
 	file, err := os.Create(outputFile)

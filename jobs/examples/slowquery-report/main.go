@@ -151,7 +151,7 @@ func main() {
 	logger := logharbour.NewLogger(lctx, "JobManager", os.Stdout)
 
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger)
+	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger, nil)
 	// Register the SlowQueryProcessor for the long-running report
 	err = jm.RegisterProcessorSlowQuery("broadside", "bouncerpt", &BounceReportProcessor{})
 	if err != nil {

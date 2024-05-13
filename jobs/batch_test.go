@@ -24,7 +24,7 @@ func (m *mockBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.J
 	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
 }
 func TestRegisterBatchProcessor(t *testing.T) {
-	jm := jobs.NewJobManager(nil, nil, nil, nil)
+	jm := jobs.NewJobManager(nil, nil, nil, nil, nil)
 
 	// Test registering a new processor
 	err := jm.RegisterProcessorBatch("app1", "op1", &mockBatchProcessor{})

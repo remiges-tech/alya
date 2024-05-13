@@ -21,7 +21,7 @@ func (m *mockSlowQueryProcessor) DoSlowQuery(initBlock jobs.InitBlock, context j
 }
 
 func TestRegisterSlowQueryProcessor(t *testing.T) {
-	jm := jobs.NewJobManager(nil, nil, nil, nil)
+	jm := jobs.NewJobManager(nil, nil, nil, nil, nil)
 
 	// Test registering a new processor
 	err := jm.RegisterProcessorSlowQuery("app1", "op1", &mockSlowQueryProcessor{})

@@ -22,6 +22,7 @@ import (
 )
 
 const ALYA_BATCHCHUNK_NROWS = 10
+const ALYA_BATCHSTATUS_CACHEDUR_SEC = 60
 
 // Assuming global variables are defined elsewhere
 // make all the maps sync maps to make them thread safe
@@ -47,11 +48,23 @@ type JobManager struct {
 	slowqueryprocessorfuncs map[string]SlowQueryProcessor
 	batchprocessorfuncs     map[string]BatchProcessor
 	Logger                  *logharbour.Logger
+	Config                  JobManagerConfig
 }
 
 // NewJobManager creates a new instance of JobManager.
 // It initializes the necessary fields and returns a pointer to the JobManager.
-func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client, logger *logharbour.Logger) *JobManager {
+func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client, logger *logharbour.Logger, config *JobManagerConfig) *JobManager {
+	if config == nil {
+		config = &JobManagerConfig{}
+	}
+	// check zero value of each field in config and set their default values
+	if config.BatchChunkNRows == 0 {
+		config.BatchChunkNRows = ALYA_BATCHCHUNK_NROWS
+	}
+	if config.BatchStatusCacheDurSec == 0 {
+		config.BatchStatusCacheDurSec = ALYA_BATCHSTATUS_CACHEDUR_SEC
+	}
+
 	return &JobManager{
 		Db:                      db,
 		Queries:                 batchsqlc.New(db),
@@ -62,6 +75,7 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 		slowqueryprocessorfuncs: make(map[string]SlowQueryProcessor),
 		batchprocessorfuncs:     make(map[string]BatchProcessor),
 		Logger:                  logger,
+		Config:                  *config,
 	}
 }
 
@@ -145,7 +159,7 @@ func (jm *JobManager) Run() {
 		// Fetch a block of rows from the database
 		blockOfRows, err := txQueries.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
 			Status: batchsqlc.StatusEnumQueued,
-			Limit:  ALYA_BATCHCHUNK_NROWS,
+			Limit:  int32(jm.Config.BatchChunkNRows),
 		})
 		if err != nil {
 			log.Println("Error fetching block of rows:", err)

@@ -76,7 +76,7 @@ func main() {
 	logger := logharbour.NewLogger(lctx, "JobManager", os.Stdout)
 
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, store, logger)
+	jm := jobs.NewJobManager(pool, redisClient, store, logger, nil)
 
 	// Register the batch processor and initializer
 	err := jm.RegisterProcessorBatch("emailapp", "sendbulkemail", &EmailBatchProcessor{})

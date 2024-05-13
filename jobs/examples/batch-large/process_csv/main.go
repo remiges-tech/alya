@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"sync"
@@ -77,11 +78,11 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchct
 	// Simulate processing the transaction
 	log := fmt.Sprintf("Processing transaction %s of type %s with amount %.2f from file %s", txInput.TransactionID, txInput.Type, txInput.Amount, batchCtx.Filename)
 	logger.Log(log)
-	time.Sleep(time.Second) // Simulating processing delay
+	// time.Sleep(time.Second) // Simulating processing delay
 
 	// Update the balance in Redis based on the transaction type
 	redisClient := initBlock.(*TransactionInitBlock).RedisClient
-	balanceKey := fmt.Sprintf("batch:%s:balance", batchCtx.Filename)
+	balanceKey := fmt.Sprintf("batch:%d:balance", initBlock.(*TransactionInitBlock).BatchID)
 
 	const maxRetries = 50
 
@@ -151,12 +152,15 @@ func (i *TransactionInitializer) Init(app string) (jobs.InitBlock, error) {
 	lctx := logharbour.LoggerContext{}
 	logger := logharbour.NewLogger(&lctx, "TransactionBatchProcessor", os.Stdout)
 
-	return &TransactionInitBlock{RedisClient: redisClient, Logger: logger}, nil
+	batchid := rand.Intn(1000000)
+
+	return &TransactionInitBlock{RedisClient: redisClient, Logger: logger, BatchID: batchid}, nil
 }
 
 type TransactionInitBlock struct {
 	RedisClient *redis.Client
 	Logger      *logharbour.Logger
+	BatchID     int
 }
 
 func (ib *TransactionInitBlock) Close() error {
@@ -229,7 +233,7 @@ func main() {
 	logger := logharbour.NewLogger(&lctx, "JobManager", os.Stdout)
 
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger)
+	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger, nil)
 
 	// Register the batch processor and initializer
 	err := jm.RegisterProcessorBatch("transactionapp", "processtransactions", &TransactionBatchProcessor{})
@@ -253,7 +257,7 @@ func main() {
 	batchCtx, _ := jobs.NewJSONstr(fmt.Sprintf(`{"filename": "%s"}`, filename))
 
 	// Set the initial balance in Redis to 0
-	balanceKey := "batch:transactions.csv:balance"
+	balanceKey := fmt.Sprintf("batch:balance")
 	err = redisClient.Set(context.Background(), balanceKey, 0, 0).Err()
 	if err != nil {
 		log.Fatal("Failed to set initial balance in Redis:", err)
@@ -277,7 +281,7 @@ func main() {
 			defer wg.Done()
 
 			// Initialize a new JobManager instance for each goroutine
-			jm := jobs.NewJobManager(pool, redisClient, minioClient, logger)
+			jm := jobs.NewJobManager(pool, redisClient, minioClient, logger, nil)
 
 			// Register the batch processor and initializer
 			err := jm.RegisterProcessorBatch("transactionapp", "processtransactions", &TransactionBatchProcessor{})
@@ -307,11 +311,13 @@ func main() {
 			continue
 		}
 
-		fmt.Println("Batch completed with status:", status)
-		fmt.Println("Output files:", outputFiles)
-		fmt.Println("Success count:", nsuccess)
-		fmt.Println("Failed count:", nfailed)
-		fmt.Println("Aborted count:", naborted)
+		logger = logger.WithClass("batch").WithInstanceId(batchID)
+
+		logger.Log(fmt.Sprintf("Batch completed with status: %s", status))
+		logger.Log(fmt.Sprintf("Output files: %s", outputFiles))
+		logger.Log(fmt.Sprintf("Success count: %d", nsuccess))
+		logger.Log(fmt.Sprintf("Failed count: %d", nfailed))
+		logger.Log(fmt.Sprintf("Aborted count: %d", naborted))
 		break
 	}
 }

@@ -88,3 +88,9 @@ func (j JSONstr) String() string {
 func (j JSONstr) IsValid() bool {
 	return j.valid
 }
+
+// JobManagerConfig holds the configuration for the job manager.
+type JobManagerConfig struct {
+	BatchChunkNRows        int // number of rows to send to the batch processor in each chunk
+	BatchStatusCacheDurSec int // duration in seconds to cache the batch status
+}

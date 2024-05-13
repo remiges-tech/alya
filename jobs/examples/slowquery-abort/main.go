@@ -99,7 +99,7 @@ func main() {
 	logger := logharbour.NewLogger(lctx, "JobManager", os.Stdout)
 
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, store, logger)
+	jm := jobs.NewJobManager(pool, redisClient, store, logger, nil)
 
 	// Register the SlowQueryProcessor for the long-running report
 	err := jm.RegisterProcessorSlowQuery("broadside", "slowreport", &SlowReportProcessor{})
