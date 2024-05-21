@@ -27,8 +27,8 @@ type Response struct {
 type ErrorMessage struct {
 	MsgID   int      `json:"msgid"`
 	ErrCode string   `json:"errcode"`
-	Field   *string  `json:"field,omitempty"` // make it a pointer so it can be omitted
-	Vals    []string `json:"vals,omitempty"`  // omit if Vals is empty
+	Field   string   `json:"field,omitempty"`
+	Vals    []string `json:"vals,omitempty"`
 }
 
 // WscValidate is a generic function that accepts any data structure,
