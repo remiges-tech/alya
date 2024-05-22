@@ -71,19 +71,19 @@ func main() {
 	lctx := logharbour.NewLoggerContext(logharbour.DefaultPriority)
 	lh := logharbour.NewLogger(lctx, "MyApp", fallbackWriter)
 	lh.WithPriority(logharbour.Debug2)
-	fl := logger.NewFileLogger("/tmp/idshield.log")
+	// fl := logger.NewFileLogger("/tmp/idshield.log")
 
 	// auth middleware
 
 	// Customize default message ID and error code
-	authMiddleware := setupAuthMiddleware(fl)
+	// authMiddleware := setupAuthMiddleware(fl)
 
 	// router
-	r, err := router.SetupRouter(true, fl, authMiddleware)
-	// r := gin.Default()
-	if err != nil {
-		log.Fatalf("Failed to setup router: %v", err)
-	}
+	// r, err := router.SetupRouter(true, fl, authMiddleware)
+	r := gin.Default()
+	// if err != nil {
+	// 	log.Fatalf("Failed to setup router: %v", err)
+	// }
 
 	// Logging middleware
 	r.Use(func(c *gin.Context) {
@@ -207,7 +207,7 @@ func setupAuthMiddleware(fl *logger.FileLogger) *router.AuthMiddleware {
 	router.RegisterMiddlewareErrCode(router.RequestTimeout, "request_timeout")
 
 	cache := router.NewRedisTokenCache("localhost:6379", "", 0, 0)
-	authMiddleware, err := router.LoadAuthMiddleware("alyatest", "https://lemur-7.cloud-iam.com/auth/realms/cool5", cache, fl)
+	authMiddleware, err := router.LoadAuthMiddleware("alyatest", "https://your-keycloak-server.com/auth/realms/your-realm", cache, fl)
 	if err != nil {
 		log.Fatalf("Failed to create new auth middleware: %v", err)
 	}

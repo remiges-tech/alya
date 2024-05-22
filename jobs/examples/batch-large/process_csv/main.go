@@ -58,7 +58,7 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchct
 		errMsg := wscutils.ErrorMessage{
 			MsgID:   ErrMsgIDInvalidTransType,
 			ErrCode: ErrCodeInvalidTransType,
-			Field:   stringPtr("type"),
+			Field:   "type",
 			Vals:    []string{txInput.Type},
 		}
 		messages = append(messages, errMsg)

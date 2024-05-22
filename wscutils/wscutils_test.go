@@ -141,13 +141,13 @@ func TestWscValidate(t *testing.T) {
 			name:    "Missing name",
 			input:   TestUser{Email: "john@example.com", Age: 20},
 			wantErr: true,
-			errMsgs: []ErrorMessage{{MsgID: 1001, ErrCode: "required", Field: pointerToString("Name"), Vals: []string{"Name"}}},
+			errMsgs: []ErrorMessage{{MsgID: 1001, ErrCode: "required", Field: "Name", Vals: []string{"Name"}}},
 		},
 		{
 			name:    "Invalid email",
 			input:   TestUser{Name: "John Doe", Email: "not-an-email", Age: 20},
 			wantErr: true,
-			errMsgs: []ErrorMessage{{MsgID: 1002, ErrCode: "email", Field: pointerToString("Email"), Vals: []string{"Email"}}},
+			errMsgs: []ErrorMessage{{MsgID: 1002, ErrCode: "email", Field: "Email", Vals: []string{"Email"}}},
 		},
 		{
 			name:    "Field with multiple values",
@@ -157,7 +157,7 @@ func TestWscValidate(t *testing.T) {
 				{
 					MsgID:   1003,
 					ErrCode: "min",
-					Field:   pointerToString("Age"),
+					Field:   "Age",
 					Vals:    []string{"10", "18-65"},
 				},
 			},

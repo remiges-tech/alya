@@ -57,7 +57,7 @@ func WscValidate[T any](data T, getVals func(err validator.FieldError) []string)
 				if !codeExists {
 					errcode = DefaultErrCode
 				}
-				vErr := BuildErrorMessage(msgid, errcode, &field, vals...)
+				vErr := BuildErrorMessage(msgid, errcode, field, vals...)
 				validationErrors = append(validationErrors, vErr)
 			}
 		}
@@ -74,7 +74,7 @@ func WscValidate[T any](data T, getVals func(err validator.FieldError) []string)
 //
 // With vals
 // errorMessage := BuildErrorMessage(1000, "invalid", "field2", "error2", "val1", "val2")
-func BuildErrorMessage(msgid int, errcode string, fieldName *string, vals ...string) ErrorMessage {
+func BuildErrorMessage(msgid int, errcode string, fieldName string, vals ...string) ErrorMessage {
 	errorMessage := ErrorMessage{
 		MsgID:   msgid,
 		ErrCode: errcode,
@@ -102,7 +102,7 @@ func BindJSON(c *gin.Context, data any) error {
 	req := Request{Data: data}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// Example msgid for ErrcodeInvalidJson is 1001. Replace 1001 with the actual msgid you intend to use.
-		invalidJsonError := BuildErrorMessage(msgIDInvalidJSON, errCodeInvalidJSON, nil)
+		invalidJsonError := BuildErrorMessage(msgIDInvalidJSON, errCodeInvalidJSON, "")
 		c.JSON(http.StatusBadRequest, NewResponse(ErrorStatus, nil, []ErrorMessage{invalidJsonError}))
 		return err
 	}
@@ -114,7 +114,7 @@ func BindJSON(c *gin.Context, data any) error {
 func NewErrorResponse(msgid int, errcode string) *Response {
 	// Assuming `DefaultMsgID` is a suitable default message ID for general errors.
 	// If `msgid` should be variable, pass it as a parameter to `NewErrorResponse`.
-	errorMessage := BuildErrorMessage(msgid, errcode, nil) // Assuming `nil` is acceptable for the field name in this context.
+	errorMessage := BuildErrorMessage(msgid, errcode, "")
 	return NewResponse(ErrorStatus, nil, []ErrorMessage{errorMessage})
 }
 

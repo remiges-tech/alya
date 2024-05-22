@@ -2,6 +2,7 @@ package usersvc
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -13,8 +14,10 @@ import (
 )
 
 const (
-	ErrMsgIDInternalErr = 1002
-	ErrCodeInternalErr  = "internal" // Example error code for invalid input
+	ErrMsgIDInternalErr  = 1002
+	ErrCodeInternalErr   = "internal"      // Example error code for invalid input
+	ErrMsgIDBannedDomain = 1003            // New custom message ID
+	ErrCodeBannedDomain  = "banned_domain" // New custom error code
 )
 
 type CreateUserRequest struct {
@@ -35,6 +38,10 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 
 	// Step 2: Validate request
 	validationErrors := wscutils.WscValidate(createUserReq, func(err validator.FieldError) []string { return []string{} })
+	// Custom validation for banned email domains
+	if isEmailDomainBanned(createUserReq.Email) {
+		validationErrors = append(validationErrors, wscutils.BuildErrorMessage(ErrMsgIDBannedDomain, ErrCodeBannedDomain, "email"))
+	}
 	if len(validationErrors) > 0 {
 		wscutils.SendErrorResponse(c, wscutils.NewResponse(wscutils.ErrorStatus, nil, validationErrors))
 		return
@@ -55,4 +62,16 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 
 	// Step 4: Send response
 	wscutils.SendSuccessResponse(c, wscutils.NewSuccessResponse(user))
+}
+
+// Helper function to check if email domain is banned
+func isEmailDomainBanned(email string) bool {
+	bannedDomains := []string{"banned.com", "example.com"}
+	emailDomain := strings.Split(email, "@")[1]
+	for _, domain := range bannedDomains {
+		if emailDomain == domain {
+			return true
+		}
+	}
+	return false
 }
