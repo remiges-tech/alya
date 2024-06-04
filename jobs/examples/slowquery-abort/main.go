@@ -62,6 +62,11 @@ func (ib *InitBlock) Close() error {
 	return nil
 }
 
+func (ib *InitBlock) IsAlive() (bool, error) {
+	// Check if SolrClient connection is working or not
+	return ib.SolrClient.Open() == nil, nil
+}
+
 type SlowReportProcessor struct {
 	SolrClient MockSolrClient
 }

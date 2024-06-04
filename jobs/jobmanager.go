@@ -113,9 +113,12 @@ func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Check if an InitBlock already exists for the app
-	if initBlock, exists := jm.initblocks[app]; exists {
-		return initBlock, nil
+	isConnectionAlive, err := jm.initblocks[app].IsAlive()
+	if !isConnectionAlive {
+		// Check if an InitBlock already exists for the app
+		if initBlock, exists := jm.initblocks[app]; exists {
+			return initBlock, nil
+		}
 	}
 	// Check if an Initializer is registered for the app
 	initializer, exists := jm.initfuncs[app]
@@ -264,8 +267,6 @@ func (jm *JobManager) Run() {
 			continue
 		}
 
-		// Close and clean up initblocks
-		jm.closeInitBlocks()
 	}
 }
 

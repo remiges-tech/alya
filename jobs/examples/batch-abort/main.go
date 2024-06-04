@@ -62,6 +62,10 @@ func (ib *EmailInitBlock) Close() error {
 	return nil
 }
 
+func (ib *EmailInitBlock) IsAlive() (bool, error) {
+	// Implement the logic to check if the EmailInitBlock is alive
+	return false, nil
+}
 func main() {
 	// Initialize the database connection
 	pool := getDb()
