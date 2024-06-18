@@ -116,7 +116,7 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 }
 
 func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, batchOutput []BatchOutput_t, outputFiles map[string]string, nsuccess, nfailed, naborted int, err error) {
-	var batch batchsqlc.Batch
+	var batch batchsqlc.GetBatchByIDRow
 	// Check REDIS for the batch status
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
 	statusVal, err := jm.RedisClient.Get(context.Background(), redisKey).Result()
@@ -452,4 +452,71 @@ func mapStatusEnum(status batchsqlc.StatusEnum) BatchStatus_t {
 	default:
 		return BatchTryLater
 	}
+}
+func (jm *JobManager) BatchList(req ListInput) (batchlist []BatchDetails_t, err error) {
+
+	batchlist = make([]BatchDetails_t, 0)
+
+	// Calculate the threshold time based on the age in days
+	thresholdTime := time.Now().AddDate(0, 0, -int(req.Age))
+
+	// Create a pgtype.Timestamp with the calculated time
+	timestamp := pgtype.Timestamp{Time: thresholdTime, Valid: true}
+
+	op := batchsqlc.NullTypeEnum{Valid: false}
+	if req.Op != nil {
+		op = batchsqlc.NullTypeEnum{TypeEnum: batchsqlc.TypeEnum(*req.Op), Valid: true}
+	}
+
+	// Fetch the BatchList based on parameters
+	responseData, err := jm.Queries.FetchBatchList(context.Background(), batchsqlc.FetchBatchListParams{
+		App: req.App,
+		Op:  op,
+		Age: timestamp,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch batch query list: %v", err)
+	}
+
+	if len(responseData) > 0 {
+		for _, row := range responseData {
+			var outputfiles map[string]string
+			if row.Outputfiles != nil {
+				err := json.Unmarshal(row.Outputfiles, &outputfiles)
+				if err != nil {
+					return nil, fmt.Errorf("failed to unmarshal outputfiles: %v", err)
+				}
+			}
+
+			status := getBatchStatus(row.Status)
+
+			rowCount, err := jm.Queries.GetNRowsByBatchID(context.Background(), row.ID)
+			if err != nil {
+				if err.Error() == "no rows in result set" {
+					continue // If no row is found, continue to the next step
+				} else {
+					return nil, err
+				}
+			}
+
+			detail := BatchDetails_t{
+				Id:          row.ID.String(),
+				App:         row.App,
+				Op:          row.Op,
+				Inputfile:   row.Inputfile.String,
+				Status:      status,
+				Reqat:       row.Reqat.Time,
+				Doneat:      row.Doneat.Time,
+				Outputfiles: outputfiles,
+				NRows:       int32(rowCount),
+				NSuccess:    row.Nsuccess.Int32,
+				NFailed:     row.Nfailed.Int32,
+				NAborted:    row.Naborted.Int32,
+			}
+
+			batchlist = append(batchlist, detail)
+		}
+	}
+
+	return batchlist, nil
 }

@@ -57,6 +57,67 @@ func (q *Queries) CountBatchRowsByBatchIDAndStatus(ctx context.Context, arg Coun
 	return count, err
 }
 
+const fetchBatchList = `-- name: FetchBatchList :many
+SELECT id, app, op, inputfile, status, reqat, doneat, outputfiles,nsuccess, nfailed, naborted
+FROM batches
+WHERE type = 'B'
+AND app = $1
+AND op = ($2:: type_enum) IS NULL OR ($2::type_enum)
+AND reqat >= $3
+`
+
+type FetchBatchListParams struct {
+	App string           `json:"app"`
+	Op  NullTypeEnum     `json:"op"`
+	Age pgtype.Timestamp `json:"age"`
+}
+
+type FetchBatchListRow struct {
+	ID          uuid.UUID        `json:"id"`
+	App         string           `json:"app"`
+	Op          string           `json:"op"`
+	Inputfile   pgtype.Text      `json:"inputfile"`
+	Status      StatusEnum       `json:"status"`
+	Reqat       pgtype.Timestamp `json:"reqat"`
+	Doneat      pgtype.Timestamp `json:"doneat"`
+	Outputfiles []byte           `json:"outputfiles"`
+	Nsuccess    pgtype.Int4      `json:"nsuccess"`
+	Nfailed     pgtype.Int4      `json:"nfailed"`
+	Naborted    pgtype.Int4      `json:"naborted"`
+}
+
+func (q *Queries) FetchBatchList(ctx context.Context, arg FetchBatchListParams) ([]FetchBatchListRow, error) {
+	rows, err := q.db.Query(ctx, fetchBatchList, arg.App, arg.Op, arg.Age)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FetchBatchListRow
+	for rows.Next() {
+		var i FetchBatchListRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.App,
+			&i.Op,
+			&i.Inputfile,
+			&i.Status,
+			&i.Reqat,
+			&i.Doneat,
+			&i.Outputfiles,
+			&i.Nsuccess,
+			&i.Nfailed,
+			&i.Naborted,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchBatchRowsForBatchDone = `-- name: FetchBatchRowsForBatchDone :many
 SELECT line, status, res, messages
 FROM batchrows
@@ -149,6 +210,61 @@ func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsPara
 	return items, nil
 }
 
+const fetchSlowQueryList = `-- name: FetchSlowQueryList :many
+SELECT id, app, op, inputfile, status, reqat, doneat, outputfiles
+FROM batches
+WHERE type = 'Q'
+AND app = $1
+AND op = ($2:: type_enum) IS NULL OR ($2::type_enum)
+AND reqat >= $3
+`
+
+type FetchSlowQueryListParams struct {
+	App string           `json:"app"`
+	Op  NullTypeEnum     `json:"op"`
+	Age pgtype.Timestamp `json:"age"`
+}
+
+type FetchSlowQueryListRow struct {
+	ID          uuid.UUID        `json:"id"`
+	App         string           `json:"app"`
+	Op          string           `json:"op"`
+	Inputfile   pgtype.Text      `json:"inputfile"`
+	Status      StatusEnum       `json:"status"`
+	Reqat       pgtype.Timestamp `json:"reqat"`
+	Doneat      pgtype.Timestamp `json:"doneat"`
+	Outputfiles []byte           `json:"outputfiles"`
+}
+
+func (q *Queries) FetchSlowQueryList(ctx context.Context, arg FetchSlowQueryListParams) ([]FetchSlowQueryListRow, error) {
+	rows, err := q.db.Query(ctx, fetchSlowQueryList, arg.App, arg.Op, arg.Age)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FetchSlowQueryListRow
+	for rows.Next() {
+		var i FetchSlowQueryListRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.App,
+			&i.Op,
+			&i.Inputfile,
+			&i.Status,
+			&i.Reqat,
+			&i.Doneat,
+			&i.Outputfiles,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getBatchByID = `-- name: GetBatchByID :one
 SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted
 FROM batches
@@ -156,9 +272,24 @@ WHERE id = $1
 FOR UPDATE
 `
 
-func (q *Queries) GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error) {
+type GetBatchByIDRow struct {
+	ID          uuid.UUID        `json:"id"`
+	App         string           `json:"app"`
+	Op          string           `json:"op"`
+	Context     []byte           `json:"context"`
+	Inputfile   pgtype.Text      `json:"inputfile"`
+	Status      StatusEnum       `json:"status"`
+	Reqat       pgtype.Timestamp `json:"reqat"`
+	Doneat      pgtype.Timestamp `json:"doneat"`
+	Outputfiles []byte           `json:"outputfiles"`
+	Nsuccess    pgtype.Int4      `json:"nsuccess"`
+	Nfailed     pgtype.Int4      `json:"nfailed"`
+	Naborted    pgtype.Int4      `json:"naborted"`
+}
+
+func (q *Queries) GetBatchByID(ctx context.Context, id uuid.UUID) (GetBatchByIDRow, error) {
 	row := q.db.QueryRow(ctx, getBatchByID, id)
-	var i Batch
+	var i GetBatchByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.App,
@@ -313,6 +444,17 @@ func (q *Queries) GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const getNRowsByBatchID = `-- name: GetNRowsByBatchID :one
+SELECT COUNT(*) FROM batchrows WHERE batch = $1
+`
+
+func (q *Queries) GetNRowsByBatchID(ctx context.Context, batch uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getNRowsByBatchID, batch)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const getPendingBatchRows = `-- name: GetPendingBatchRows :many

@@ -13,14 +13,17 @@ import (
 type Querier interface {
 	BulkInsertIntoBatchRows(ctx context.Context, arg BulkInsertIntoBatchRowsParams) (int64, error)
 	CountBatchRowsByBatchIDAndStatus(ctx context.Context, arg CountBatchRowsByBatchIDAndStatusParams) (int64, error)
+	FetchBatchList(ctx context.Context, arg FetchBatchListParams) ([]FetchBatchListRow, error)
 	FetchBatchRowsForBatchDone(ctx context.Context, batch uuid.UUID) ([]FetchBatchRowsForBatchDoneRow, error)
 	FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsParams) ([]FetchBlockOfRowsRow, error)
-	GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error)
+	FetchSlowQueryList(ctx context.Context, arg FetchSlowQueryListParams) ([]FetchSlowQueryListRow, error)
+	GetBatchByID(ctx context.Context, id uuid.UUID) (GetBatchByIDRow, error)
 	GetBatchRowsByBatchID(ctx context.Context, batch uuid.UUID) ([]Batchrow, error)
 	GetBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetBatchRowsByBatchIDSortedRow, error)
 	GetBatchRowsCount(ctx context.Context, batch uuid.UUID) (int64, error)
 	GetBatchStatus(ctx context.Context, id uuid.UUID) (StatusEnum, error)
 	GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error)
+	GetNRowsByBatchID(ctx context.Context, batch uuid.UUID) (int64, error)
 	GetPendingBatchRows(ctx context.Context, batch uuid.UUID) ([]GetPendingBatchRowsRow, error)
 	GetProcessedBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetProcessedBatchRowsByBatchIDSortedRow, error)
 	InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRowsParams) error

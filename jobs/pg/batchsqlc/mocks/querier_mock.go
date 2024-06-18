@@ -26,13 +26,19 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //			CountBatchRowsByBatchIDAndStatusFunc: func(ctx context.Context, arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams) (int64, error) {
 //				panic("mock out the CountBatchRowsByBatchIDAndStatus method")
 //			},
+//			FetchBatchListFunc: func(ctx context.Context, arg batchsqlc.FetchBatchListParams) ([]batchsqlc.FetchBatchListRow, error) {
+//				panic("mock out the FetchBatchList method")
+//			},
 //			FetchBatchRowsForBatchDoneFunc: func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.FetchBatchRowsForBatchDoneRow, error) {
 //				panic("mock out the FetchBatchRowsForBatchDone method")
 //			},
 //			FetchBlockOfRowsFunc: func(ctx context.Context, arg batchsqlc.FetchBlockOfRowsParams) ([]batchsqlc.FetchBlockOfRowsRow, error) {
 //				panic("mock out the FetchBlockOfRows method")
 //			},
-//			GetBatchByIDFunc: func(ctx context.Context, id uuid.UUID) (batchsqlc.Batch, error) {
+//			FetchSlowQueryListFunc: func(ctx context.Context, arg batchsqlc.FetchSlowQueryListParams) ([]batchsqlc.FetchSlowQueryListRow, error) {
+//				panic("mock out the FetchSlowQueryList method")
+//			},
+//			GetBatchByIDFunc: func(ctx context.Context, id uuid.UUID) (batchsqlc.GetBatchByIDRow, error) {
 //				panic("mock out the GetBatchByID method")
 //			},
 //			GetBatchRowsByBatchIDFunc: func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.Batchrow, error) {
@@ -49,6 +55,9 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //			},
 //			GetCompletedBatchesFunc: func(ctx context.Context) ([]uuid.UUID, error) {
 //				panic("mock out the GetCompletedBatches method")
+//			},
+//			GetNRowsByBatchIDFunc: func(ctx context.Context, batch uuid.UUID) (int64, error) {
+//				panic("mock out the GetNRowsByBatchID method")
 //			},
 //			GetPendingBatchRowsFunc: func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.GetPendingBatchRowsRow, error) {
 //				panic("mock out the GetPendingBatchRows method")
@@ -102,14 +111,20 @@ type QuerierMock struct {
 	// CountBatchRowsByBatchIDAndStatusFunc mocks the CountBatchRowsByBatchIDAndStatus method.
 	CountBatchRowsByBatchIDAndStatusFunc func(ctx context.Context, arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams) (int64, error)
 
+	// FetchBatchListFunc mocks the FetchBatchList method.
+	FetchBatchListFunc func(ctx context.Context, arg batchsqlc.FetchBatchListParams) ([]batchsqlc.FetchBatchListRow, error)
+
 	// FetchBatchRowsForBatchDoneFunc mocks the FetchBatchRowsForBatchDone method.
 	FetchBatchRowsForBatchDoneFunc func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.FetchBatchRowsForBatchDoneRow, error)
 
 	// FetchBlockOfRowsFunc mocks the FetchBlockOfRows method.
 	FetchBlockOfRowsFunc func(ctx context.Context, arg batchsqlc.FetchBlockOfRowsParams) ([]batchsqlc.FetchBlockOfRowsRow, error)
 
+	// FetchSlowQueryListFunc mocks the FetchSlowQueryList method.
+	FetchSlowQueryListFunc func(ctx context.Context, arg batchsqlc.FetchSlowQueryListParams) ([]batchsqlc.FetchSlowQueryListRow, error)
+
 	// GetBatchByIDFunc mocks the GetBatchByID method.
-	GetBatchByIDFunc func(ctx context.Context, id uuid.UUID) (batchsqlc.Batch, error)
+	GetBatchByIDFunc func(ctx context.Context, id uuid.UUID) (batchsqlc.GetBatchByIDRow, error)
 
 	// GetBatchRowsByBatchIDFunc mocks the GetBatchRowsByBatchID method.
 	GetBatchRowsByBatchIDFunc func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.Batchrow, error)
@@ -125,6 +140,9 @@ type QuerierMock struct {
 
 	// GetCompletedBatchesFunc mocks the GetCompletedBatches method.
 	GetCompletedBatchesFunc func(ctx context.Context) ([]uuid.UUID, error)
+
+	// GetNRowsByBatchIDFunc mocks the GetNRowsByBatchID method.
+	GetNRowsByBatchIDFunc func(ctx context.Context, batch uuid.UUID) (int64, error)
 
 	// GetPendingBatchRowsFunc mocks the GetPendingBatchRows method.
 	GetPendingBatchRowsFunc func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.GetPendingBatchRowsRow, error)
@@ -181,6 +199,13 @@ type QuerierMock struct {
 			// Arg is the arg argument value.
 			Arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams
 		}
+		// FetchBatchList holds details about calls to the FetchBatchList method.
+		FetchBatchList []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Arg is the arg argument value.
+			Arg batchsqlc.FetchBatchListParams
+		}
 		// FetchBatchRowsForBatchDone holds details about calls to the FetchBatchRowsForBatchDone method.
 		FetchBatchRowsForBatchDone []struct {
 			// Ctx is the ctx argument value.
@@ -194,6 +219,13 @@ type QuerierMock struct {
 			Ctx context.Context
 			// Arg is the arg argument value.
 			Arg batchsqlc.FetchBlockOfRowsParams
+		}
+		// FetchSlowQueryList holds details about calls to the FetchSlowQueryList method.
+		FetchSlowQueryList []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Arg is the arg argument value.
+			Arg batchsqlc.FetchSlowQueryListParams
 		}
 		// GetBatchByID holds details about calls to the GetBatchByID method.
 		GetBatchByID []struct {
@@ -234,6 +266,13 @@ type QuerierMock struct {
 		GetCompletedBatches []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
+		}
+		// GetNRowsByBatchID holds details about calls to the GetNRowsByBatchID method.
+		GetNRowsByBatchID []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Batch is the batch argument value.
+			Batch uuid.UUID
 		}
 		// GetPendingBatchRows holds details about calls to the GetPendingBatchRows method.
 		GetPendingBatchRows []struct {
@@ -329,14 +368,17 @@ type QuerierMock struct {
 	}
 	lockBulkInsertIntoBatchRows              sync.RWMutex
 	lockCountBatchRowsByBatchIDAndStatus     sync.RWMutex
+	lockFetchBatchList                       sync.RWMutex
 	lockFetchBatchRowsForBatchDone           sync.RWMutex
 	lockFetchBlockOfRows                     sync.RWMutex
+	lockFetchSlowQueryList                   sync.RWMutex
 	lockGetBatchByID                         sync.RWMutex
 	lockGetBatchRowsByBatchID                sync.RWMutex
 	lockGetBatchRowsByBatchIDSorted          sync.RWMutex
 	lockGetBatchRowsCount                    sync.RWMutex
 	lockGetBatchStatus                       sync.RWMutex
 	lockGetCompletedBatches                  sync.RWMutex
+	lockGetNRowsByBatchID                    sync.RWMutex
 	lockGetPendingBatchRows                  sync.RWMutex
 	lockGetProcessedBatchRowsByBatchIDSorted sync.RWMutex
 	lockInsertIntoBatchRows                  sync.RWMutex
@@ -424,6 +466,42 @@ func (mock *QuerierMock) CountBatchRowsByBatchIDAndStatusCalls() []struct {
 	return calls
 }
 
+// FetchBatchList calls FetchBatchListFunc.
+func (mock *QuerierMock) FetchBatchList(ctx context.Context, arg batchsqlc.FetchBatchListParams) ([]batchsqlc.FetchBatchListRow, error) {
+	if mock.FetchBatchListFunc == nil {
+		panic("QuerierMock.FetchBatchListFunc: method is nil but Querier.FetchBatchList was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		Arg batchsqlc.FetchBatchListParams
+	}{
+		Ctx: ctx,
+		Arg: arg,
+	}
+	mock.lockFetchBatchList.Lock()
+	mock.calls.FetchBatchList = append(mock.calls.FetchBatchList, callInfo)
+	mock.lockFetchBatchList.Unlock()
+	return mock.FetchBatchListFunc(ctx, arg)
+}
+
+// FetchBatchListCalls gets all the calls that were made to FetchBatchList.
+// Check the length with:
+//
+//	len(mockedQuerier.FetchBatchListCalls())
+func (mock *QuerierMock) FetchBatchListCalls() []struct {
+	Ctx context.Context
+	Arg batchsqlc.FetchBatchListParams
+} {
+	var calls []struct {
+		Ctx context.Context
+		Arg batchsqlc.FetchBatchListParams
+	}
+	mock.lockFetchBatchList.RLock()
+	calls = mock.calls.FetchBatchList
+	mock.lockFetchBatchList.RUnlock()
+	return calls
+}
+
 // FetchBatchRowsForBatchDone calls FetchBatchRowsForBatchDoneFunc.
 func (mock *QuerierMock) FetchBatchRowsForBatchDone(ctx context.Context, batch uuid.UUID) ([]batchsqlc.FetchBatchRowsForBatchDoneRow, error) {
 	if mock.FetchBatchRowsForBatchDoneFunc == nil {
@@ -496,8 +574,44 @@ func (mock *QuerierMock) FetchBlockOfRowsCalls() []struct {
 	return calls
 }
 
+// FetchSlowQueryList calls FetchSlowQueryListFunc.
+func (mock *QuerierMock) FetchSlowQueryList(ctx context.Context, arg batchsqlc.FetchSlowQueryListParams) ([]batchsqlc.FetchSlowQueryListRow, error) {
+	if mock.FetchSlowQueryListFunc == nil {
+		panic("QuerierMock.FetchSlowQueryListFunc: method is nil but Querier.FetchSlowQueryList was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		Arg batchsqlc.FetchSlowQueryListParams
+	}{
+		Ctx: ctx,
+		Arg: arg,
+	}
+	mock.lockFetchSlowQueryList.Lock()
+	mock.calls.FetchSlowQueryList = append(mock.calls.FetchSlowQueryList, callInfo)
+	mock.lockFetchSlowQueryList.Unlock()
+	return mock.FetchSlowQueryListFunc(ctx, arg)
+}
+
+// FetchSlowQueryListCalls gets all the calls that were made to FetchSlowQueryList.
+// Check the length with:
+//
+//	len(mockedQuerier.FetchSlowQueryListCalls())
+func (mock *QuerierMock) FetchSlowQueryListCalls() []struct {
+	Ctx context.Context
+	Arg batchsqlc.FetchSlowQueryListParams
+} {
+	var calls []struct {
+		Ctx context.Context
+		Arg batchsqlc.FetchSlowQueryListParams
+	}
+	mock.lockFetchSlowQueryList.RLock()
+	calls = mock.calls.FetchSlowQueryList
+	mock.lockFetchSlowQueryList.RUnlock()
+	return calls
+}
+
 // GetBatchByID calls GetBatchByIDFunc.
-func (mock *QuerierMock) GetBatchByID(ctx context.Context, id uuid.UUID) (batchsqlc.Batch, error) {
+func (mock *QuerierMock) GetBatchByID(ctx context.Context, id uuid.UUID) (batchsqlc.GetBatchByIDRow, error) {
 	if mock.GetBatchByIDFunc == nil {
 		panic("QuerierMock.GetBatchByIDFunc: method is nil but Querier.GetBatchByID was just called")
 	}
@@ -705,6 +819,42 @@ func (mock *QuerierMock) GetCompletedBatchesCalls() []struct {
 	mock.lockGetCompletedBatches.RLock()
 	calls = mock.calls.GetCompletedBatches
 	mock.lockGetCompletedBatches.RUnlock()
+	return calls
+}
+
+// GetNRowsByBatchID calls GetNRowsByBatchIDFunc.
+func (mock *QuerierMock) GetNRowsByBatchID(ctx context.Context, batch uuid.UUID) (int64, error) {
+	if mock.GetNRowsByBatchIDFunc == nil {
+		panic("QuerierMock.GetNRowsByBatchIDFunc: method is nil but Querier.GetNRowsByBatchID was just called")
+	}
+	callInfo := struct {
+		Ctx   context.Context
+		Batch uuid.UUID
+	}{
+		Ctx:   ctx,
+		Batch: batch,
+	}
+	mock.lockGetNRowsByBatchID.Lock()
+	mock.calls.GetNRowsByBatchID = append(mock.calls.GetNRowsByBatchID, callInfo)
+	mock.lockGetNRowsByBatchID.Unlock()
+	return mock.GetNRowsByBatchIDFunc(ctx, batch)
+}
+
+// GetNRowsByBatchIDCalls gets all the calls that were made to GetNRowsByBatchID.
+// Check the length with:
+//
+//	len(mockedQuerier.GetNRowsByBatchIDCalls())
+func (mock *QuerierMock) GetNRowsByBatchIDCalls() []struct {
+	Ctx   context.Context
+	Batch uuid.UUID
+} {
+	var calls []struct {
+		Ctx   context.Context
+		Batch uuid.UUID
+	}
+	mock.lockGetNRowsByBatchID.RLock()
+	calls = mock.calls.GetNRowsByBatchID
+	mock.lockGetNRowsByBatchID.RUnlock()
 	return calls
 }
 

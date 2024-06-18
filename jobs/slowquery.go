@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -240,4 +241,58 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	}
 
 	return nil
+}
+func (jm *JobManager) SlowQueryList(req ListInput) (sqlist []SlowQueryDetails_t, err error) {
+
+	sqlist = make([]SlowQueryDetails_t, 0)
+
+	// Calculate the threshold time based on the age in days
+	thresholdTime := time.Now().AddDate(0, 0, -int(req.Age))
+
+	// Create a pgtype.Timestamp with the calculated time
+	timestamp := pgtype.Timestamp{Time: thresholdTime, Valid: true}
+
+	op := batchsqlc.NullTypeEnum{Valid: false}
+	if req.Op != nil {
+		op = batchsqlc.NullTypeEnum{TypeEnum: batchsqlc.TypeEnum(*req.Op), Valid: true}
+	}
+
+	// Fetch the slowQueryList based on parameters
+	responseData, err := jm.Queries.FetchSlowQueryList(context.Background(), batchsqlc.FetchSlowQueryListParams{
+		App: req.App,
+		Op:  op,
+		Age: timestamp,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch slow query list: %v", err)
+	}
+
+	if len(responseData) > 0 {
+		for _, row := range responseData {
+			var outputfiles map[string]string
+			if row.Outputfiles != nil {
+				err := json.Unmarshal(row.Outputfiles, &outputfiles)
+				if err != nil {
+					return nil, fmt.Errorf("failed to unmarshal outputfiles: %v", err)
+				}
+			}
+
+			status := getBatchStatus(row.Status)
+
+			detail := SlowQueryDetails_t{
+				Id:          row.ID.String(),
+				App:         row.App,
+				Op:          row.Op,
+				Inputfile:   row.Inputfile.String,
+				Status:      status,
+				Reqat:       row.Reqat.Time,
+				Doneat:      row.Doneat.Time,
+				Outputfiles: outputfiles,
+			}
+
+			sqlist = append(sqlist, detail)
+		}
+	}
+
+	return sqlist, nil
 }

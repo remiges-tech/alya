@@ -58,10 +58,53 @@ func (ns NullStatusEnum) Value() (driver.Value, error) {
 	return string(ns.StatusEnum), nil
 }
 
+type TypeEnum string
+
+const (
+	TypeEnumQ TypeEnum = "Q"
+	TypeEnumB TypeEnum = "B"
+)
+
+func (e *TypeEnum) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TypeEnum(s)
+	case string:
+		*e = TypeEnum(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TypeEnum: %T", src)
+	}
+	return nil
+}
+
+type NullTypeEnum struct {
+	TypeEnum TypeEnum `json:"type_enum"`
+	Valid    bool     `json:"valid"` // Valid is true if TypeEnum is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTypeEnum) Scan(value interface{}) error {
+	if value == nil {
+		ns.TypeEnum, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TypeEnum.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTypeEnum) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TypeEnum), nil
+}
+
 type Batch struct {
 	ID          uuid.UUID        `json:"id"`
 	App         string           `json:"app"`
 	Op          string           `json:"op"`
+	Type        TypeEnum         `json:"type"`
 	Context     []byte           `json:"context"`
 	Inputfile   pgtype.Text      `json:"inputfile"`
 	Status      StatusEnum       `json:"status"`

@@ -121,3 +121,22 @@ SELECT COUNT(*) FROM batchrows WHERE batch = $1;
 UPDATE batchrows
 SET status = $2
 WHERE rowid = $1;
+
+-- name: FetchSlowQueryList :many
+SELECT id, app, op, inputfile, status, reqat, doneat, outputfiles
+FROM batches
+WHERE type = 'Q'
+AND app = @app
+AND op = (sqlc.narg('op'):: type_enum) IS NULL OR (sqlc.narg('op')::type_enum)
+AND reqat >= @age;
+
+-- name: FetchBatchList :many
+SELECT id, app, op, inputfile, status, reqat, doneat, outputfiles,nsuccess, nfailed, naborted
+FROM batches
+WHERE type = 'B'
+AND app = @app
+AND op = (sqlc.narg('op'):: type_enum) IS NULL OR (sqlc.narg('op')::type_enum)
+AND reqat >= @age;
+
+-- name: GetNRowsByBatchID :one
+SELECT COUNT(*) FROM batchrows WHERE batch = $1;

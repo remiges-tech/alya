@@ -111,8 +111,8 @@ func TestSummarizeBatch(t *testing.T) {
 			// $ cd batch/pg/batchsqlc
 			// $ moq -out mocks/querier_mock.go -pkg mocks . Querier
 			mockQuerier := &mocks.QuerierMock{}
-			mockQuerier.GetBatchByIDFunc = func(ctx context.Context, id uuid.UUID) (batchsqlc.Batch, error) {
-				return batchsqlc.Batch{
+			mockQuerier.GetBatchByIDFunc = func(ctx context.Context, id uuid.UUID) (batchsqlc.GetBatchByIDRow, error) {
+				return batchsqlc.GetBatchByIDRow{
 					ID:     tt.batchID,
 					Status: batchsqlc.StatusEnumQueued,
 				}, nil

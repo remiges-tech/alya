@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
@@ -94,4 +95,38 @@ func (j JSONstr) IsValid() bool {
 type JobManagerConfig struct {
 	BatchChunkNRows        int // number of rows to send to the batch processor in each chunk
 	BatchStatusCacheDurSec int // duration in seconds to cache the batch status
+}
+
+// This struct  response for represents return response for SlowQueryList()
+type SlowQueryDetails_t struct {
+	Id          string            `json:"id"`
+	App         string            `json:"app"`
+	Op          string            `json:"op"`
+	Inputfile   string            `json:"inputfile"`
+	Status      BatchStatus_t     `json:"status"`
+	Reqat       time.Time         `json:"requat"`
+	Doneat      time.Time         `json:"doneat"`
+	Outputfiles map[string]string `json:"outputfiles"`
+}
+
+// This struct represents input for list of slow queries and batch queries
+type ListInput struct {
+	App string  `json:"app" validate:"required,alpha"`
+	Op  *string `json:"op,omitempty"`
+	Age int32   `json:"age" validate:"required,gt=0"`
+}
+
+type BatchDetails_t struct {
+	Id          string            `json:"id"`
+	App         string            `json:"app"`
+	Op          string            `json:"op"`
+	Inputfile   string            `json:"inputfile"`
+	Status      BatchStatus_t     `json:"status"`
+	Reqat       time.Time         `json:"requat"`
+	Doneat      time.Time         `json:"doneat"`
+	Outputfiles map[string]string `json:"outputfiles"`
+	NRows       int32             `json:"nrows"`
+	NSuccess    int32             `json:"nsuccess"`
+	NFailed     int32             `json:"nfailed"`
+	NAborted    int32             `json:"naborted"`
 }
