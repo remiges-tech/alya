@@ -82,7 +82,7 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchct
 
 	// Update the balance in Redis based on the transaction type
 	redisClient := initBlock.(*TransactionInitBlock).RedisClient
-	balanceKey := fmt.Sprintf("batch:%d:balance", initBlock.(*TransactionInitBlock).BatchID)
+	balanceKey := fmt.Sprintf("batch:%s:balance", batchCtx.Filename)
 
 	const maxRetries = 50
 
@@ -257,7 +257,7 @@ func main() {
 	batchCtx, _ := jobs.NewJSONstr(fmt.Sprintf(`{"filename": "%s"}`, filename))
 
 	// Set the initial balance in Redis to 0
-	balanceKey := fmt.Sprintf("batch:balance")
+	balanceKey := fmt.Sprintf("batch:%s:%d:balance", filename, rand.Intn(1000))
 	err = redisClient.Set(context.Background(), balanceKey, 0, 0).Err()
 	if err != nil {
 		log.Fatal("Failed to set initial balance in Redis:", err)
@@ -307,7 +307,7 @@ func main() {
 
 		if status == batchsqlc.StatusEnumQueued || status == batchsqlc.StatusEnumInprog {
 			fmt.Println("Batch processing in progress. Trying again in 5 seconds...")
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 

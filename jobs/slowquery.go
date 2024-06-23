@@ -211,7 +211,7 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	}
 
 	// Extract the rowids from the batchRows
-	rowids := make([]int32, len(pendingRows))
+	rowids := make([]int64, len(pendingRows))
 	for i, row := range pendingRows {
 		rowids[i] = row.Rowid
 	}

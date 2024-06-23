@@ -50,7 +50,7 @@ FOR UPDATE OF batchrows SKIP LOCKED;
 -- name: UpdateBatchRowsStatus :exec
 UPDATE batchrows
 SET status = $1
-WHERE rowid = ANY($2::int[]);
+WHERE rowid = ANY($2::bigint[]);
 
 -- name: GetCompletedBatches :many
 SELECT id

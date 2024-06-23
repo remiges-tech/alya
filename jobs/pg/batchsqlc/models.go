@@ -74,7 +74,7 @@ type Batch struct {
 }
 
 type Batchrow struct {
-	Rowid    int32            `json:"rowid"`
+	Rowid    int64            `json:"rowid"`
 	Batch    uuid.UUID        `json:"batch"`
 	Line     int32            `json:"line"`
 	Input    []byte           `json:"input"`

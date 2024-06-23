@@ -243,7 +243,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	}
 
 	// Extract the rowids from the batchRows
-	rowids := make([]int32, len(pendingRows))
+	rowids := make([]int64, len(pendingRows))
 	for i, row := range pendingRows {
 		rowids[i] = row.Rowid
 	}

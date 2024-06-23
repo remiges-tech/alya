@@ -115,7 +115,7 @@ type FetchBlockOfRowsRow struct {
 	Op      string     `json:"op"`
 	Context []byte     `json:"context"`
 	Batch   uuid.UUID  `json:"batch"`
-	Rowid   int32      `json:"rowid"`
+	Rowid   int64      `json:"rowid"`
 	Line    int32      `json:"line"`
 	Input   []byte     `json:"input"`
 }
@@ -221,7 +221,7 @@ FOR UPDATE
 `
 
 type GetBatchRowsByBatchIDSortedRow struct {
-	Rowid    int32            `json:"rowid"`
+	Rowid    int64            `json:"rowid"`
 	Line     int32            `json:"line"`
 	Input    []byte           `json:"input"`
 	Status   StatusEnum       `json:"status"`
@@ -323,7 +323,7 @@ FOR UPDATE
 `
 
 type GetPendingBatchRowsRow struct {
-	Rowid    int32            `json:"rowid"`
+	Rowid    int64            `json:"rowid"`
 	Line     int32            `json:"line"`
 	Input    []byte           `json:"input"`
 	Status   StatusEnum       `json:"status"`
@@ -375,7 +375,7 @@ FOR UPDATE
 `
 
 type GetProcessedBatchRowsByBatchIDSortedRow struct {
-	Rowid    int32            `json:"rowid"`
+	Rowid    int64            `json:"rowid"`
 	Line     int32            `json:"line"`
 	Input    []byte           `json:"input"`
 	Status   StatusEnum       `json:"status"`
@@ -517,7 +517,7 @@ WHERE rowid = $1
 `
 
 type UpdateBatchRowStatusParams struct {
-	Rowid  int32      `json:"rowid"`
+	Rowid  int64      `json:"rowid"`
 	Status StatusEnum `json:"status"`
 }
 
@@ -533,7 +533,7 @@ WHERE rowid = $1
 `
 
 type UpdateBatchRowsBatchJobParams struct {
-	Rowid    int32            `json:"rowid"`
+	Rowid    int64            `json:"rowid"`
 	Status   StatusEnum       `json:"status"`
 	Doneat   pgtype.Timestamp `json:"doneat"`
 	Res      []byte           `json:"res"`
@@ -562,7 +562,7 @@ WHERE rowid = $1
 `
 
 type UpdateBatchRowsSlowQueryParams struct {
-	Rowid    int32            `json:"rowid"`
+	Rowid    int64            `json:"rowid"`
 	Status   StatusEnum       `json:"status"`
 	Doneat   pgtype.Timestamp `json:"doneat"`
 	Res      []byte           `json:"res"`
@@ -585,12 +585,12 @@ func (q *Queries) UpdateBatchRowsSlowQuery(ctx context.Context, arg UpdateBatchR
 const updateBatchRowsStatus = `-- name: UpdateBatchRowsStatus :exec
 UPDATE batchrows
 SET status = $1
-WHERE rowid = ANY($2::int[])
+WHERE rowid = ANY($2::bigint[])
 `
 
 type UpdateBatchRowsStatusParams struct {
 	Status  StatusEnum `json:"status"`
-	Column2 []int32    `json:"column_2"`
+	Column2 []int64    `json:"column_2"`
 }
 
 func (q *Queries) UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRowsStatusParams) error {

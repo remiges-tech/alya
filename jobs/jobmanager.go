@@ -390,7 +390,7 @@ func updateSlowQueryResult(txQueries batchsqlc.Querier, row batchsqlc.FetchBlock
 
 	// Update the batchrows record with the results
 	err := txQueries.UpdateBatchRowsSlowQuery(context.Background(), batchsqlc.UpdateBatchRowsSlowQueryParams{
-		Rowid:    int32(row.Rowid),
+		Rowid:    int64(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
 		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Res:      []byte(result.String()),
@@ -436,7 +436,7 @@ func (jm *JobManager) updateBatchJobResult(txQueries batchsqlc.Querier, row batc
 		},
 	})
 	err := txQueries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
-		Rowid:    int32(row.Rowid),
+		Rowid:    int64(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
 		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Res:      []byte(result.String()),
