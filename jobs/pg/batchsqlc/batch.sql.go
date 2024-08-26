@@ -288,6 +288,27 @@ func (q *Queries) GetBatchStatus(ctx context.Context, id uuid.UUID) (StatusEnum,
 	return status, err
 }
 
+const getBatchStatusAndOutputFiles = `-- name: GetBatchStatusAndOutputFiles :one
+SELECT a.status, a.outputfiles, b.res
+FROM batches a
+JOIN batchrows b
+ON b.batch = a.id
+WHERE a.id = $1
+`
+
+type GetBatchStatusAndOutputFilesRow struct {
+	Status      StatusEnum `json:"status"`
+	Outputfiles []byte     `json:"outputfiles"`
+	Res         []byte     `json:"res"`
+}
+
+func (q *Queries) GetBatchStatusAndOutputFiles(ctx context.Context, id uuid.UUID) (GetBatchStatusAndOutputFilesRow, error) {
+	row := q.db.QueryRow(ctx, getBatchStatusAndOutputFiles, id)
+	var i GetBatchStatusAndOutputFilesRow
+	err := row.Scan(&i.Status, &i.Outputfiles, &i.Res)
+	return i, err
+}
+
 const getCompletedBatches = `-- name: GetCompletedBatches :many
 SELECT id
 FROM batches
@@ -507,6 +528,31 @@ type UpdateBatchOutputFilesParams struct {
 
 func (q *Queries) UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error {
 	_, err := q.db.Exec(ctx, updateBatchOutputFiles, arg.ID, arg.Outputfiles)
+	return err
+}
+
+const updateBatchResult = `-- name: UpdateBatchResult :exec
+UPDATE batches
+SET outputfiles = $1,
+   status = $2,
+   doneat = $3
+ WHERE id = $4
+`
+
+type UpdateBatchResultParams struct {
+	Outputfiles []byte           `json:"outputfiles"`
+	Status      StatusEnum       `json:"status"`
+	Doneat      pgtype.Timestamp `json:"doneat"`
+	ID          uuid.UUID        `json:"id"`
+}
+
+func (q *Queries) UpdateBatchResult(ctx context.Context, arg UpdateBatchResultParams) error {
+	_, err := q.db.Exec(ctx, updateBatchResult,
+		arg.Outputfiles,
+		arg.Status,
+		arg.Doneat,
+		arg.ID,
+	)
 	return err
 }
 

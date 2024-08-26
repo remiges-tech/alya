@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	csvFile := "transactions.csv"
+	csvFile :=  "../generate_txn/transactions.csv"
 
 	file, err := os.Open(csvFile)
 	if err != nil {

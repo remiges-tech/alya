@@ -17,6 +17,14 @@ SELECT status
 FROM batches
 WHERE id = $1;
 
+-- name: GetBatchStatusAndOutputFiles :one
+SELECT a.status, a.outputfiles, b.res
+FROM batches a
+JOIN batchrows b
+ON b.batch = a.id
+WHERE a.id = $1;
+
+
 -- name: FetchBatchRowsForBatchDone :many
 SELECT line, status, res, messages
 FROM batchrows
@@ -121,3 +129,11 @@ SELECT COUNT(*) FROM batchrows WHERE batch = $1;
 UPDATE batchrows
 SET status = $2
 WHERE rowid = $1;
+
+
+-- name: UpdateBatchResult :exec
+UPDATE batches
+SET outputfiles = $1,
+   status = $2,
+   doneat = $3
+ WHERE id = $4;

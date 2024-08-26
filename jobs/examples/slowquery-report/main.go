@@ -105,7 +105,9 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock jobs.InitBlock, context jo
 	res := fmt.Sprintf(`{"report": "%s"}`, reportResult)
 
 	result, _ = jobs.NewJSONstr(res)
-	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
+
+	outputFilesex := map[string]string{"file1": "somefile.txt"}
+	return batchsqlc.StatusEnumSuccess, result, nil, outputFilesex, nil
 }
 
 func main() {
@@ -183,11 +185,12 @@ func main() {
 
 	// Poll for the slow query result
 	for {
-		status, result, messages, err := jm.SlowQueryDone(reqID)
+		status, result, messages, outputFiles, err := jm.SlowQueryDone(reqID)
 		if err != nil {
 			fmt.Println("Error while polling for slow query result:", err)
 			return
 		}
+		fmt.Println("outputfiles :", outputFiles)
 
 		if status == jobs.BatchTryLater {
 			fmt.Println("Report generation in progress. Trying again in 5 seconds...")

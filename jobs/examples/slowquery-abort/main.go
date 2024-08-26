@@ -144,7 +144,7 @@ func main() {
 
 	// Poll for the slow query result
 	for {
-		status, result, messages, err := jm.SlowQueryDone(reqID)
+		status, result, messages, _,err := jm.SlowQueryDone(reqID)
 		if err != nil {
 			fmt.Println("Error while polling for slow query result:", err)
 			return
