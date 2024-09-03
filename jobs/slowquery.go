@@ -134,11 +134,14 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 	statusVal, err := jm.RedisClient.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
-		batchStatus, result, outputfiles, err := getBatchDetails(jm, reqIDUUID)
+		batchStatus, resultData, outputfiles, err := getBatchDetails(jm, reqIDUUID)
 		if err != nil {
 			log.Printf("SlowQuery.Done GetBatchDetails failed for request %v: %v", reqID, err)
 			result, _ := NewJSONstr("")
 			return BatchTryLater, result, nil, outputfiles, err // Assuming GetBatchDetails returns an error if not found
+		}
+		if batchStatus == batchsqlc.StatusEnumSuccess || batchStatus == batchsqlc.StatusEnumFailed {
+			result = resultData
 		}
 
 		// Convert string to StatusEnum if necessary
@@ -153,7 +156,8 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		if status == BatchSuccess || status == BatchFailed || status == BatchAborted {
 			expirySec = 100 * jm.Config.BatchStatusCacheDurSec
 		}
-		updateStatusAndOutputFilesDataInRedis(jm.RedisClient, reqIDUUID, batchStatus, outputfiles, result.String(), expirySec)
+
+		updateStatusAndOutputFilesDataInRedis(jm.RedisClient, reqIDUUID, batchStatus, outputfiles, resultData.String(), expirySec)
 
 		// Return the formatted result, messages, and nil for error
 		return status, result, messages, outputfiles, nil
@@ -165,33 +169,37 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 
 		// Key exists in REDIS, determine the action based on its value
 
-		// Fetch the result and outputFiles from Redis
-		resultVal, err := jm.RedisClient.Get(context.Background(), redisResultKey).Result()
-		if err != nil {
-			result, _ := NewJSONstr("")
-			return BatchTryLater, result, nil, outputfiles, err
-		}
-
-		outputFilesVal, err := jm.RedisClient.Get(context.Background(), redisOutputFilesKey).Result()
-		if err != nil {
-			result, _ := NewJSONstr("")
-			return BatchTryLater, result, nil, outputfiles, err
-		}
-
-		// Convert the values to the appropriate types
-		result, err = NewJSONstr(resultVal)
-		if err != nil {
-			return BatchTryLater, result, nil, outputfiles, err
-		}
-
-		err = json.Unmarshal([]byte(outputFilesVal), &outputfiles)
-		if err != nil {
-			return BatchTryLater, result, nil, outputfiles, fmt.Errorf("failed to unmarshal output files: %v", err)
-		}
-
 		var enumStatus batchsqlc.StatusEnum
 		enumStatus.Scan(statusVal) // Convert Redis result to StatusEnum
 		status = getBatchStatus(enumStatus)
+
+		if enumStatus == batchsqlc.StatusEnumSuccess || enumStatus == batchsqlc.StatusEnumFailed {
+
+			// Fetch the result and outputFiles from Redis
+			resultVal, err := jm.RedisClient.Get(context.Background(), redisResultKey).Result()
+			if err != nil {
+				result, _ := NewJSONstr("")
+				return BatchTryLater, result, nil, outputfiles, err
+			}
+
+			outputFilesVal, err := jm.RedisClient.Get(context.Background(), redisOutputFilesKey).Result()
+			if err != nil {
+				result, _ := NewJSONstr("")
+				return BatchTryLater, result, nil, outputfiles, err
+			}
+
+			// Convert the values to the appropriate types
+			result, err = NewJSONstr(resultVal)
+			if err != nil {
+				return BatchTryLater, result, nil, outputfiles, err
+			}
+
+			err = json.Unmarshal([]byte(outputFilesVal), &outputfiles)
+			if err != nil {
+				return BatchTryLater, result, nil, outputfiles, fmt.Errorf("failed to unmarshal output files: %v", err)
+			}
+
+		}
 
 	}
 
