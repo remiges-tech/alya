@@ -73,6 +73,34 @@ type Batch struct {
 	Naborted    pgtype.Int4      `json:"naborted"`
 }
 
+// Stores metadata for files associated with batch jobs
+type BatchFile struct {
+	// Unique identifier for each batch file record
+	ID int32 `json:"id"`
+	// Reference to the associated batch in the batches table
+	BatchID uuid.UUID `json:"batch_id"`
+	// Unique identifier for the file in the object store
+	ObjectID string `json:"object_id"`
+	// Original name of the file
+	Filename string `json:"filename"`
+	// Size of the file in bytes
+	Size int64 `json:"size"`
+	// Hash or checksum of the file contents for integrity verification
+	Checksum string `json:"checksum"`
+	// MIME type of the file
+	ContentType string `json:"content_type"`
+	// Indicates whether the file was successfully processed (TRUE) or failed (FALSE)
+	Status bool `json:"status"`
+	// Timestamp when the file was received and stored in the object store
+	ReceivedAt pgtype.Timestamptz `json:"received_at"`
+	// Timestamp when the file was processed by the batch system
+	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
+	// Contains any error message if the file processing failed
+	ErrorMessage pgtype.Text `json:"error_message"`
+	// Additional metadata about the file in JSONB format
+	Metadata []byte `json:"metadata"`
+}
+
 type Batchrow struct {
 	Rowid    int64            `json:"rowid"`
 	Batch    uuid.UUID        `json:"batch"`

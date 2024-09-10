@@ -121,3 +121,18 @@ SELECT COUNT(*) FROM batchrows WHERE batch = $1;
 UPDATE batchrows
 SET status = $2
 WHERE rowid = $1;
+
+-- name: InsertBatchFile :exec
+INSERT INTO batch_files (
+    batch_id,
+    object_id,
+    filename,
+    size,
+    checksum,
+    content_type,
+    status,
+    received_at,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
+);
