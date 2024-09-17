@@ -1,0 +1,29 @@
+version: "3.7"
+
+services:
+  pg:
+    image: bitnami/postgresql
+    container_name: infiled-pg
+    environment:
+      POSTGRES_USER: alyatest
+      POSTGRES_PASSWORD: alyatest
+      POSTGRES_DB: alyatest
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis
+    container_name: infiled-redis
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio
+    container_name: infiled-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001" 
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin

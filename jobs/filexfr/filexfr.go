@@ -1,7 +1,6 @@
 package filexfr
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"fmt"
@@ -25,22 +24,47 @@ type FileChk func(fileContents string, fileName string) (bool, jobs.JSONstr, []j
 // FileXfrConfig holds configuration for file transfer operations
 type FileXfrConfig struct {
 	MaxObjectIDLength int
+	IncomingBucket    string
+	FailedBucket      string
 }
 
 // FileXfrServer handles file transfer operations
 type FileXfrServer struct {
+	// fileChkMap stores file checking functions for each file type
+	// Key: file type (e.g., "banktransactions", "customerdata")
+	// Value: function to validate and process files of that type
 	fileChkMap map[string]FileChk
+
+	// jobManager manages alya batch jobs
+	// FileXfrServer will submit batch jobs using the jobManager
 	jobManager *jobs.JobManager
-	objStore   objstore.ObjectStore
-	mu         sync.RWMutex
-	queries    batchsqlc.Querier
-	config     FileXfrConfig
+
+	// objStore interfaces with the object storage system -- in this case, Minio
+	// It handles storing and retrieving file contents
+	objStore objstore.ObjectStore
+
+	// mu is a mutex for thread-safe access to shared resources
+	// It prevents concurrent modifications to the fileChkMap
+	mu sync.RWMutex
+
+	// queries provides database operations for batch-related tables
+	queries batchsqlc.Querier
+
+	// config holds configuration settings for file transfer operations
+	// It includes settings like max object ID length and bucket name
+	config FileXfrConfig
 }
 
 // NewFileXfrServer creates a new FileXfrServer with the given configuration
 func NewFileXfrServer(jobManager *jobs.JobManager, objStore objstore.ObjectStore, queries batchsqlc.Querier, config FileXfrConfig) *FileXfrServer {
 	if config.MaxObjectIDLength == 0 {
 		config.MaxObjectIDLength = 200 // Default value if not specified
+	}
+	if config.IncomingBucket == "" {
+		config.IncomingBucket = "incoming" // Default incoming bucket name
+	}
+	if config.FailedBucket == "" {
+		config.FailedBucket = "failed" // Default failed bucket name
 	}
 	return &FileXfrServer{
 		fileChkMap: make(map[string]FileChk),
@@ -129,24 +153,20 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 
 // getObjectContents retrieves the contents of an object from the object store
 func (fxs *FileXfrServer) getObjectContents(objectID string) (string, error) {
-	// Create a context for the operation
 	ctx := context.Background()
 
-	// Get the object from the object store
-	reader, err := fxs.objStore.Get(ctx, "incoming", objectID)
+	reader, err := fxs.objStore.Get(ctx, fxs.config.IncomingBucket, objectID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get object from store: %v", err)
+		return "", fmt.Errorf("failed to get object from store: %w", err)
 	}
 	defer reader.Close()
 
-	// Read the contents of the object
-	var buffer bytes.Buffer
-	_, err = io.Copy(&buffer, reader)
+	contents, err := io.ReadAll(reader)
 	if err != nil {
-		return "", fmt.Errorf("failed to read object contents: %v", err)
+		return "", fmt.Errorf("failed to read object contents: %w", err)
 	}
 
-	return buffer.String(), nil
+	return string(contents), nil
 }
 
 // moveObjectToFailedBucket moves an object from the incoming bucket to the failed bucket
@@ -154,52 +174,41 @@ func (fxs *FileXfrServer) moveObjectToFailedBucket(objectID string) error {
 	ctx := context.Background()
 
 	// Get the object from the incoming bucket
-	reader, err := fxs.objStore.Get(ctx, "incoming", objectID)
+	reader, err := fxs.objStore.Get(ctx, fxs.config.IncomingBucket, objectID)
 	if err != nil {
-		return fmt.Errorf("failed to get object from incoming bucket: %v", err)
+		return fmt.Errorf("failed to get object %s from incoming bucket: %w", objectID, err)
 	}
 	defer reader.Close()
 
-	// Generate a new object ID for the failed bucket
-	failedObjectID := generateFailedObjectID(objectID)
-
-	// Put the object in the failed bucket
-	err = fxs.objStore.Put(ctx, "failed", failedObjectID, reader, -1, "application/octet-stream")
+	// Put the object in the failed bucket using the same object ID
+	err = fxs.objStore.Put(ctx, fxs.config.FailedBucket, objectID, reader, -1, "application/octet-stream")
 	if err != nil {
-		return fmt.Errorf("failed to put object in failed bucket: %v", err)
+		return fmt.Errorf("failed to put object %s in failed bucket: %w", objectID, err)
 	}
 
-	// TODO: Implement deletion of the original object from the incoming bucket
-	// This step depends on whether your object store supports atomic move operations
-	// or if you need to implement it as a copy-then-delete operation
+	// Delete the original object from the incoming bucket
+	err = fxs.objStore.Delete(ctx, fxs.config.IncomingBucket, objectID)
+	if err != nil {
+		return fmt.Errorf("failed to delete object %s from incoming bucket: %w", objectID, err)
+	}
 
 	return nil
-}
-
-// generateFailedObjectID creates a new object ID for the failed bucket
-func generateFailedObjectID(originalID string) string {
-	timestamp := time.Now().Format("20060102-150405")
-	uniqueID := uuid.New().String()[:8]
-	return fmt.Sprintf("%s_%s_%s", filepath.Base(originalID), timestamp, uniqueID)
 }
 
 // storeFileContents stores the file contents in the object store and returns the object ID
 func (fxs *FileXfrServer) storeFileContents(contents, filename string) (string, error) {
 	ctx := context.Background()
 
-	// Generate a unique object ID
-	objectID := fxs.generateObjectID(filename)
+	// Use the sanitized filename as the object ID
+	objectID := fxs.generateObjectID(filename) // Ensure this generates just the filename
 
 	// Create a reader from the file contents
 	reader := strings.NewReader(contents)
 
-	// Determine the content type
-	contentType := detectContentType(contents, filename)
-
-	// Store the object in the "incoming" bucket
-	err := fxs.objStore.Put(ctx, "incoming", objectID, reader, int64(len(contents)), contentType)
+	// Store the object in the incoming bucket
+	err := fxs.objStore.Put(ctx, fxs.config.IncomingBucket, objectID, reader, int64(len(contents)), detectContentType(contents, filename))
 	if err != nil {
-		return "", fmt.Errorf("failed to store file contents: %v", err)
+		return "", fmt.Errorf("failed to store file contents: %w", err)
 	}
 
 	return objectID, nil
@@ -207,28 +216,15 @@ func (fxs *FileXfrServer) storeFileContents(contents, filename string) (string, 
 
 // generateObjectID creates a unique object ID for storing in the object store
 func (fxs *FileXfrServer) generateObjectID(filename string) string {
-	sanitized := sanitizeFilename(filename)
-	timestamp := time.Now().Format("20060102-150405")
-	uniqueID := uuid.New().String()
+	// Sanitize the filename to remove problematic characters
+	sanitizedFilename := sanitizeFilename(filename)
 
-	// Calculate the maximum length for the sanitized filename
-	maxSanitizedLength := fxs.config.MaxObjectIDLength - len(timestamp) - len(uniqueID) - 2 // 2 for the underscores
-	if maxSanitizedLength < 0 {
-		maxSanitizedLength = 0
-	}
-	if len(sanitized) > maxSanitizedLength {
-		sanitized = sanitized[:maxSanitizedLength]
+	// Truncate if necessary based on MaxObjectIDLength
+	if len(sanitizedFilename) > fxs.config.MaxObjectIDLength {
+		sanitizedFilename = sanitizedFilename[:fxs.config.MaxObjectIDLength]
 	}
 
-	objectID := fmt.Sprintf("%s_%s_%s", sanitized, timestamp, uniqueID)
-	if len(objectID) > fxs.config.MaxObjectIDLength {
-		// If it's still too long, truncate the uniqueID (least important for human readability)
-		excessLength := len(objectID) - fxs.config.MaxObjectIDLength
-		uniqueID = uniqueID[:len(uniqueID)-excessLength]
-		objectID = fmt.Sprintf("%s_%s_%s", sanitized, timestamp, uniqueID)
-	}
-
-	return objectID
+	return sanitizedFilename
 }
 
 // sanitizeFilename removes or replaces characters that might be problematic in object storage

@@ -11,6 +11,7 @@ import (
 type ObjectStore interface {
 	Put(ctx context.Context, bucket, obj string, reader io.Reader, size int64, contentType string) error
 	Get(ctx context.Context, bucket, obj string) (io.ReadCloser, error)
+	Delete(ctx context.Context, bucket, obj string) error
 }
 
 // MinioObjectStore is an implementation of ObjectStore using Minio
@@ -32,4 +33,9 @@ func (s *MinioObjStore) Put(ctx context.Context, bucket, obj string, reader io.R
 // Get retrieves an object from Minio
 func (s *MinioObjStore) Get(ctx context.Context, bucket, obj string) (io.ReadCloser, error) {
 	return s.client.GetObject(ctx, bucket, obj, minio.GetObjectOptions{})
+}
+
+// Delete removes an object from Minio
+func (s *MinioObjStore) Delete(ctx context.Context, bucket, obj string) error {
+	return s.client.RemoveObject(ctx, bucket, obj, minio.RemoveObjectOptions{})
 }
