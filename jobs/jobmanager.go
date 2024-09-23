@@ -465,8 +465,12 @@ func (jm *JobManager) summarizeCompletedBatches(q *batchsqlc.Queries, batchSet m
 
 func (jm *JobManager) closeInitBlocks() {
 	for app, initBlock := range jm.initblocks {
-		if err := initBlock.Close(); err != nil {
-			log.Println("Error closing initblock for app:", app, err)
+		if initBlock != nil {
+			if closer, ok := initBlock.(interface{ Close() error }); ok {
+				if err := closer.Close(); err != nil {
+					log.Println("Error closing initblock for app:", app, err)
+				}
+			}
 		}
 	}
 	jm.initblocks = make(map[string]InitBlock)

@@ -3,7 +3,9 @@ module github.com/remiges-tech/alya
 go 1.21.3
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/coreos/go-oidc/v3 v3.7.0
+	github.com/gabriel-vasile/mimetype v1.4.3
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-playground/validator/v10 v10.16.0
 	github.com/go-redis/redis/v8 v8.11.5
@@ -42,7 +44,6 @@ require (
 	github.com/elastic/elastic-transport-go/v8 v8.4.0 // indirect
 	github.com/elastic/go-elasticsearch/v8 v8.12.1 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect

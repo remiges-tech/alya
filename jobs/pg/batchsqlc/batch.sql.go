@@ -418,6 +418,49 @@ func (q *Queries) GetProcessedBatchRowsByBatchIDSorted(ctx context.Context, batc
 	return items, nil
 }
 
+const insertBatchFile = `-- name: InsertBatchFile :exec
+INSERT INTO batch_files (
+    batch_id,
+    object_id,
+    filename,
+    size,
+    checksum,
+    content_type,
+    status,
+    received_at,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
+)
+`
+
+type InsertBatchFileParams struct {
+	BatchID     uuid.UUID          `json:"batch_id"`
+	ObjectID    string             `json:"object_id"`
+	Filename    string             `json:"filename"`
+	Size        int64              `json:"size"`
+	Checksum    string             `json:"checksum"`
+	ContentType string             `json:"content_type"`
+	Status      bool               `json:"status"`
+	ReceivedAt  pgtype.Timestamptz `json:"received_at"`
+	Metadata    []byte             `json:"metadata"`
+}
+
+func (q *Queries) InsertBatchFile(ctx context.Context, arg InsertBatchFileParams) error {
+	_, err := q.db.Exec(ctx, insertBatchFile,
+		arg.BatchID,
+		arg.ObjectID,
+		arg.Filename,
+		arg.Size,
+		arg.Checksum,
+		arg.ContentType,
+		arg.Status,
+		arg.ReceivedAt,
+		arg.Metadata,
+	)
+	return err
+}
+
 const insertIntoBatchRows = `-- name: InsertIntoBatchRows :exec
 INSERT INTO batchrows (batch, line, input, status, reqat)
 VALUES ($1, $2, $3, 'queued', $4)
