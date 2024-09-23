@@ -15,7 +15,8 @@ CREATE TABLE batches (
     outputfiles JSONB,
     nsuccess INT,
     nfailed INT,
-    naborted INT
+    naborted INT,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW() -- Add created_at column
 );
 
 -- Table to store individual rows of batch jobs
@@ -31,6 +32,7 @@ CREATE TABLE batchrows (
     blobrows JSONB,
     messages JSONB,
     doneby VARCHAR(255),
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(), -- Add created_at column
     CONSTRAINT fk_batch FOREIGN KEY (batch) REFERENCES batches(id)
 );
 
@@ -48,6 +50,7 @@ CREATE TABLE batch_files (
     processed_at TIMESTAMP WITH TIME ZONE,
     error_message TEXT,
     metadata JSONB,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(), -- Add created_at column
     CONSTRAINT unique_object_id UNIQUE (object_id)
 );
 
