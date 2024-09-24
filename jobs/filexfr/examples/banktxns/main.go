@@ -89,7 +89,7 @@ func main() {
 
 	// Create FileXfrServer
 	queries := batchsqlc.New(dbPool)
-	fxs := filexfr.NewFileXfrServer(jm, objStore, queries, filexfr.FileXfrConfig{MaxObjectIDLength: 200})
+	fxs := filexfr.NewFileXfrServer(jm, objStore, queries, filexfr.FileXfrConfig{MaxObjectIDLength: 200}, logger)
 
 	// Register file checker
 	err = fxs.RegisterFileChk("csv", checkBankTransactionFile)

@@ -97,9 +97,9 @@ func main() {
 		log.Fatalf("Failed to set up buckets: %v", err)
 	}
 
-	// Create logger, JobManager, and FileXfrServer
-	log.Println("Creating logger")
-	logger := logharbour.NewLogger(logharbour.NewLoggerContext(logharbour.DefaultPriority), "InfiledExample", os.Stdout)
+	// Create logger with proper context
+	loggerContext := logharbour.NewLoggerContext(logharbour.DefaultPriority)
+	logger := logharbour.NewLogger(loggerContext, "InfiledExample", os.Stdout)
 
 	log.Println("Creating JobManager")
 	jm := jobs.NewJobManager(dbPool, redisClient, minioClient, logger, nil)
@@ -116,7 +116,7 @@ func main() {
 		IncomingBucket:    "incoming",
 		FailedBucket:      "failed",
 	}
-	fxs := filexfr.NewFileXfrServer(jm, objStore, queries, fileXfrConfig)
+	fxs := filexfr.NewFileXfrServer(jm, objStore, queries, fileXfrConfig, logger)
 
 	// Register file checker and batch processor
 	log.Println("Registering file checker")
@@ -221,7 +221,6 @@ func setupBuckets(minioClient *minio.Client, bucketNames []string) error {
 	}
 	return nil
 }
-
 func runInfiled(fxs *filexfr.FileXfrServer) error {
 	config := filexfr.InfiledConfig{
 		WatchDirs: []string{"./testdata"},
@@ -234,7 +233,12 @@ func runInfiled(fxs *filexfr.FileXfrServer) error {
 		FileAgeSecs:   10,
 	}
 
-	infiled := filexfr.NewInfiled(config, fxs)
+	loggerContext := logharbour.NewLoggerContext(logharbour.DefaultPriority)
+	logger := logharbour.NewLogger(loggerContext, "Infiled", os.Stdout)
+	infiled, err := filexfr.NewInfiled(config, fxs, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create infiled: %w", err)
+	}
 	fmt.Println("Starting Infiled daemon...")
 	return infiled.Run()
 }

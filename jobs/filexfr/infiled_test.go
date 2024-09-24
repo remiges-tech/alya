@@ -6,6 +6,8 @@ import (
 )
 
 func TestFindFiles(t *testing.T) {
+	logger := setupTestLogger(t)
+
 	tests := []struct {
 		name    string
 		config  InfiledConfig
@@ -63,7 +65,10 @@ func TestFindFiles(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i := &Infiled{config: tt.config}
+			i := &Infiled{
+				config: tt.config,
+				logger: logger,
+			}
 			got, err := i.findFiles(tt.pattern)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("findFiles() error = %v, wantErr %v", err, tt.wantErr)

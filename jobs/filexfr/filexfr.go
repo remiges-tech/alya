@@ -16,6 +16,7 @@ import (
 	"github.com/remiges-tech/alya/jobs"
 	"github.com/remiges-tech/alya/jobs/objstore"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
 
 // FileChk is the type for file checking functions
@@ -53,10 +54,13 @@ type FileXfrServer struct {
 	// config holds configuration settings for file transfer operations
 	// It includes settings like max object ID length and bucket name
 	config FileXfrConfig
+
+	// logger is the LogHarbour logger instance
+	logger *logharbour.Logger
 }
 
 // NewFileXfrServer creates a new FileXfrServer with the given configuration
-func NewFileXfrServer(jobManager *jobs.JobManager, objStore objstore.ObjectStore, queries batchsqlc.Querier, config FileXfrConfig) *FileXfrServer {
+func NewFileXfrServer(jobManager *jobs.JobManager, objStore objstore.ObjectStore, queries batchsqlc.Querier, config FileXfrConfig, logger *logharbour.Logger) *FileXfrServer {
 	if config.MaxObjectIDLength == 0 {
 		config.MaxObjectIDLength = 200 // Default value if not specified
 	}
@@ -72,6 +76,7 @@ func NewFileXfrServer(jobManager *jobs.JobManager, objStore objstore.ObjectStore
 		objStore:   objStore,
 		queries:    queries,
 		config:     config,
+		logger:     logger,
 	}
 }
 
@@ -87,6 +92,9 @@ func (fxs *FileXfrServer) RegisterFileChk(fileType string, fileChkFn FileChk) er
 	}
 
 	fxs.fileChkMap[fileType] = fileChkFn
+	fxs.logger.Debug2().LogActivity("Registered file check function", map[string]any{
+		"fileType": fileType,
+	})
 	return nil
 }
 
@@ -102,6 +110,10 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 		var err error
 		fileContents, err = fxs.getObjectContents(objectID)
 		if err != nil {
+			fxs.logger.Debug2().LogActivity("Failed to read object contents", map[string]any{
+				"objectID": objectID,
+				"error":    err.Error(),
+			})
 			return fmt.Errorf("failed to read object contents: %v", err)
 		}
 	} else {
@@ -111,6 +123,9 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 	// Get the registered file check function for the given file type
 	fileChkFn, exists := fxs.fileChkMap[filetype]
 	if !exists {
+		fxs.logger.Debug2().LogActivity("No file check function registered", map[string]any{
+			"filetype": filetype,
+		})
 		return fmt.Errorf("no file check function registered for file type: %s", filetype)
 	}
 
@@ -121,15 +136,29 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 		// Move the object to the "failed" bucket if it exists
 		if objectID != "" {
 			if err := fxs.moveObjectToFailedBucket(objectID); err != nil {
+				fxs.logger.Debug2().LogActivity("Failed to move object to failed bucket", map[string]any{
+					"objectID": objectID,
+					"error":    err.Error(),
+				})
 				return fmt.Errorf("failed to move object to failed bucket: %v", err)
 			}
 		}
+		fxs.logger.Debug2().LogActivity("File check failed", map[string]any{
+			"filetype": filetype,
+			"filename": filename,
+		})
 		return fmt.Errorf("file check failed for file type: %s", filetype)
 	}
 
 	// Submit the batch using JobManager
 	batchID, err := fxs.jobManager.BatchSubmit(app, op, context, batchInput, false)
 	if err != nil {
+		fxs.logger.Debug2().LogActivity("Failed to submit batch", map[string]any{
+			"app":     app,
+			"op":      op,
+			"context": context,
+			"error":   err.Error(),
+		})
 		return fmt.Errorf("failed to submit batch: %v", err)
 	}
 
@@ -137,15 +166,29 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 	if objectID == "" {
 		objectID, err = fxs.storeFileContents(fileContents, filename)
 		if err != nil {
+			fxs.logger.Debug2().LogActivity("Failed to store file contents", map[string]any{
+				"filename": filename,
+				"error":    err.Error(),
+			})
 			return fmt.Errorf("failed to store file contents: %v", err)
 		}
 	}
 
 	// Write a record in the batch-files table
 	if err := fxs.recordBatchFile(objectID, len(fileContents), batchID, isgood); err != nil {
+		fxs.logger.Debug2().LogActivity("Failed to record batch file", map[string]any{
+			"objectID": objectID,
+			"batchID":  batchID,
+			"error":    err.Error(),
+		})
 		return fmt.Errorf("failed to record batch file: %v", err)
 	}
 
+	fxs.logger.Debug2().LogActivity("Successfully processed file", map[string]any{
+		"filetype": filetype,
+		"filename": filename,
+		"batchID":  batchID,
+	})
 	return nil
 }
 

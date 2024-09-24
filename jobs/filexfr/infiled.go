@@ -31,13 +31,13 @@ package filexfr
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
 
 // FileTypeMapping represents a single file type mapping from the JSON configuration.
@@ -62,26 +62,37 @@ type Infiled struct {
 	config         InfiledConfig
 	fxs            *FileXfrServer
 	processedFiles map[string]time.Time
-	mu             sync.Mutex // Mutex to protect concurrent access to processedFiles
+	mu             sync.Mutex         // Mutex to protect concurrent access to processedFiles
+	logger         *logharbour.Logger // Logger instance for logging
 }
 
 // NewInfiled creates and returns a new Infiled instance.
 // It initializes the Infiled with the provided configuration and FileXfrServer.
-func NewInfiled(config InfiledConfig, fxs *FileXfrServer) *Infiled {
+func NewInfiled(config InfiledConfig, fxs *FileXfrServer, logger *logharbour.Logger) (*Infiled, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger cannot be nil")
+	}
 	return &Infiled{
 		config:         config,
 		fxs:            fxs,
 		processedFiles: make(map[string]time.Time),
-	}
+		logger:         logger,
+	}, nil
 }
 
 // Run starts the Infiled daemon.
 // It runs in an infinite loop, processing file mappings at regular intervals.
 func (i *Infiled) Run() error {
-	log.Println("Starting Infiled daemon")
+	if i == nil {
+		return fmt.Errorf("Infiled instance is nil")
+	}
+	if i.logger == nil {
+		return fmt.Errorf("logger is not initialized")
+	}
+	i.logger.Info().LogActivity("Starting Infiled daemon", nil)
 	for {
 		if err := i.processAllMappings(); err != nil {
-			log.Printf("Error processing mappings: %v", err)
+			i.logger.Error(err).LogActivity("Error processing mappings", nil)
 		}
 		time.Sleep(i.config.SleepInterval)
 	}
@@ -90,9 +101,12 @@ func (i *Infiled) Run() error {
 // processAllMappings processes all file type mappings defined in the configuration.
 // It iterates through each mapping and processes files that match the mapping's pattern.
 func (i *Infiled) processAllMappings() error {
+	if i == nil || i.logger == nil {
+		return fmt.Errorf("Infiled instance or logger is nil")
+	}
 	for _, mapping := range i.config.FileTypeMap {
 		if err := i.processSingleMapping(mapping); err != nil {
-			log.Printf("Error processing mapping %v: %v", mapping, err)
+			i.logger.Error(err).LogActivity("Error processing mapping", map[string]any{"mapping": mapping})
 		}
 	}
 	return nil
@@ -102,15 +116,15 @@ func (i *Infiled) processAllMappings() error {
 // It finds all files matching the mapping's pattern and processes each file.
 func (i *Infiled) processSingleMapping(mapping FileTypeMapping) error {
 	files, err := i.findFiles(mapping.Path)
-	log.Printf("Found %d files matching pattern %s", len(files), mapping.Path)
+	i.logger.Info().LogActivity("Found files matching pattern", map[string]any{"count": len(files), "pattern": mapping.Path})
 	if err != nil {
 		return fmt.Errorf("error finding files for pattern %s: %w", mapping.Path, err)
 	}
 
 	for _, file := range files {
-		log.Printf("Processing file %s", file)
+		i.logger.Info().LogActivity("Processing file", map[string]any{"file": file})
 		if err := i.processFile(file, mapping.Type); err != nil {
-			log.Printf("Error processing file %s: %v", file, err)
+			i.logger.Error(err).LogActivity("Error processing file", map[string]any{"file": file})
 		}
 	}
 
@@ -126,12 +140,12 @@ func (i *Infiled) processSingleMapping(mapping FileTypeMapping) error {
 // 3. It provides a closer match to Unix-style glob functionality.
 // 4. It allows us to match files across multiple directory levels without complex custom logic.
 func (i *Infiled) findFiles(pattern string) ([]string, error) {
-	log.Printf("Finding files matching pattern '%s' in directories %v", pattern, i.config.WatchDirs)
+	i.logger.Info().LogActivity("Finding files matching pattern", map[string]any{"pattern": pattern, "directories": i.config.WatchDirs})
 	var files []string
 	for _, dir := range i.config.WatchDirs {
 		// Use os.DirFS rooted at dir
 		fs := os.DirFS(dir)
-		log.Printf("Using os.DirFS with root: %s", dir)
+		i.logger.Info().LogActivity("Using os.DirFS with root", map[string]any{"root": dir})
 
 		// When using fs.Glob, the pattern should be relative to dir
 		matches, err := doublestar.Glob(fs, pattern)
@@ -139,7 +153,7 @@ func (i *Infiled) findFiles(pattern string) ([]string, error) {
 			return nil, fmt.Errorf("error globbing pattern %s in directory %s: %w", pattern, dir, err)
 		}
 
-		log.Printf("Found matches: %v", matches)
+		i.logger.Info().LogActivity("Found matches", map[string]any{"matches": matches})
 		// Prepend dir to each match to get the full path
 		for _, match := range matches {
 			fullPath := filepath.Join(dir, match)
@@ -147,7 +161,7 @@ func (i *Infiled) findFiles(pattern string) ([]string, error) {
 		}
 	}
 
-	log.Printf("Total files found: %d", len(files))
+	i.logger.Info().LogActivity("Total files found", map[string]any{"count": len(files)})
 	return files, nil
 }
 
@@ -171,14 +185,14 @@ func (i *Infiled) processFile(filePath, fileType string) error {
 	if err != nil {
 		// If processing fails, move the object to the "failed" bucket
 		if moveErr := i.fxs.moveObjectToFailedBucket(objectID); moveErr != nil {
-			log.Printf("Error moving object %s to failed bucket: %v", objectID, moveErr)
+			i.logger.Error(moveErr).LogActivity("Error moving object to failed bucket", map[string]any{"objectID": objectID, "error": moveErr.Error()})
 		}
 		return fmt.Errorf("error processing file %s: %w", filePath, err)
 	}
 
 	// Delete the file from the file system after successful processing
 	if err := os.Remove(filePath); err != nil {
-		log.Printf("Error deleting file %s: %v", filePath, err)
+		i.logger.Error(err).LogActivity("Error deleting file", map[string]any{"file": filePath})
 	}
 
 	return nil
@@ -189,7 +203,7 @@ func (i *Infiled) processFile(filePath, fileType string) error {
 func (i *Infiled) isFileOldEnough(filePath string) bool {
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		log.Printf("Error getting file info for %s: %v", filePath, err)
+		i.logger.Error(err).LogActivity("Error getting file info", map[string]any{"file": filePath})
 		return false
 	}
 
@@ -198,7 +212,7 @@ func (i *Infiled) isFileOldEnough(filePath string) bool {
 
 // storeFileInIncomingBucket stores the file in the incoming bucket
 func (i *Infiled) storeFileInIncomingBucket(filePath string) (string, error) {
-	log.Printf("Storing file %s in incoming bucket %s", filePath, i.fxs.config.IncomingBucket)
+	i.logger.Info().LogActivity("Storing file in incoming bucket", map[string]any{"file": filePath, "bucket": i.fxs.config.IncomingBucket})
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("error opening file %s: %w", filePath, err)
@@ -240,7 +254,7 @@ func (i *Infiled) moveObjectToFailedBucket(objectID string) error {
 	// Remove the original object from the incoming bucket
 	err = i.fxs.objStore.Delete(ctx, i.fxs.config.IncomingBucket, objectID)
 	if err != nil {
-		log.Printf("Error removing object %s from incoming bucket: %v", objectID, err)
+		i.logger.Error(err).LogActivity("Error removing object from incoming bucket", map[string]any{"objectID": objectID})
 	}
 
 	return nil

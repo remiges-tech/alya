@@ -1,13 +1,32 @@
 package filexfr
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/remiges-tech/alya/jobs"
+	"github.com/remiges-tech/logharbour/logharbour"
 )
+
+// testWriter is a custom writer that writes to both test log and os.Stdout
+type testWriter struct {
+	t *testing.T
+}
+
+func (tw *testWriter) Write(p []byte) (n int, err error) {
+	tw.t.Log(string(p))
+	return os.Stdout.Write(p)
+}
+
+// setupTestLogger initializes and returns a test logger
+func setupTestLogger(t *testing.T) *logharbour.Logger {
+	loggerContext := logharbour.NewLoggerContext(logharbour.Debug2)
+	writer := &testWriter{t: t}
+	return logharbour.NewLogger(loggerContext, "FileXfrTest", writer)
+}
 
 // mockFileChk is a mock file check function for testing
 func mockFileChk(fileContents string, fileName string) (bool, jobs.JSONstr, []jobs.BatchInput_t, string, string, string) {
@@ -19,7 +38,8 @@ func mockFileChk(fileContents string, fileName string) (bool, jobs.JSONstr, []jo
 }
 
 func TestNewFileTransferManager(t *testing.T) {
-	fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, FileXfrConfig{MaxObjectIDLength: 200})
+	logger := setupTestLogger(t)
+	fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, FileXfrConfig{MaxObjectIDLength: 200}, logger)
 
 	if fxs == nil {
 		t.Fatal("NewFileXfrServer returned nil")
@@ -35,7 +55,8 @@ func TestNewFileTransferManager(t *testing.T) {
 }
 
 func TestRegisterFileChk(t *testing.T) {
-	fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, FileXfrConfig{MaxObjectIDLength: 200})
+	logger := setupTestLogger(t)
+	fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, FileXfrConfig{MaxObjectIDLength: 200}, logger)
 
 	// Test registering a new file check function
 	err := fxs.RegisterFileChk("csv", mockFileChk)
@@ -117,8 +138,9 @@ func TestSanitizeFilename(t *testing.T) {
 // generated ID meets all the above criteria and that consecutive calls with the same
 // input filename produce different IDs due to the unique timestamp and UUID components.
 func TestGenerateObjectID(t *testing.T) {
+	logger := setupTestLogger(t)
 	config := FileXfrConfig{MaxObjectIDLength: 200}
-	fxs := NewFileXfrServer(nil, nil, nil, config)
+	fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, config, logger)
 
 	validateObjectID := func(t *testing.T, objectID, filename string) {
 		t.Helper()
