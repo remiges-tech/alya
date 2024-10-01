@@ -13,6 +13,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/remiges-tech/alya/jobs"
+	"github.com/remiges-tech/alya/jobs/examples"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 	"github.com/remiges-tech/logharbour/logharbour"
@@ -106,11 +107,18 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock jobs.InitBlock, context jo
 
 	result, _ = jobs.NewJSONstr(res)
 
-	outputFilesex := map[string]string{"file1": "somefile.txt"}
-	return batchsqlc.StatusEnumSuccess, result, nil, outputFilesex, nil
+	outputFiles = map[string]string{"file1": "somefile.txt"}
+	return batchsqlc.StatusEnumSuccess, result, nil, outputFiles, nil
 }
 
 func main() {
+	connString := "postgres://alyatest:alyatest@localhost:5432/alyatest"
+	conn, err := examples.InitializeDatabase(connString)
+	if err != nil {
+		log.Fatalf("Database initialization failed: %v", err)
+	}
+	defer conn.Close(context.Background())
+
 	pool := getDb()
 
 	queries := batchsqlc.New(pool)
@@ -190,7 +198,10 @@ func main() {
 			fmt.Println("Error while polling for slow query result:", err)
 			return
 		}
-		fmt.Println("outputfiles :", outputFiles)
+		fmt.Println("outputfiles:", outputFiles)
+		fmt.Println("status:", status)
+		fmt.Println("result:", result)
+		fmt.Println("messages:", messages)
 
 		if status == jobs.BatchTryLater {
 			fmt.Println("Report generation in progress. Trying again in 5 seconds...")
