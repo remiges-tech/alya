@@ -17,6 +17,14 @@ SELECT status
 FROM batches
 WHERE id = $1;
 
+-- name: GetBatchStatusAndOutputFiles :one
+SELECT a.status, a.outputfiles, b.res
+FROM batches a
+JOIN batchrows b
+ON b.batch = a.id
+WHERE a.id = $1;
+
+
 -- name: FetchBatchRowsForBatchDone :many
 SELECT line, status, res, messages
 FROM batchrows
@@ -59,7 +67,7 @@ WHERE status IN ('success', 'failed', 'aborted')
 FOR UPDATE;
 
 -- name: GetBatchByID :one
-SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted
+SELECT *
 FROM batches
 WHERE id = $1 
 FOR UPDATE;
@@ -136,3 +144,10 @@ INSERT INTO batch_files (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9
 );
+
+-- name: UpdateBatchResult :exec
+UPDATE batches
+SET outputfiles = $1,
+   status = $2,
+   doneat = $3
+ WHERE id = $4;

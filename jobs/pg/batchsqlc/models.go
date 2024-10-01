@@ -71,6 +71,7 @@ type Batch struct {
 	Nsuccess    pgtype.Int4      `json:"nsuccess"`
 	Nfailed     pgtype.Int4      `json:"nfailed"`
 	Naborted    pgtype.Int4      `json:"naborted"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
 }
 
 // Stores metadata for files associated with batch jobs
@@ -98,19 +99,21 @@ type BatchFile struct {
 	// Contains any error message if the file processing failed
 	ErrorMessage pgtype.Text `json:"error_message"`
 	// Additional metadata about the file in JSONB format
-	Metadata []byte `json:"metadata"`
+	Metadata  []byte           `json:"metadata"`
+	CreatedAt pgtype.Timestamp `json:"created_at"`
 }
 
 type Batchrow struct {
-	Rowid    int64            `json:"rowid"`
-	Batch    uuid.UUID        `json:"batch"`
-	Line     int32            `json:"line"`
-	Input    []byte           `json:"input"`
-	Status   StatusEnum       `json:"status"`
-	Reqat    pgtype.Timestamp `json:"reqat"`
-	Doneat   pgtype.Timestamp `json:"doneat"`
-	Res      []byte           `json:"res"`
-	Blobrows []byte           `json:"blobrows"`
-	Messages []byte           `json:"messages"`
-	Doneby   pgtype.Text      `json:"doneby"`
+	Rowid     int64            `json:"rowid"`
+	Batch     uuid.UUID        `json:"batch"`
+	Line      int32            `json:"line"`
+	Input     []byte           `json:"input"`
+	Status    StatusEnum       `json:"status"`
+	Reqat     pgtype.Timestamp `json:"reqat"`
+	Doneat    pgtype.Timestamp `json:"doneat"`
+	Res       []byte           `json:"res"`
+	Blobrows  []byte           `json:"blobrows"`
+	Messages  []byte           `json:"messages"`
+	Doneby    pgtype.Text      `json:"doneby"`
+	CreatedAt pgtype.Timestamp `json:"created_at"`
 }

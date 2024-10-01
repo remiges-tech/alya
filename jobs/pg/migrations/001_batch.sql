@@ -16,12 +16,12 @@ CREATE TABLE batches (
     nsuccess INT,
     nfailed INT,
     naborted INT,
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW() -- Add created_at column
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW() 
 );
 
 -- Table to store individual rows of batch jobs
 CREATE TABLE batchrows (
-    rowid BIGSERIAL PRIMARY KEY,
+    rowid BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     batch UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
     line INT NOT NULL,
     input JSONB NOT NULL,

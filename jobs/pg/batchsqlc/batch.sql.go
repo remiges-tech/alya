@@ -150,7 +150,7 @@ func (q *Queries) FetchBlockOfRows(ctx context.Context, arg FetchBlockOfRowsPara
 }
 
 const getBatchByID = `-- name: GetBatchByID :one
-SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted
+SELECT id, app, op, context, inputfile, status, reqat, doneat, outputfiles, nsuccess, nfailed, naborted, created_at
 FROM batches
 WHERE id = $1 
 FOR UPDATE
@@ -172,12 +172,13 @@ func (q *Queries) GetBatchByID(ctx context.Context, id uuid.UUID) (Batch, error)
 		&i.Nsuccess,
 		&i.Nfailed,
 		&i.Naborted,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getBatchRowsByBatchID = `-- name: GetBatchRowsByBatchID :many
-SELECT rowid, batch, line, input, status, reqat, doneat, res, blobrows, messages, doneby FROM batchrows WHERE batch = $1
+SELECT rowid, batch, line, input, status, reqat, doneat, res, blobrows, messages, doneby, created_at FROM batchrows WHERE batch = $1
 `
 
 func (q *Queries) GetBatchRowsByBatchID(ctx context.Context, batch uuid.UUID) ([]Batchrow, error) {
@@ -201,6 +202,7 @@ func (q *Queries) GetBatchRowsByBatchID(ctx context.Context, batch uuid.UUID) ([
 			&i.Blobrows,
 			&i.Messages,
 			&i.Doneby,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -286,6 +288,27 @@ func (q *Queries) GetBatchStatus(ctx context.Context, id uuid.UUID) (StatusEnum,
 	var status StatusEnum
 	err := row.Scan(&status)
 	return status, err
+}
+
+const getBatchStatusAndOutputFiles = `-- name: GetBatchStatusAndOutputFiles :one
+SELECT a.status, a.outputfiles, b.res
+FROM batches a
+JOIN batchrows b
+ON b.batch = a.id
+WHERE a.id = $1
+`
+
+type GetBatchStatusAndOutputFilesRow struct {
+	Status      StatusEnum `json:"status"`
+	Outputfiles []byte     `json:"outputfiles"`
+	Res         []byte     `json:"res"`
+}
+
+func (q *Queries) GetBatchStatusAndOutputFiles(ctx context.Context, id uuid.UUID) (GetBatchStatusAndOutputFilesRow, error) {
+	row := q.db.QueryRow(ctx, getBatchStatusAndOutputFiles, id)
+	var i GetBatchStatusAndOutputFilesRow
+	err := row.Scan(&i.Status, &i.Outputfiles, &i.Res)
+	return i, err
 }
 
 const getCompletedBatches = `-- name: GetCompletedBatches :many
@@ -550,6 +573,31 @@ type UpdateBatchOutputFilesParams struct {
 
 func (q *Queries) UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error {
 	_, err := q.db.Exec(ctx, updateBatchOutputFiles, arg.ID, arg.Outputfiles)
+	return err
+}
+
+const updateBatchResult = `-- name: UpdateBatchResult :exec
+UPDATE batches
+SET outputfiles = $1,
+   status = $2,
+   doneat = $3
+ WHERE id = $4
+`
+
+type UpdateBatchResultParams struct {
+	Outputfiles []byte           `json:"outputfiles"`
+	Status      StatusEnum       `json:"status"`
+	Doneat      pgtype.Timestamp `json:"doneat"`
+	ID          uuid.UUID        `json:"id"`
+}
+
+func (q *Queries) UpdateBatchResult(ctx context.Context, arg UpdateBatchResultParams) error {
+	_, err := q.db.Exec(ctx, updateBatchResult,
+		arg.Outputfiles,
+		arg.Status,
+		arg.Doneat,
+		arg.ID,
+	)
 	return err
 }
 

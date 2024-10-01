@@ -246,7 +246,7 @@ func main() {
 	}
 
 	// Load batch input from CSV file
-	csvFile := "transactions.csv"
+	csvFile :=  "../generate_txn/transactions.csv"
 	batchInput, err := loadBatchInputFromCSV(csvFile)
 	if err != nil {
 		log.Fatal("Failed to load batch input from CSV:", err)

@@ -20,6 +20,7 @@ type Querier interface {
 	GetBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetBatchRowsByBatchIDSortedRow, error)
 	GetBatchRowsCount(ctx context.Context, batch uuid.UUID) (int64, error)
 	GetBatchStatus(ctx context.Context, id uuid.UUID) (StatusEnum, error)
+	GetBatchStatusAndOutputFiles(ctx context.Context, id uuid.UUID) (GetBatchStatusAndOutputFilesRow, error)
 	GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error)
 	GetPendingBatchRows(ctx context.Context, batch uuid.UUID) ([]GetPendingBatchRowsRow, error)
 	GetProcessedBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetProcessedBatchRowsByBatchIDSortedRow, error)
@@ -28,6 +29,7 @@ type Querier interface {
 	InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error)
 	UpdateBatchCounters(ctx context.Context, arg UpdateBatchCountersParams) error
 	UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error
+	UpdateBatchResult(ctx context.Context, arg UpdateBatchResultParams) error
 	UpdateBatchRowStatus(ctx context.Context, arg UpdateBatchRowStatusParams) error
 	UpdateBatchRowsBatchJob(ctx context.Context, arg UpdateBatchRowsBatchJobParams) error
 	UpdateBatchRowsSlowQuery(ctx context.Context, arg UpdateBatchRowsSlowQueryParams) error

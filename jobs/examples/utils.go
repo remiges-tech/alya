@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/remiges-tech/alya/jobs"
 )
 
+// CreateMinioClient initializes and returns a Minio client.
 func CreateMinioClient() *minio.Client {
 	// Create a new Minio client instance with the default credentials
 	minioClient, err := minio.New("localhost:9000", &minio.Options{
@@ -25,13 +27,29 @@ func CreateMinioClient() *minio.Client {
 	err = minioClient.MakeBucket(context.Background(), bucketName, minio.MakeBucketOptions{})
 	if err != nil {
 		// Check if the bucket already exists
-		exists, err := minioClient.BucketExists(context.Background(), bucketName)
-		if err != nil || !exists {
+		exists, errBucketExists := minioClient.BucketExists(context.Background(), bucketName)
+		if errBucketExists != nil || !exists {
 			log.Fatalf("Error creating test bucket: %v", err)
 		}
 	}
-
 	return minioClient
+}
+
+// InitializeDatabase connects to the database and runs migrations.
+func InitializeDatabase(connString string) (*pgx.Conn, error) {
+	// Connect to the database
+	conn, err := pgx.Connect(context.Background(), connString)
+	if err != nil {
+		return nil, fmt.Errorf("unable to connect to database: %v", err)
+	}
+
+	// Run database migrations
+	err = jobs.MigrateDatabase(conn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to migrate database: %v", err)
+	}
+
+	return conn, nil
 }
 
 type EmailInput struct {
@@ -47,7 +65,7 @@ type EmailTemplate struct {
 	Body           string
 }
 
-// GenerateBatchInput generates a slice of InsertIntoBatchRowsParams for batch processing.
+// GenerateBatchInput creates a slice of BatchInput_t for batch processing.
 // numRecords specifies the number of records to generate.
 // emailTemplate is the base template for generating the email records.
 func GenerateBatchInput(numRecords int, emailTemplate EmailTemplate) []jobs.BatchInput_t {
@@ -62,14 +80,16 @@ func GenerateBatchInput(numRecords int, emailTemplate EmailTemplate) []jobs.Batc
 
 		emailInputBytes, err := json.Marshal(emailInput)
 		if err != nil {
-			// Handle error (for simplicity, we'll just log it here, but you might want to handle it differently)
+			// Error marshalling email input; skip this record
 			fmt.Printf("Error marshalling email input: %v\n", err)
 			continue
 		}
 
 		input, err := jobs.NewJSONstr(string(emailInputBytes))
 		if err != nil {
-			return nil
+			// Error creating JSON string; skip this record
+			fmt.Printf("Error creating JSON string: %v\n", err)
+			continue
 		}
 		batchInput = append(batchInput, jobs.BatchInput_t{
 			Line:  i,

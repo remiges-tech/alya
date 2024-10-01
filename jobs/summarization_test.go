@@ -141,17 +141,31 @@ func TestSummarizeBatch(t *testing.T) {
 			}
 
 			redisClient, redisMock := redismock.NewClientMock()
-			redisMock.ExpectSet(fmt.Sprintf("ALYA_BATCHSTATUS_%s", tt.batchID.String()), string(tt.expectedStatus), time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100)*time.Second).SetVal("OK")
+			redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", tt.batchID.String())
+
+			// Set up Redis mock expectations
+			redisMock.ExpectWatch(redisKey)
+			redisMock.ExpectGet(redisKey).SetVal("previous_status") // Simulate a different current status
+			redisMock.ExpectTxPipeline()
+			redisMock.ExpectSet(redisKey, string(tt.expectedStatus), time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100)*time.Second).SetVal("OK")
+			redisMock.ExpectTxPipelineExec()
 
 			jm := JobManager{
 				Queries:     mockQuerier,
 				ObjStore:    mockObjStore,
 				RedisClient: redisClient,
+				// Initialize Config with a non-zero BatchStatusCacheDurSec
+				Config: JobManagerConfig{
+					BatchStatusCacheDurSec: ALYA_BATCHSTATUS_CACHEDUR_SEC,
+				},
 				// Initialize other required fields for the test
 			}
 
 			err := jm.summarizeBatch(mockQuerier, tt.batchID)
 			assert.NoError(t, err)
+
+			// Ensure all expectations were met
+			assert.NoError(t, redisMock.ExpectationsWereMet())
 		})
 	}
 }
