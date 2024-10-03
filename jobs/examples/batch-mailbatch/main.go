@@ -58,6 +58,11 @@ func (ib *EmailInitBlock) Close() error {
 	return nil
 }
 
+func (ib *EmailInitBlock) IsAlive() (bool, error) {
+	// Check if the connection to the email server is alive
+	return false, nil
+}
+
 func main() {
 	// Initialize the database connection
 	pool := getDb()
