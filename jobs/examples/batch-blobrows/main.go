@@ -52,6 +52,14 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context
 	return batchsqlc.StatusEnumSuccess, result, nil, blobRows, nil
 }
 
+// Add MarkDone method to TransactionBatchProcessor
+func (p *TransactionBatchProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	log.Printf("Transaction batch %s completed with status: %s", details.ID, details.Status)
+	log.Printf("Processed: Success=%d, Failed=%d, Aborted=%d",
+		details.NSuccess, details.NFailed, details.NAborted)
+	return nil
+}
+
 type TransactionInitializer struct{}
 
 func (i *TransactionInitializer) Init(app string) (jobs.InitBlock, error) {

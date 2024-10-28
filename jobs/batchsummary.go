@@ -76,13 +76,13 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	}
 
 	// Move temporary files to the object store and update outputfiles
-	outputFiles, err := moveFilesToObjectStore(tmpFiles, jm.ObjStore, "batch-output")
+	objStoreFiles, err := moveFilesToObjectStore(tmpFiles, jm.ObjStore, "batch-output")
 	if err != nil {
 		return fmt.Errorf("failed to move files to object store: %v", err)
 	}
 
 	// Update the batches record with summarized information
-	err = updateBatchSummary(q, ctx, batchID, batchStatus, outputFiles, nsuccess, nfailed, naborted)
+	err = updateBatchSummary(q, ctx, batchID, batchStatus, objStoreFiles, nsuccess, nfailed, naborted)
 	if err != nil {
 		return fmt.Errorf("failed to update batch summary: %v", err)
 	}
@@ -91,6 +91,58 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	err = updateStatusInRedis(jm.RedisClient, batchID, batchStatus, 100*jm.Config.BatchStatusCacheDurSec)
 	if err != nil {
 		return fmt.Errorf("failed to update status in redis: %v", err)
+	}
+
+	// After successful batch completion and Redis update, call MarkDone
+	// Get the processor for this app+op
+	processor, exists := jm.batchprocessorfuncs[batch.App+batch.Op]
+	if !exists {
+		return fmt.Errorf("no processor found for app %s and op %s", batch.App, batch.Op)
+	}
+
+	context, err := NewJSONstr(string(batch.Context))
+	if err != nil {
+		return fmt.Errorf("failed to parse context for MarkDone: %v", err)
+	}
+
+	var batchOutputFiles map[string]string
+	if batch.Outputfiles != nil {
+		if err := json.Unmarshal(batch.Outputfiles, &batchOutputFiles); err != nil {
+			return fmt.Errorf("failed to unmarshal output files: %v", err)
+		}
+	}
+
+	details := BatchDetails_t{
+		ID:          batchID.String(),
+		App:         batch.App,
+		Op:          batch.Op,
+		Context:     context,
+		Status:      batch.Status,
+		OutputFiles: batchOutputFiles,
+		NSuccess:    int(batch.Nsuccess.Int32),
+		NFailed:     int(batch.Nfailed.Int32),
+		NAborted:    int(batch.Naborted.Int32),
+	}
+
+	// Get or create InitBlock
+	initBlock, exists := jm.initblocks[batch.App]
+	if !exists || initBlock == nil {
+		if initializer, exists := jm.initfuncs[batch.App]; exists {
+			initBlock, err = initializer.Init(batch.App)
+			if err != nil {
+				return fmt.Errorf("failed to initialize app %s for MarkDone: %v", batch.App, err)
+			}
+			jm.initblocks[batch.App] = initBlock
+		} else {
+			return fmt.Errorf("no initializer found for app %s", batch.App)
+		}
+	}
+
+	// Call MarkDone
+	log.Printf("Calling MarkDone for batch %s", batchID)
+	if err := processor.MarkDone(initBlock, context, details); err != nil {
+		log.Printf("MarkDone failed for batch %s: %v", batchID, err)
+		// We log the error but don't return it, as the batch is already complete
 	}
 
 	return nil
@@ -253,7 +305,7 @@ func updateStatusInRedis(redisClient *redis.Client, batchID uuid.UUID, status ba
 		if currentStatus == string(status) {
 			return nil
 		}
-		
+
 		// Update the batch status in Redis within the transaction
 		_, err = tx.TxPipelined(context.Background(), func(pipe redis.Pipeliner) error {
 			pipe.Set(context.Background(), redisKey, string(status), expiry)

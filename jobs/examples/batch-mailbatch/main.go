@@ -44,6 +44,78 @@ func (p *EmailBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.
 	return batchsqlc.StatusEnumSuccess, result, nil, blobRows, nil
 }
 
+// MarkDone is called when a batch completes. It can be used to:
+// - Send batch completion notifications
+// - Generate summary reports
+// - Trigger downstream processes
+// - Update application state
+func (p *EmailBatchProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	// Log batch completion details
+	log.Printf("Email batch %s completed with status: %s", details.ID, details.Status)
+	log.Printf("Successfully sent: %d", details.NSuccess)
+	log.Printf("Failed to send: %d", details.NFailed)
+	log.Printf("Aborted: %d", details.NAborted)
+
+	// Generate and send a summary email to the administrator
+	summaryEmail := examples.EmailInput{
+		RecipientEmail: "admin@example.com",
+		Subject:        fmt.Sprintf("Batch Email Summary - Batch ID: %s", details.ID),
+		Body: fmt.Sprintf(`
+Email Batch Summary:
+------------------
+Batch ID: %s
+Status: %s
+Emails Sent Successfully: %d
+Failed Emails: %d
+Aborted Emails: %d
+
+Output Files:
+`, details.ID, details.Status, details.NSuccess, details.NFailed, details.NAborted),
+	}
+
+	// Add output files information to the summary
+	for filename, objectID := range details.OutputFiles {
+		summaryEmail.Body += fmt.Sprintf("- %s: %s\n", filename, objectID)
+	}
+
+	// Simulate sending the summary email
+	fmt.Printf("\nSending summary email:\n%s\n", summaryEmail.Body)
+
+	// Example: Update a hypothetical email campaign tracking system
+	if details.Status == batchsqlc.StatusEnumSuccess {
+		fmt.Printf("Updating campaign status: All emails sent for batch %s\n", details.ID)
+	} else {
+		fmt.Printf("Updating campaign status: Batch %s completed with failures\n", details.ID)
+	}
+
+	// Example: If there were failures, create a retry batch for failed emails
+	if details.NFailed > 0 {
+		fmt.Printf("Creating retry batch for %d failed emails\n", details.NFailed)
+		// In a real implementation, we would:
+		// 1. Query the batch rows for failed entries
+		// 2. Create a new batch with just the failed emails
+		// 3. Submit the retry batch
+	}
+
+	// Example: Process any generated output files
+	if len(details.OutputFiles) > 0 {
+		fmt.Println("\nProcessing output files:")
+		for logicalName, objectID := range details.OutputFiles {
+			fmt.Printf("- Processing %s (Object ID: %s)\n", logicalName, objectID)
+			// In a real implementation, we might:
+			// - Download and parse the email logs
+			// - Upload logs to a long-term storage system
+			// - Generate detailed reports
+			// - Update analytics systems
+		}
+	}
+
+	// Example: Clean up any temporary resources
+	fmt.Println("\nCleaning up temporary resources for batch", details.ID)
+
+	return nil
+}
+
 type EmailInitializer struct{}
 
 func (i *EmailInitializer) Init(app string) (jobs.InitBlock, error) {
@@ -150,6 +222,13 @@ func main() {
 		fmt.Println("Aborted count:", naborted)
 		break
 	}
+
+	// The MarkDone function will be automatically called by the job manager
+	// when the batch completes. We can see its effects in the logs.
+
+	// Add a sleep at the end of main to see the MarkDone output
+	fmt.Println("\nWaiting for batch to complete and MarkDone to be called...")
+	time.Sleep(time.Second * 30)
 }
 
 func getDb() *pgxpool.Pool {

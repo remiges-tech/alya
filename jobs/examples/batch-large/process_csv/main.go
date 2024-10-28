@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -36,6 +35,61 @@ type TransactionInput struct {
 }
 
 type TransactionBatchProcessor struct{}
+
+// Add MarkDone method
+func (p *TransactionBatchProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	// Parse the context to get our configuration
+	var contextData struct {
+		NotificationEmail string `json:"notification_email"`
+		BatchName         string `json:"batch_name"`
+		Department        string `json:"department"`
+		Priority          int    `json:"priority"`
+	}
+
+	if err := json.Unmarshal([]byte(context.String()), &contextData); err != nil {
+		return fmt.Errorf("failed to parse context in MarkDone: %v", err)
+	}
+
+	log.Printf("\nMarkDone: Processing completion for batch %s", details.ID)
+	log.Printf("Batch Context Details:")
+	log.Printf("- Notification Email: %s", contextData.NotificationEmail)
+	log.Printf("- Batch Name: %s", contextData.BatchName)
+	log.Printf("- Department: %s", contextData.Department)
+	log.Printf("- Priority: %d", contextData.Priority)
+
+	log.Printf("\nBatch Statistics:")
+	log.Printf("- Successfully processed: %d", details.NSuccess)
+	log.Printf("- Failed: %d", details.NFailed)
+	log.Printf("- Aborted: %d", details.NAborted)
+
+	// Simulate sending notification email using context data
+	notificationBody := fmt.Sprintf(`
+		Batch Processing Complete
+		------------------------
+		Batch Name: %s
+		Department: %s
+		Priority: %d
+		
+		Results:
+		- Success: %d
+		- Failed: %d
+		- Aborted: %d
+		
+		Status: %s
+		
+		Output Files:
+	`, contextData.BatchName, contextData.Department, contextData.Priority,
+		details.NSuccess, details.NFailed, details.NAborted, details.Status)
+
+	for filename, objectID := range details.OutputFiles {
+		notificationBody += fmt.Sprintf("\n- %s: %s", filename, objectID)
+	}
+
+	log.Printf("\nSending notification email to: %s", contextData.NotificationEmail)
+	log.Printf("Email content:\n%s", notificationBody)
+
+	return nil
+}
 
 func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchctx jobs.JSONstr, line int, input jobs.JSONstr) (status batchsqlc.StatusEnum, result jobs.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
 	logger := initBlock.(*TransactionInitBlock).Logger
@@ -152,7 +206,7 @@ func (i *TransactionInitializer) Init(app string) (jobs.InitBlock, error) {
 	lctx := logharbour.LoggerContext{}
 	logger := logharbour.NewLogger(&lctx, "TransactionBatchProcessor", os.Stdout)
 
-	batchid := rand.Intn(1000000)
+	batchid := rand.Intn(100000)
 
 	return &TransactionInitBlock{RedisClient: redisClient, Logger: logger, BatchID: batchid}, nil
 }
@@ -246,7 +300,7 @@ func main() {
 	}
 
 	// Load batch input from CSV file
-	csvFile :=  "../generate_txn/transactions.csv"
+	csvFile := "../generate_txn/transactions.csv"
 	batchInput, err := loadBatchInputFromCSV(csvFile)
 	if err != nil {
 		log.Fatal("Failed to load batch input from CSV:", err)
@@ -254,7 +308,6 @@ func main() {
 
 	// Prepare the batch context with the filename
 	filename := "transactions.csv"
-	batchCtx, _ := jobs.NewJSONstr(fmt.Sprintf(`{"filename": "%s"}`, filename))
 
 	// Set the initial balance in Redis to 0
 	balanceKey := fmt.Sprintf("batch:%s:%d:balance", filename, rand.Intn(1000))
@@ -263,63 +316,74 @@ func main() {
 		log.Fatal("Failed to set initial balance in Redis:", err)
 	}
 
-	// Submit the batch
-	batchID, err := jm.BatchSubmit("transactionapp", "processtransactions", batchCtx, batchInput, false)
+	// Create context with configuration for the batch
+	contextData := map[string]interface{}{
+		"notification_email": "supervisor@example.com",
+		"batch_name":         "Daily Transaction Processing",
+		"department":         "Finance",
+		"priority":           1,
+	}
+
+	contextJSON, err := json.Marshal(contextData)
+	if err != nil {
+		log.Fatal("Failed to create context JSON:", err)
+	}
+
+	batchContext, err := jobs.NewJSONstr(string(contextJSON))
+	if err != nil {
+		log.Fatal("Failed to create batch context:", err)
+	}
+
+	// Log the context before submitting the batch
+	log.Printf("\nSubmitting batch with context:")
+	log.Printf("- Notification Email: %s", contextData["notification_email"])
+	log.Printf("- Batch Name: %s", contextData["batch_name"])
+	log.Printf("- Department: %s", contextData["department"])
+	log.Printf("- Priority: %d", contextData["priority"])
+
+	// Submit the batch with our context
+	batchID, err := jm.BatchSubmit(
+		"transactionapp",
+		"processtransactions",
+		batchContext,
+		batchInput,
+		false,
+	)
 	if err != nil {
 		log.Fatal("Failed to submit batch:", err)
 	}
+
 	fmt.Println("Batch submitted. Batch ID:", batchID)
 
-	// Create a wait group to synchronize goroutines
-	var wg sync.WaitGroup
-
-	// Launch multiple instances of JobManager concurrently
-	numInstances := 8 // Adjust the number of instances as needed
-	for i := 0; i < numInstances; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			// Initialize a new JobManager instance for each goroutine
-			jm := jobs.NewJobManager(pool, redisClient, minioClient, logger, nil)
-
-			// Register the batch processor and initializer
-			err := jm.RegisterProcessorBatch("transactionapp", "processtransactions", &TransactionBatchProcessor{})
-			if err != nil {
-				log.Fatal("Failed to register batch processor:", err)
-			}
-			err = jm.RegisterInitializer("transactionapp", &TransactionInitializer{})
-			if err != nil {
-				log.Fatal("Failed to register initializer:", err)
-			}
-
-			// Run the JobManager
-			jm.Run()
-		}()
-	}
+	// Start the JobManager in a separate goroutine
+	go jm.Run()
 
 	// Poll for the batch completion status
 	for {
 		status, _, outputFiles, nsuccess, nfailed, naborted, err := jm.BatchDone(batchID)
+		fmt.Printf("batchid: %v\n", batchID)
+		fmt.Printf("status: %v\n", status)
 		if err != nil {
 			log.Fatal("Error while polling for batch status:", err)
 		}
 
 		if status == batchsqlc.StatusEnumQueued || status == batchsqlc.StatusEnumInprog {
 			fmt.Println("Batch processing in progress. Trying again in 5 seconds...")
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(5 * time.Second)
 			continue
 		}
 
-		logger = logger.WithClass("batch").WithInstanceId(batchID)
-
-		logger.Log(fmt.Sprintf("Batch completed with status: %s", status))
-		logger.Log(fmt.Sprintf("Output files: %s", outputFiles))
-		logger.Log(fmt.Sprintf("Success count: %d", nsuccess))
-		logger.Log(fmt.Sprintf("Failed count: %d", nfailed))
-		logger.Log(fmt.Sprintf("Aborted count: %d", naborted))
+		fmt.Println("Batch completed with status:", status)
+		fmt.Println("Output files:", outputFiles)
+		fmt.Println("Success count:", nsuccess)
+		fmt.Println("Failed count:", nfailed)
+		fmt.Println("Aborted count:", naborted)
 		break
 	}
+
+	// Wait a bit to see the MarkDone output
+	fmt.Println("\nWaiting for batch to complete and MarkDone to be called...")
+	time.Sleep(time.Second * 30)
 }
 
 func getDb() *pgxpool.Pool {
@@ -339,8 +403,4 @@ func getDb() *pgxpool.Pool {
 	}
 
 	return pool
-}
-
-func stringPtr(s string) *string {
-	return &s
 }

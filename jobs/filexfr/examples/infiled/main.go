@@ -377,3 +377,35 @@ func runInfiled(fxs *filexfr.FileXfrServer) error {
 	fmt.Println("Starting Infiled daemon...")
 	return infiled.Run()
 }
+
+// Add MarkDone method to BankTransactionProcessor
+func (p *BankTransactionProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	// Log batch completion details
+	log.Printf("Bank transaction batch %s completed with status: %s", details.ID, details.Status)
+	log.Printf("Successfully processed transactions: %d", details.NSuccess)
+	log.Printf("Failed transactions: %d", details.NFailed)
+	log.Printf("Aborted transactions: %d", details.NAborted)
+
+	// Process output files if any
+	if len(details.OutputFiles) > 0 {
+		log.Println("Processing output files:")
+		for filename, objectID := range details.OutputFiles {
+			log.Printf("- %s: %s", filename, objectID)
+			// In a real implementation, we might:
+			// - Archive transaction logs
+			// - Generate reports for reconciliation
+			// - Update transaction monitoring systems
+		}
+	}
+
+	// Example: Handle failed transactions
+	if details.NFailed > 0 {
+		log.Printf("Warning: %d transactions failed processing", details.NFailed)
+		// In a real implementation, we might:
+		// - Create error reports
+		// - Notify relevant departments
+		// - Schedule retry processing
+	}
+
+	return nil
+}

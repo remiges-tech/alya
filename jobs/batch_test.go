@@ -1,4 +1,4 @@
-package jobs_test
+package jobs
 
 import (
 	"context"
@@ -11,20 +11,31 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/remiges-tech/alya/jobs"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
 	"github.com/stretchr/testify/assert"
 )
 
-type mockBatchProcessor struct{}
+type mockBatchProcessor struct {
+	markDoneCalled bool
+	t              *testing.T
+}
 
-func (m *mockBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.JSONstr, line int, input jobs.JSONstr) (batchsqlc.StatusEnum, jobs.JSONstr, []wscutils.ErrorMessage, map[string]string, error) {
-	result, _ := jobs.NewJSONstr("")
+func (m *mockBatchProcessor) DoBatchJob(initBlock InitBlock, context JSONstr, line int, input JSONstr) (batchsqlc.StatusEnum, JSONstr, []wscutils.ErrorMessage, map[string]string, error) {
+	result, _ := NewJSONstr("")
 	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
 }
+
+func (m *mockBatchProcessor) MarkDone(initBlock InitBlock, context JSONstr, details BatchDetails_t) error {
+	m.markDoneCalled = true
+	assert.NotEmpty(m.t, details.ID)
+	assert.Equal(m.t, "testapp", details.App)
+	assert.Equal(m.t, "testop", details.Op)
+	return nil
+}
+
 func TestRegisterBatchProcessor(t *testing.T) {
-	jm := jobs.NewJobManager(nil, nil, nil, nil, nil)
+	jm := NewJobManager(nil, nil, nil, nil, nil)
 
 	// Test registering a new processor
 	err := jm.RegisterProcessorBatch("app1", "op1", &mockBatchProcessor{})
@@ -33,7 +44,7 @@ func TestRegisterBatchProcessor(t *testing.T) {
 	// Test registering a duplicate processor
 	err = jm.RegisterProcessorBatch("app1", "op1", &mockBatchProcessor{})
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, jobs.ErrProcessorAlreadyRegistered))
+	assert.True(t, errors.Is(err, ErrProcessorAlreadyRegistered))
 
 	// Test registering a different processor for the same app but different op
 	err = jm.RegisterProcessorBatch("app1", "op2", &mockBatchProcessor{})
@@ -54,7 +65,7 @@ func TestBatchDone(t *testing.T) {
 	assert.NoError(t, err)
 	defer conn.Release()
 	// Run database migrations
-	err = jobs.MigrateDatabase(conn.Conn())
+	err = MigrateDatabase(conn.Conn())
 	assert.NoError(t, err)
 
 	// Create a Redis client
@@ -62,7 +73,7 @@ func TestBatchDone(t *testing.T) {
 	defer redisClient.Close()
 
 	// Create a JobManager instance with the database and Redis dependencies
-	jm := &jobs.JobManager{
+	jm := &JobManager{
 		Queries:     batchsqlc.New(db),
 		RedisClient: redisClient,
 	}
@@ -85,7 +96,7 @@ func TestBatchDone(t *testing.T) {
 	assert.Equal(t, 0, naborted)
 
 	// Case 2: Status present in Redis
-	err = redisClient.Set(context.Background(), jobs.GetBatchStatusRedisKey(batchID), string(batchsqlc.StatusEnumSuccess), time.Hour).Err()
+	err = redisClient.Set(context.Background(), GetBatchStatusRedisKey(batchID), string(batchsqlc.StatusEnumSuccess), time.Hour).Err()
 	assert.NoError(t, err)
 
 	status, batchOutput, outputFiles, nsuccess, nfailed, naborted, err = jm.BatchDone(batchID)
@@ -147,4 +158,47 @@ func getRedisClient() *redis.Client {
 		Addr: fmt.Sprintf("%s:%d", redisHost, redisPort),
 	})
 	return redisClient
+}
+
+func TestBatchMarkDone(t *testing.T) {
+	db := getDb()
+	defer db.Close()
+
+	redisClient := getRedisClient()
+	defer redisClient.Close()
+
+	processor := &mockBatchProcessor{t: t}
+	jm := NewJobManager(db, redisClient, nil, nil, nil)
+
+	err := jm.RegisterInitializer("testapp", &MockInitializer{})
+	assert.NoError(t, err)
+
+	err = jm.RegisterProcessorBatch("testapp", "testop", processor)
+	assert.NoError(t, err)
+
+	// Insert test batch
+	batchID := uuid.New()
+	err = insertTestData(db, batchID.String())
+	assert.NoError(t, err)
+
+	// Trigger batch completion
+	err = jm.summarizeBatch(batchsqlc.New(db), batchID)
+	assert.NoError(t, err)
+
+	// Verify MarkDone was called
+	assert.True(t, processor.markDoneCalled)
+}
+
+// MockInitializer implements the Initializer interface for testing
+type MockInitializer struct{}
+
+func (i *MockInitializer) Init(app string) (InitBlock, error) {
+	return &MockInitBlock{}, nil
+}
+
+// MockInitBlock implements the InitBlock interface for testing
+type MockInitBlock struct{}
+
+func (ib *MockInitBlock) Close() error {
+	return nil
 }

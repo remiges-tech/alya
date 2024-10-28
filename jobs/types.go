@@ -51,6 +51,7 @@ type SlowQueryProcessor interface {
 
 type BatchProcessor interface {
 	DoBatchJob(InitBlock InitBlock, context JSONstr, line int, input JSONstr) (status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error)
+	MarkDone(InitBlock InitBlock, context JSONstr, details BatchDetails_t) error
 }
 
 type SlowQuery struct {
@@ -93,4 +94,17 @@ func (j JSONstr) IsValid() bool {
 type JobManagerConfig struct {
 	BatchChunkNRows        int // number of rows to send to the batch processor in each chunk
 	BatchStatusCacheDurSec int // duration in seconds to cache the batch status
+}
+
+// BatchDetails_t struct
+type BatchDetails_t struct {
+	ID          string
+	App         string
+	Op          string
+	Context     JSONstr
+	Status      batchsqlc.StatusEnum
+	OutputFiles map[string]string
+	NSuccess    int
+	NFailed     int
+	NAborted    int
 }

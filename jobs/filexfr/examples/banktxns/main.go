@@ -183,3 +183,12 @@ func ensureMinIOBucketExists(ctx context.Context, minioClient *minio.Client, buc
 
 	return nil
 }
+
+// Add MarkDone method to BankTransactionProcessor
+func (p *BankTransactionProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	// Simple logging of batch completion
+	log.Printf("Bank transaction batch %s completed", details.ID)
+	log.Printf("Status: %s, Success: %d, Failed: %d",
+		details.Status, details.NSuccess, details.NFailed)
+	return nil
+}

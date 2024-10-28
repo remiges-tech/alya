@@ -48,6 +48,20 @@ func (p *EmailBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.
 	return batchsqlc.StatusEnumSuccess, result, nil, blobRows, nil
 }
 
+// Add MarkDone method to EmailBatchProcessor
+func (p *EmailBatchProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	log.Printf("Email batch %s completed with status: %s", details.ID, details.Status)
+	log.Printf("Results: Success=%d, Failed=%d, Aborted=%d",
+		details.NSuccess, details.NFailed, details.NAborted)
+
+	// For abort example, specifically log if batch was aborted
+	if details.NAborted > 0 {
+		log.Printf("Batch was aborted - check abort conditions")
+	}
+
+	return nil
+}
+
 type EmailInitializer struct{}
 
 func (i *EmailInitializer) Init(app string) (jobs.InitBlock, error) {
