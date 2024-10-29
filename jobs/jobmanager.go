@@ -362,9 +362,10 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 	}
 	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, rowContext, int(row.Line), rowInput)
-	if err != nil {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
-	}
+	// TODO: check if it should return the error and what its effects are
+	// if err != nil {
+		// return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
+	// }
 
 	// Update the corresponding batchrows record with the results
 	if err := jm.updateBatchJobResult(txQueries, row, status, result, messages, blobRows); err != nil {
