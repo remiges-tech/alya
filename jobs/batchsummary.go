@@ -117,11 +117,11 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 		App:         batch.App,
 		Op:          batch.Op,
 		Context:     context,
-		Status:      batch.Status,
-		OutputFiles: batchOutputFiles,
-		NSuccess:    int(batch.Nsuccess.Int32),
-		NFailed:     int(batch.Nfailed.Int32),
-		NAborted:    int(batch.Naborted.Int32),
+		Status:      batchStatus,
+		OutputFiles: objStoreFiles,
+		NSuccess:    int(nsuccess),
+		NFailed:     int(nfailed),
+		NAborted:    int(naborted),
 	}
 
 	// Get or create InitBlock
