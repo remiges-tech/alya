@@ -92,8 +92,9 @@ func (j JSONstr) IsValid() bool {
 
 // JobManagerConfig holds the configuration for the job manager.
 type JobManagerConfig struct {
-	BatchChunkNRows        int // number of rows to send to the batch processor in each chunk
-	BatchStatusCacheDurSec int // duration in seconds to cache the batch status
+	BatchChunkNRows        int    // number of rows to send to the batch processor in each chunk
+	BatchStatusCacheDurSec int    // duration in seconds to cache the batch status
+	BatchOutputBucket      string // bucket name for batch files
 }
 
 // BatchDetails_t struct

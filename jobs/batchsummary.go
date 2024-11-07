@@ -76,7 +76,7 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	}
 
 	// Move temporary files to the object store and update outputfiles
-	objStoreFiles, err := moveFilesToObjectStore(tmpFiles, jm.ObjStore, "batch-output")
+	objStoreFiles, err := moveFilesToObjectStore(tmpFiles, jm.ObjStore, jm.Config.BatchOutputBucket)
 	if err != nil {
 		return fmt.Errorf("failed to move files to object store: %v", err)
 	}
