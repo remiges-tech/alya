@@ -56,12 +56,12 @@ For errors, the JSON structure to be returned must be language independent, so t
     "data": {},
     "messages": [{
         "errcode": "toobig",
-        "msgcode": 235,
+        "msgid": 235,
         "field": "maxdelay",
         "vals": [ "7", "3" ]
     }, {
         "errcode": "missing",
-        "msgcode": 45,
+        "msgid": 45,
         "field": "fullname"
     }]
 }
@@ -71,8 +71,8 @@ The `data` block is empty in case of errors, and the error messages will be list
 The `data` block is an object, not an array. And the `messages` array is always an array, never an object.
 
 In the `messages` array, the two mandatory fields are:
-* `errcode`: a one-word string, all lower-case, giving the error code for the error. The list of error codes the system can send back is listed in the error dictionary. This code is useful for the client code programmer or front-end programmer -- she can see from the value of `errcode` what was the broad nature of the error, and take action. For instance, some types of error codes indicate internal system errors or statuses, like `auth` or `trylater`, whereas a lot of other error codes indicate errors in user-submitted data. The front-end code can distinguish these errors into these categories and act accordingly.
-* `msgcode`: an integer, giving the index for the error message in human readable form. This index, combined with the language code the client software will apply based on the language being used in the front-end, will be used to pull out a message template string from a message dictionary. If, for instance, six languages are being supported by the front-end, then there will be six versions of errid `235` in the six languages.
+* `errcode`: a one-word string, all lower-case, giving the error code for the error. The list of error codes the system can send back is listed in the error code dictionary. This code is useful for the client code programmer or front-end programmer -- she can see from the value of `errcode` what was the broad nature of the error, and take action. For instance, some types of error codes indicate internal system errors or statuses, like `auth` or `trylater`, whereas a lot of other error codes indicate errors in user-submitted data. The front-end code can distinguish these errors into these categories and act accordingly.
+* `msgid`: an integer, giving the index for the error message in human readable form. This index, combined with the language code the client software will apply based on the language being used in the front-end, will be used to pull out a message template string from a message dictionary. If, for instance, six languages are being supported by the front-end, then there will be six versions of `msgid` `235` in the six languages.
 
 The other two fields in each `messages` element are optional.
 * `field`: gives a field name, indicating a field in the request which triggered the error. If the error is not field-specific, then this attribute will be omitted, *e.g.* in the case of `trylater` or `auth` errors.
@@ -82,7 +82,7 @@ And example of an error message object:
 ``` json
     {
         "errcode": "toobig",
-        "msgcode": 235,
+        "msgid": 235,
         "field": "maxdelay",
         "vals": [ "7", "3" ]
     }
@@ -128,7 +128,7 @@ A second example:
 ``` json
     {
         "errcode": "missing",
-        "msgcode": 45,
+        "msgid": 45,
         "field": "fullname"
     }
 ```
@@ -142,19 +142,20 @@ Mandatory field @<field>@ missing
 Each error reported has two parts:
 
 * the error code: `errcode`
-* the human readable error message: `msgcode`, `field`, `vals`
+* the human readable error message: `msgid`, `field`, `vals`
 
 The `errcode` is always going to be one word, always in lower case English, with letters, digits, and/or underscore characters.
 
 The `errcode` is the real indicator of the type of error, and is supposed to be used by the client code. It may handle the error, it may retry the operation, it may branch into a different path in the code, it may select a message to show the end-user, _etc_, as needed. And the code may also look at the value of `field` to understand whether the error was specific to a field or an overall error. The front-end programmer may choose to design his UI such that field-specific errors are displayed on the screen just below the corresponding input fields, in small red text, and so on.
 
-The human readable error message, constructed out of the 3-tuple `(msgcode,field,vals)`, is supplied to the client code to use at its discretion. It may choose to display this message as-is to the human user, or log it using Sentry, or just ignore it and show a totally different message instead, as business logic and error handling strategy dictates. Some errors like `authexp` (see below) do not require any action on the human user's part -- they will just trigger a transparent re-generation of a new access token.
+The human readable error message, constructed out of the 3-tuple `(msgid,field,vals)`, is supplied to the client code to use at its discretion. It may choose to display this message as-is to the human user, or log it using Sentry, or just ignore it and show a totally different message instead, as business logic and error handling strategy dictates. Some errors like `authexp` (see below) do not require any action on the human user's part -- they will just trigger a transparent re-generation of a new access token.
 
-In multi-lingual user interfaces, the error message must be indexed to the combination of `(language, msgcode)` and the appropriate language-specific error message must be selected from a table and displayed to end-users. The responsibility of designing and selecting meaningful error messages in the correct language lies with the front-end software. The front-end software dev team must build error message tables in each supported language. **Why?** Because the server-side code does not need or use the language-specific errors -- these language-specific things are only for the benefit of the humans who use the front-end.
+In multi-lingual user interfaces, the error message must be indexed to the combination of `(language, msgid)` and the appropriate language-specific error message must be selected from a table and displayed to end-users. The responsibility of designing and selecting meaningful error messages in the correct language lies with the front-end software. The front-end software dev team must build error message tables in each supported language. **Why?** Because the server-side code does not need or use the language-specific errors -- these language-specific things are only for the benefit of the humans who use the front-end.
 
 Common error codes are:
-* `auth`: for login calls, this means that credentials are invalid. For all authentication calls, this error indicates that the user does not have access rights to perform the action she is attempting
-* `authexp`: an access is being attempted with an access token which has expired. Typically, this is not a fatal error, but requires the front-end to use its refresh token to make a call to the system to generate a fresh access token. It becomes a fatal error if the refresh token too is found to have expired.
+* `authn`: for login calls, this means that credentials are invalid. This error is returned by a web service when a JWT (access token) is invalid, malformed, missing, or fails the signature verification.
+* `authexp`: an access is being attempted with an access token which has expired. Typically, this is not a fatal error, but requires the front-end to use its refresh token to make a call to the system to generate a fresh access token. It becomes a fatal error if the refresh token too is found to have expired. In that case, the human user must re-login manually and get a fresh pair of access and refresh tokens.
+* `authz`: an authenticated user is attempting to perform an operation for which she does not have rights.
 * `trylater`: the server is receiving too many requests from the client's IP address and is rate throttling the call (typically for unauthenticated calls). Or the server is processing a long-running request (like the generation of a large report), and has queued the request, but the report is not yet ready, therefore is signalling to the client to reattempt the same access later.
 * `missing`: a mandatory parameter is missing in the request, or a key or ID has been supplied to access an object but there is no object with that ID in the system
 * `toobig`: a parameter contains a value too high for the server to accept
@@ -164,14 +165,15 @@ Common error codes are:
 * `toomany`: a list or array supplied in the request is too large -- it has too many values
 * `exists`: an object creation or insertion is being attempted, with a specific value for a unique attribute, and there is an existing object in the system with that value. Example: a user creation is  being attempted, but another user with the same email address already exists, and the system has a policy  of not allowing multiple users to share a common email address.
 * `datafmt`: the value supplied with a parameter in the request does not seem to be of the right format, *e.g.* an integer was expected but the value does not appear to be an integer, or a phone number was expected and there seems to be spurious alphabetic characters in the value, *etc*
+* `invalid`: the value is invalid for some reason, even though it is syntactically correct. In other words, if an email address is expected, then the value supplied matches an email address format, but is not a valid email address for other reasons, or if an integer is expected, then the value supplied matches an integer syntactically, but is not valid for some business reasons.
 
-These are **not** the exhaustive list of error codes possible, but are generic enough to apply to perhaps 95% of the errors actually returned by any application. There will always be additional error codes needed for highly specific types of errors.
+These are **not** the exhaustive list of error codes possible, but are generic enough to apply to perhaps 95% of the errors actually returned by any application. There will always be additional error codes needed for highly specific types of errors. We encourage the defining of generic error codes. In other words, do not define error codes like `voucher_date_invalid` and `payment_date_invalid`. Use the `invalid` error code and then specify `voucherdate` or `paymentdate` in the `field` attribute of the `message`.
 
 Note that a single web service call may return a `messages` array with a whole bunch of messages, and multiple messages in that array may have the same `errcode`, *e.g.* `datafmt`. This means that there are data format errors detected with multiple fields in the request.
 
 ## Authentication
 
-We will use token based authentication and session management for all applications henceforth, and will try hard to use [Remiges IDshield](https://github.com/remiges-tech/idshield/wiki) or, failing that, [Keycloak](https://www.keycloak.org/) for these functions. These products implement the [OAuth2 standard](https://oauth.net/2/) for authentication and session management. We will completely stop sending session IDs in cookies from servers, and stop keeping session tables in databases, which were common practices in the 20th century.
+We will use token based authentication and session management for all applications henceforth, and strongly recommend [Remiges IDshield](https://github.com/remiges-tech/idshield/wiki) or, failing that, [Keycloak](https://www.keycloak.org/) for these functions. These products implement the [OAuth2 standard](https://oauth.net/2/) for authentication and session management. We have completely stopped sending session IDs in cookies from servers, and stopped keeping session tables in databases, which were common practices in the 20th century.
 
 With these frameworks, the user table will be in a separate database, separate from the main application, and will be managed by IDshield. The login screen will be served to the front-end by IDshield directly, even in the case of PWA or mobile apps. When the user logs in, a handle will be returned to the front-end, which can then be used to fetch the access and refresh tokens from IDshield, and web service calls can then be accessed using the access token.
 
