@@ -400,6 +400,8 @@ github.com/remiges-tech/logharbour v0.16.0 h1:w10EkDqAXzqyEEKVZpeVnK2O3mK7YQsHSq
 github.com/remiges-tech/logharbour v0.16.0/go.mod h1:+zRt3XkCi26fLRLfm4mEtBpXDUOa7sKGKihmlBVsHB0=
 github.com/remiges-tech/rigel v0.12.0 h1:gsfvyXP8Lj2PTLFF5SyL6OMMRSrjzfCeiSBipfEsv7I=
 github.com/remiges-tech/rigel v0.12.0/go.mod h1:U2EJT5VlNoneb6NYZd2hw2VaxlEP27gJC+cBwyzUAUA=
+github.com/remiges-tech/rigel v0.17.0 h1:peHdzmxPozRwhzJNKKOcmyoeN7XKuPzXL5mGHRPk0CQ=
+github.com/remiges-tech/rigel v0.17.0/go.mod h1:gxcp7CvTIkF+ZsAo/sfcuG46gZ+nK7DVA4bNBSPTIZw=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.9.0/go.mod h1:WtVeX8xhTBvf0smdhujwtBcq4Qrzq/fJaraNFVN+nFs=
 github.com/rogpeppe/go-internal v1.12.0 h1:exVL4IDcn6na9z1rAb56Vxr+CgyK3nn3O+epU5NdKM8=

@@ -1,17 +1,20 @@
 package usersvc
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/go-playground/validator/v10"
 	"github.com/remiges-tech/alya/examples/usersvc-example/pg/sqlc-gen"
-	"github.com/remiges-tech/alya/wscutils"
-
 	"github.com/remiges-tech/alya/service"
+	"github.com/remiges-tech/alya/wscutils"
 )
+
+//-----------------------------------------------------------------------------
+// Constants
+//-----------------------------------------------------------------------------
 
 const (
 	// Error codes and message IDs
@@ -31,6 +34,10 @@ const (
 	MaxUsernameLength = 30
 	MaxEmailLength    = 100
 )
+
+//-----------------------------------------------------------------------------
+// Message Templates Documentation
+//-----------------------------------------------------------------------------
 
 /*
 Example message templates for different validation errors:
@@ -59,6 +66,10 @@ banned_domain: "Email domain is not allowed"
               No vals needed, use field from ErrorMessage
 */
 
+//-----------------------------------------------------------------------------
+// Validation Messages
+//-----------------------------------------------------------------------------
+
 var ValidationMessages = map[string]string{
 	"required":      "This field is required",
 	"email":         "Invalid email format",
@@ -68,6 +79,10 @@ var ValidationMessages = map[string]string{
 	"banned_domain": "Email domain is not allowed",
 }
 
+//-----------------------------------------------------------------------------
+// Request Types
+//-----------------------------------------------------------------------------
+
 type CreateUserRequest struct {
 	Name        string `json:"name" validate:"required,min=2,max=50"`
 	Email       string `json:"email" validate:"required,email,max=100"`
@@ -75,8 +90,12 @@ type CreateUserRequest struct {
 	PhoneNumber string `json:"phone_number" validate:"omitempty,e164"`
 }
 
+//-----------------------------------------------------------------------------
+// Initialization
+//-----------------------------------------------------------------------------
+
 func init() {
-	// Set up validation tag to error code mapping
+	// Step 1: Set up validation tag to error code mapping
 	wscutils.SetValidationTagToErrCodeMap(map[string]string{
 		"required": "required",
 		"min":      "length_error",
@@ -86,7 +105,7 @@ func init() {
 		"e164":     "invalid_format",
 	})
 
-	// Set up validation tag to message ID mapping
+	// Step 2: Set up validation tag to message ID mapping
 	wscutils.SetValidationTagToMsgIDMap(map[string]int{
 		"required": 101,
 		"min":      101,
@@ -96,84 +115,140 @@ func init() {
 		"e164":     101,
 	})
 
-	// Set default error code and message ID
+	// Step 3: Set default error code and message ID
 	wscutils.SetDefaultErrCode("invalid_format")
 	wscutils.SetDefaultMsgID(101)
 }
 
+//-----------------------------------------------------------------------------
+// Request Handlers
+//-----------------------------------------------------------------------------
+
 func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 	s.LogHarbour.Log("CreateUser request received")
-	// Step 1: Parse request
+
+	// Get queries object once at the start
+	queries := s.Database.(*sqlc.Queries)
+
+	// Get validation constraints from Rigel
+	minNameLength, err := s.RigelConfig.Get(c.Request.Context(), "validation.name.minLength")
+	if err != nil {
+		minNameLength = "2" // Default value
+	}
+	maxNameLength, err := s.RigelConfig.Get(c.Request.Context(), "validation.name.maxLength")
+	if err != nil {
+		maxNameLength = "50" // Default value
+	}
+	minUsernameLength, err := s.RigelConfig.Get(c.Request.Context(), "validation.username.minLength")
+	if err != nil {
+		minUsernameLength = "3" // Default value
+	}
+	maxUsernameLength, err := s.RigelConfig.Get(c.Request.Context(), "validation.username.maxLength")
+	if err != nil {
+		maxUsernameLength = "30" // Default value
+	}
+	maxEmailLength, err := s.RigelConfig.Get(c.Request.Context(), "validation.email.maxLength")
+	if err != nil {
+		maxEmailLength = "100" // Default value
+	}
+
+	//-------------------------------------------------------------------------
+	// Step 1: Parse and bind request data
+	//-------------------------------------------------------------------------
 	var createUserReq CreateUserRequest
 	if err := wscutils.BindJSON(c, &createUserReq); err != nil {
 		return
 	}
 	s.LogHarbour.Log(fmt.Sprintf("CreateUser request parsed: %v", map[string]any{"username": createUserReq.Name}))
 
-	// Step 2: Validate request
+	//-------------------------------------------------------------------------
+	// Step 2: Validate request data
+	//-------------------------------------------------------------------------
 	validationErrors := wscutils.WscValidate(createUserReq, func(err validator.FieldError) []string {
 		switch err.Tag() {
 		case "required":
 			return []string{} // Field name is already in ErrorMessage.field
+
 		case "min", "max":
 			currentLen := len(err.Value().(string))
 			switch err.Field() {
 			case "Name":
-				return []string{fmt.Sprintf("%d", currentLen), fmt.Sprintf("%d", MinNameLength), fmt.Sprintf("%d", MaxNameLength)}
+				return []string{fmt.Sprintf("%d", currentLen), minNameLength, maxNameLength}
 			case "Username":
-				return []string{fmt.Sprintf("%d", currentLen), fmt.Sprintf("%d", MinUsernameLength), fmt.Sprintf("%d", MaxUsernameLength)}
+				return []string{fmt.Sprintf("%d", currentLen), minUsernameLength, maxUsernameLength}
 			case "Email":
-				return []string{fmt.Sprintf("%d", currentLen), "0", fmt.Sprintf("%d", MaxEmailLength)}
+				return []string{fmt.Sprintf("%d", currentLen), "0", maxEmailLength}
 			default:
 				return []string{fmt.Sprintf("%d", currentLen), "0", err.Param()}
 			}
+
 		case "email":
 			return []string{err.Value().(string)}
+
 		case "alphanum":
 			return []string{err.Value().(string)}
+
 		case "e164":
 			return []string{err.Value().(string)}
+
 		default:
 			return []string{}
 		}
 	})
 
-	// Custom validation for banned email domains
-	if isEmailDomainBanned(createUserReq.Email) {
-		validationErrors = append(validationErrors, wscutils.BuildErrorMessage(ErrMsgIDBannedDomain, ErrCodeBannedDomain, "email", ValidationMessages["banned_domain"]))
-	}
-
-	// TODO: Add username existence check once SQLC query is generated
-	// exists, err := s.Database.(*sqlc.Queries).CheckUsernameExists(c.Request.Context(), createUserReq.Username)
-	// if err != nil {
-	// 	wscutils.SendErrorResponse(c, wscutils.NewErrorResponse(ErrMsgIDInternalErr, ErrCodeInternalErr))
-	// 	return
-	// }
-	// if exists {
-	// 	validationErrors = append(validationErrors, wscutils.BuildErrorMessage(ErrMsgIDAlreadyExists, ErrCodeAlreadyExists, "username", ValidationMessages["already_exists"]))
-	// }
-
 	if len(validationErrors) > 0 {
-		wscutils.SendErrorResponse(c, wscutils.NewResponse(wscutils.ErrorStatus, nil, validationErrors))
+		c.JSON(400, wscutils.NewResponse("error", nil, validationErrors))
 		return
 	}
-	s.LogHarbour.Log(fmt.Sprintf("CreateUser request validated %v", map[string]any{"username": createUserReq.Name}))
 
-	// Step 3: Process data
-	// Call CreateUser function
-	user, err := s.Database.(*sqlc.Queries).CreateUser(c.Request.Context(), sqlc.CreateUserParams{
-		Name:  createUserReq.Name,
-		Email: createUserReq.Email,
+	//-------------------------------------------------------------------------
+	// Step 3: Perform business rule validations
+	//-------------------------------------------------------------------------
+	if isEmailDomainBanned(createUserReq.Email) {
+		bannedDomainError := wscutils.BuildErrorMessage(ErrMsgIDBannedDomain, ErrCodeBannedDomain, "Email")
+		c.JSON(400, wscutils.NewResponse("error", nil, []wscutils.ErrorMessage{bannedDomainError}))
+		return
+	}
+
+	//-------------------------------------------------------------------------
+	// Step 4: Check data dependencies
+	//-------------------------------------------------------------------------
+	exists, err := queries.CheckUsernameExists(c.Request.Context(), createUserReq.Username)
+	if err != nil {
+		s.LogHarbour.Error(fmt.Errorf("error checking existing user: %w", err))
+		c.JSON(500, wscutils.NewErrorResponse(ErrMsgIDInternalErr, ErrCodeInternalErr))
+		return
+	}
+	if exists {
+		alreadyExistsError := wscutils.BuildErrorMessage(ErrMsgIDAlreadyExists, ErrCodeAlreadyExists, "Username")
+		c.JSON(400, wscutils.NewResponse("error", nil, []wscutils.ErrorMessage{alreadyExistsError}))
+		return
+	}
+
+	//-------------------------------------------------------------------------
+	// Step 5: Perform core business logic
+	//-------------------------------------------------------------------------
+	user, err := queries.CreateUser(c.Request.Context(), sqlc.CreateUserParams{
+		Name:        createUserReq.Name,
+		Email:       createUserReq.Email,
+		Username:    createUserReq.Username,
+		PhoneNumber: sql.NullString{String: createUserReq.PhoneNumber, Valid: createUserReq.PhoneNumber != ""},
 	})
 	if err != nil {
-		wscutils.SendErrorResponse(c, wscutils.NewErrorResponse(ErrMsgIDInternalErr, ErrCodeInternalErr))
+		s.LogHarbour.Error(fmt.Errorf("error creating user: %w", err))
+		c.JSON(500, wscutils.NewErrorResponse(ErrMsgIDInternalErr, ErrCodeInternalErr))
 		return
 	}
-	s.LogHarbour.Log(fmt.Sprintf("User created: %v", map[string]any{"username": createUserReq.Name}))
 
-	// Step 4: Send response
+	//-------------------------------------------------------------------------
+	// Step 6: Send response
+	//-------------------------------------------------------------------------
 	wscutils.SendSuccessResponse(c, wscutils.NewSuccessResponse(user))
 }
+
+//-----------------------------------------------------------------------------
+// Helper Functions
+//-----------------------------------------------------------------------------
 
 // Helper function to check if email domain is banned
 func isEmailDomainBanned(email string) bool {

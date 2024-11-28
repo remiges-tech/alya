@@ -1,0 +1,83 @@
+{
+  "fields": [
+    {
+      "name": "database.host",
+      "type": "string",
+      "description": "Database host address"
+    },
+    {
+      "name": "database.port",
+      "type": "int",
+      "description": "Database port number",
+      "constraints": {
+        "min": 1,
+        "max": 65535
+      }
+    },
+    {
+      "name": "database.user",
+      "type": "string",
+      "description": "Database username"
+    },
+    {
+      "name": "database.password",
+      "type": "string",
+      "description": "Database password"
+    },
+    {
+      "name": "database.dbname",
+      "type": "string",
+      "description": "Database name"
+    },
+    {
+      "name": "server.port",
+      "type": "int",
+      "description": "Server port number",
+      "constraints": {
+        "min": 1,
+        "max": 65535
+      }
+    },
+    {
+      "name": "validation.name.minLength",
+      "type": "int",
+      "description": "Minimum length for name field",
+      "constraints": {
+        "min": 1
+      }
+    },
+    {
+      "name": "validation.name.maxLength",
+      "type": "int",
+      "description": "Maximum length for name field",
+      "constraints": {
+        "min": 1
+      }
+    },
+    {
+      "name": "validation.username.minLength",
+      "type": "int",
+      "description": "Minimum length for username field",
+      "constraints": {
+        "min": 1
+      }
+    },
+    {
+      "name": "validation.username.maxLength",
+      "type": "int",
+      "description": "Maximum length for username field",
+      "constraints": {
+        "min": 1
+      }
+    },
+    {
+      "name": "validation.email.maxLength",
+      "type": "int",
+      "description": "Maximum length for email field",
+      "constraints": {
+        "min": 1
+      }
+    }
+  ],
+  "description": "Configuration schema for the User Service example in Alya framework"
+}

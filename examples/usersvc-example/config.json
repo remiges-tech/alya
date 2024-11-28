@@ -1,8 +1,0 @@
-{
-  "db_host": "localhost",
-    "db_port": 5432,
-  "db_user": "alyatest",
-    "db_password": "alyatest",
-    "db_name": "alyatest",
-  "app_server_port": "8080"
-}

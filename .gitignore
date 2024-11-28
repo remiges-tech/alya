@@ -19,3 +19,5 @@ go.work
 
 tmp
 bin
+
+.vscode
