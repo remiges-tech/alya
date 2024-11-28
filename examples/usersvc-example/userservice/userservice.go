@@ -125,7 +125,8 @@ func init() {
 //-----------------------------------------------------------------------------
 
 func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
-	s.LogHarbour.Log("CreateUser request received")
+	logger := s.LogHarbour.WithModule("UserService")
+	logger.Info().LogActivity("CreateUser request received", nil)
 
 	// Get queries object once at the start
 	queries := s.Database.(*sqlc.Queries)
@@ -159,7 +160,7 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 	if err := wscutils.BindJSON(c, &createUserReq); err != nil {
 		return
 	}
-	s.LogHarbour.Log(fmt.Sprintf("CreateUser request parsed: %v", map[string]any{"username": createUserReq.Name}))
+	logger.Info().LogActivity("CreateUser request parsed", map[string]any{"username": createUserReq.Name})
 
 	//-------------------------------------------------------------------------
 	// Step 2: Validate request data
@@ -215,7 +216,7 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 	//-------------------------------------------------------------------------
 	exists, err := queries.CheckUsernameExists(c.Request.Context(), createUserReq.Username)
 	if err != nil {
-		s.LogHarbour.Error(fmt.Errorf("error checking existing user: %w", err))
+		logger.Error(fmt.Errorf("error checking existing user: %w", err)).LogActivity("Database error", nil)
 		c.JSON(500, wscutils.NewErrorResponse(ErrMsgIDInternalErr, ErrCodeInternalErr))
 		return
 	}
@@ -235,7 +236,7 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 		PhoneNumber: sql.NullString{String: createUserReq.PhoneNumber, Valid: createUserReq.PhoneNumber != ""},
 	})
 	if err != nil {
-		s.LogHarbour.Error(fmt.Errorf("error creating user: %w", err))
+		logger.Error(fmt.Errorf("error creating user: %w", err)).LogActivity("Database error", nil)
 		c.JSON(500, wscutils.NewErrorResponse(ErrMsgIDInternalErr, ErrCodeInternalErr))
 		return
 	}
