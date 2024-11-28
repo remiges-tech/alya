@@ -3,8 +3,9 @@ package pg
 import (
 	"database/sql"
 	"fmt"
-	"github.com/remiges-tech/alya/examples/pg/sqlc-gen"
 	"log"
+
+	"github.com/remiges-tech/alya/examples/usersvc-example/pg/sqlc-gen"
 
 	_ "github.com/lib/pq" // PostgreSQL driver
 )

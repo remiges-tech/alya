@@ -11,8 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/remiges-tech/alya/config"
-	"github.com/remiges-tech/alya/examples/pg"
-	usersvc "github.com/remiges-tech/alya/examples/userservice"
+	"github.com/remiges-tech/alya/examples/usersvc-example/pg"
+	usersvc "github.com/remiges-tech/alya/examples/usersvc-example/userservice"
 	"github.com/remiges-tech/alya/logger"
 	"github.com/remiges-tech/alya/router"
 	"github.com/remiges-tech/alya/service"
