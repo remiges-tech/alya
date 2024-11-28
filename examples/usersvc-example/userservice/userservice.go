@@ -40,11 +40,11 @@ The field name is already available in the ErrorMessage.field, so it's not inclu
 required:    "This field is required"
             No vals needed, use field from ErrorMessage
 
-min:        "Must be at least @<min>@ characters long"
-            vals[0] = minimum length
-
-max:        "Cannot be longer than @<max>@ characters"
-            vals[0] = maximum length
+length:     "The field length (@<vals[0]>@) must be between @<vals[1]>@ and @<vals[2]>@ characters"
+            vals[0] = current length
+            vals[1] = minimum length
+            vals[2] = maximum length
+            Example for Name field: "The field length (1) must be between 2 and 50 characters"
 
 email:      "Invalid email address: @<value>@"
             vals[0] = invalid email value
@@ -59,16 +59,13 @@ banned_domain: "Email domain is not allowed"
               No vals needed, use field from ErrorMessage
 */
 
-// ValidationMessages maps validation tags to error messages
 var ValidationMessages = map[string]string{
-	"required":       "This field is required",
-	"email":          "Invalid email format",
-	"min":            "Must be at least @<min>@ characters long",
-	"max":            "Cannot be longer than @<max>@ characters",
-	"alphanum":       "Contains invalid characters: @<value>@",
-	"e164":           "Invalid phone number format: @<value>@",
-	"banned_domain":  "Email domain is not allowed",
-	"already_exists": "This value is already taken",
+	"required":      "This field is required",
+	"email":         "Invalid email format",
+	"length_error":  "The field length (@<vals[0]>@) must be between @<vals[1]>@ and @<vals[2]>@ characters",
+	"alphanum":      "Contains invalid characters: @<value>@",
+	"e164":          "Invalid phone number format: @<value>@",
+	"banned_domain": "Email domain is not allowed",
 }
 
 type CreateUserRequest struct {
@@ -76,6 +73,32 @@ type CreateUserRequest struct {
 	Email       string `json:"email" validate:"required,email,max=100"`
 	Username    string `json:"username" validate:"required,min=3,max=30,alphanum"`
 	PhoneNumber string `json:"phone_number" validate:"omitempty,e164"`
+}
+
+func init() {
+	// Set up validation tag to error code mapping
+	wscutils.SetValidationTagToErrCodeMap(map[string]string{
+		"required": "required",
+		"min":      "length_error",
+		"max":      "length_error",
+		"email":    "invalid_format",
+		"alphanum": "invalid_format",
+		"e164":     "invalid_format",
+	})
+
+	// Set up validation tag to message ID mapping
+	wscutils.SetValidationTagToMsgIDMap(map[string]int{
+		"required": 101,
+		"min":      101,
+		"max":      101,
+		"email":    101,
+		"alphanum": 101,
+		"e164":     101,
+	})
+
+	// Set default error code and message ID
+	wscutils.SetDefaultErrCode("invalid_format")
+	wscutils.SetDefaultMsgID(101)
 }
 
 func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
@@ -92,25 +115,17 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 		switch err.Tag() {
 		case "required":
 			return []string{} // Field name is already in ErrorMessage.field
-		case "min":
+		case "min", "max":
+			currentLen := len(err.Value().(string))
 			switch err.Field() {
 			case "Name":
-				return []string{fmt.Sprintf("%d", MinNameLength)}
+				return []string{fmt.Sprintf("%d", currentLen), fmt.Sprintf("%d", MinNameLength), fmt.Sprintf("%d", MaxNameLength)}
 			case "Username":
-				return []string{fmt.Sprintf("%d", MinUsernameLength)}
-			default:
-				return []string{err.Param()}
-			}
-		case "max":
-			switch err.Field() {
-			case "Name":
-				return []string{fmt.Sprintf("%d", MaxNameLength)}
-			case "Username":
-				return []string{fmt.Sprintf("%d", MaxUsernameLength)}
+				return []string{fmt.Sprintf("%d", currentLen), fmt.Sprintf("%d", MinUsernameLength), fmt.Sprintf("%d", MaxUsernameLength)}
 			case "Email":
-				return []string{fmt.Sprintf("%d", MaxEmailLength)}
+				return []string{fmt.Sprintf("%d", currentLen), "0", fmt.Sprintf("%d", MaxEmailLength)}
 			default:
-				return []string{err.Param()}
+				return []string{fmt.Sprintf("%d", currentLen), "0", err.Param()}
 			}
 		case "email":
 			return []string{err.Value().(string)}
