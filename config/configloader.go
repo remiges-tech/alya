@@ -2,7 +2,7 @@ package config
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,12 +13,12 @@ import (
 func LoadConfigFromFile(filePath string, appConfig any) error {
 	configSource, err := newFile(filePath)
 	if err != nil {
-		log.Fatalf("Failed to create File config source: %v", err)
+		return fmt.Errorf("Failed to create File config source: %v", err)
 	}
 
 	err = Load(configSource, appConfig)
 	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+		return fmt.Errorf("Error loading config: %v", err)
 	}
 
 	return nil
@@ -28,7 +28,7 @@ func LoadConfigFromRigel(etcdEndpoints, configName, schemaName string, appConfig
 	// Create a new EtcdStorage instance
 	etcdStorage, err := etcd.NewEtcdStorage(strings.Split(etcdEndpoints, ","))
 	if err != nil {
-		log.Fatalf("Failed to create EtcdStorage: %v", err)
+		return fmt.Errorf("Failed to create EtcdStorage: %v", err)
 	}
 
 	// Create a new Rigel instance
@@ -42,12 +42,12 @@ func LoadConfigFromRigel(etcdEndpoints, configName, schemaName string, appConfig
 	var configSource Config
 	err = rigelClient.LoadConfig(ctx, &configSource)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		return fmt.Errorf("Failed to load config: %v", err)
 	}
 
 	err = Load(configSource, appConfig)
 	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+		return fmt.Errorf("Error loading config: %v", err)
 	}
 
 	return nil
