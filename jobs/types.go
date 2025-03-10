@@ -47,6 +47,7 @@ type Initializer interface {
 
 type SlowQueryProcessor interface {
 	DoSlowQuery(InitBlock InitBlock, context JSONstr, input JSONstr) (status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string, err error)
+	MarkDone(InitBlock InitBlock, context JSONstr, details BatchDetails_t) error
 }
 
 type BatchProcessor interface {

@@ -93,13 +93,6 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 		return fmt.Errorf("failed to update status in redis: %v", err)
 	}
 
-	// After successful batch completion and Redis update, call MarkDone
-	// Get the processor for this app+op
-	processor, exists := jm.batchprocessorfuncs[batch.App+batch.Op]
-	if !exists {
-		return fmt.Errorf("no processor found for app %s and op %s", batch.App, batch.Op)
-	}
-
 	context, err := NewJSONstr(string(batch.Context))
 	if err != nil {
 		return fmt.Errorf("failed to parse context for MarkDone: %v", err)
@@ -138,11 +131,24 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 		}
 	}
 
-	// Call MarkDone
-	log.Printf("Calling MarkDone for batch %s", batchID)
-	if err := processor.MarkDone(initBlock, context, details); err != nil {
-		log.Printf("MarkDone failed for batch %s: %v", batchID, err)
-		// We log the error but don't return it, as the batch is already complete
+	// After successful batch completion and Redis update, call MarkDone
+	// Get the processor for this app+op
+	processor, exists := jm.batchprocessorfuncs[batch.App+batch.Op]
+	if exists {
+		log.Printf("Calling MarkDone for batch %s", batchID)
+		if err := processor.MarkDone(initBlock, context, details); err != nil {
+			log.Printf("MarkDone failed for batch %s: %v", batchID, err)
+			// We log the error but don't return it, as the batch is already complete
+		}
+	} else {
+		slowqueryprocessor, exists := jm.slowqueryprocessorfuncs[batch.App+batch.Op]
+		if exists {
+			log.Printf("Calling MarkDone for batch %s", batchID)
+			if err := slowqueryprocessor.MarkDone(initBlock, context, details); err != nil {
+				log.Printf("MarkDone failed for batch %s: %v", batchID, err)
+				// We log the error but don't return it, as the batch is already complete
+			}
+		}
 	}
 
 	return nil
