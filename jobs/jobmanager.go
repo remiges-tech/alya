@@ -401,22 +401,6 @@ func updateSlowQueryResult(txQueries batchsqlc.Querier, row batchsqlc.FetchBlock
 	if err != nil {
 		return err
 	}
-	// Marshal outputFiles to JSON
-	outputFilesJSON, err = json.Marshal(outputFiles)
-	if err != nil {
-		log.Fatalf("Failed to marshal outputFiles to JSON: %v", err)
-	}
-
-	// Update the batches record with the result
-	// err = txQueries.UpdateBatchResult(context.Background(), batchsqlc.UpdateBatchResultParams{
-	// 	Outputfiles: outputFilesJSON,
-	// 	Status:      batchsqlc.StatusEnum(status),
-	// 	// Doneat:      pgtype.Timestamp{Time: time.Now(), Valid: true},
-	// 	ID: row.Batch,
-	// })
-	// if err != nil {
-	// 	return err
-	// }
 
 	return nil
 }
