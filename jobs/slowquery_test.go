@@ -20,6 +20,12 @@ func (m *mockSlowQueryProcessor) DoSlowQuery(initBlock jobs.InitBlock, context j
 	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
 }
 
+// MarkDone implements the SlowQueryProcessor interface
+func (m *mockSlowQueryProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	// This is a mock implementation, so we'll just return nil (no error)
+	return nil
+}
+
 func TestRegisterSlowQueryProcessor(t *testing.T) {
 	jm := jobs.NewJobManager(nil, nil, nil, nil, nil)
 
