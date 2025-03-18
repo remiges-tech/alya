@@ -364,7 +364,7 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, rowContext, int(row.Line), rowInput)
 	// TODO: check if it should return the error and what its effects are
 	// if err != nil {
-		// return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
+	// return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 	// }
 
 	// Update the corresponding batchrows record with the results
@@ -380,7 +380,7 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 // This function is called after a slow query has been processed by the registered SlowQueryProcessor.
 func updateSlowQueryResult(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow, status batchsqlc.StatusEnum, result JSONstr, messages []wscutils.ErrorMessage, outputFiles map[string]string) error {
 	// Marshal messages to JSON
-	var messagesJSON, outputFilesJSON []byte
+	var messagesJSON []byte
 	if len(messages) > 0 {
 		var err error
 		messagesJSON, err = json.Marshal(messages)
@@ -397,22 +397,6 @@ func updateSlowQueryResult(txQueries batchsqlc.Querier, row batchsqlc.FetchBlock
 		Res:      []byte(result.String()),
 		Messages: messagesJSON,
 		Doneby:   doneBy,
-	})
-	if err != nil {
-		return err
-	}
-	// Marshal outputFiles to JSON
-	outputFilesJSON, err = json.Marshal(outputFiles)
-	if err != nil {
-		log.Fatalf("Failed to marshal outputFiles to JSON: %v", err)
-	}
-
-	// Update the batches record with the result
-	err = txQueries.UpdateBatchResult(context.Background(), batchsqlc.UpdateBatchResultParams{
-		Outputfiles: outputFilesJSON,
-		Status:      batchsqlc.StatusEnum(status),
-		Doneat:      pgtype.Timestamp{Time: time.Now(), Valid: true},
-		ID:          row.Batch,
 	})
 	if err != nil {
 		return err

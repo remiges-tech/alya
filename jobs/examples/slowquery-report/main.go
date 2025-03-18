@@ -111,6 +111,11 @@ func (p *BounceReportProcessor) DoSlowQuery(initBlock jobs.InitBlock, context jo
 	return batchsqlc.StatusEnumSuccess, result, nil, outputFiles, nil
 }
 
+func (p *BounceReportProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	fmt.Println("Marking done")
+	return nil
+}
+
 func main() {
 	connString := "postgres://alyatest:alyatest@localhost:5432/alyatest"
 	conn, err := examples.InitializeDatabase(connString)

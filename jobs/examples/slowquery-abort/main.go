@@ -75,6 +75,11 @@ func (p *SlowReportProcessor) DoSlowQuery(initBlock jobs.InitBlock, context jobs
 	return batchsqlc.StatusEnumSuccess, result, nil, nil, nil
 }
 
+func (p *SlowReportProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+	fmt.Println("Marking done")
+	return nil
+}
+
 func main() {
 	pool := getDb()
 
@@ -144,7 +149,7 @@ func main() {
 
 	// Poll for the slow query result
 	for {
-		status, result, messages, _,err := jm.SlowQueryDone(reqID)
+		status, result, messages, _, err := jm.SlowQueryDone(reqID)
 		if err != nil {
 			fmt.Println("Error while polling for slow query result:", err)
 			return
