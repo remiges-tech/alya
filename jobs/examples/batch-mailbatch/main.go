@@ -19,7 +19,8 @@ import (
 	"github.com/remiges-tech/logharbour/logharbour"
 )
 
-type EmailBatchProcessor struct{}
+type EmailBatchProcessor struct {
+}
 
 func (p *EmailBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.JSONstr, line int, input jobs.JSONstr) (status batchsqlc.StatusEnum, result jobs.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
 	// Parse the input JSON
