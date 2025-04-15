@@ -59,6 +59,11 @@ type InitBlock struct {
 	SolrClient MockSolrClient
 }
 
+// IsAlive implements jobs.InitBlock.
+func (ib *InitBlock) IsAlive() (bool, error) {
+	return ib.SolrClient.Open() == nil, nil
+}
+
 func (ib *InitBlock) Close() error {
 	// Clean up resources
 	ib.SolrClient.Close()

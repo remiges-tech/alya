@@ -222,6 +222,10 @@ func (ib *TransactionInitBlock) Close() error {
 	return ib.RedisClient.Close()
 }
 
+func (ib *TransactionInitBlock) IsAlive() (bool, error) {
+	// Check if the Redis client is alive
+	return ib.RedisClient.Ping(context.Background()).Err() == nil, nil
+}
 func loadBatchInputFromCSV(csvFile string) ([]jobs.BatchInput_t, error) {
 	file, err := os.Open(csvFile)
 	if err != nil {

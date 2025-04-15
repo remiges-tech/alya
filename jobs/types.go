@@ -30,6 +30,7 @@ type BatchInput_t struct {
 // InitBlock is used to store and manage resources needed for processing batch jobs and slow queries.
 type InitBlock interface {
 	Close() error
+	IsAlive() (bool, error)
 }
 
 // Initializer is an interface that allows applications to initialize and provide
