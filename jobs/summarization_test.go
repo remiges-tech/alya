@@ -108,7 +108,7 @@ func TestSummarizeBatch(t *testing.T) {
 	for _, tt := range summarizeBatchTests {
 		t.Run(tt.name, func(t *testing.T) {
 			// generated using moq
-			// $ cd batch/pg/batchsqlc
+			// $ cd jobs/pg/batchsqlc
 			// $ moq -out mocks/querier_mock.go -pkg mocks . Querier
 			mockQuerier := &mocks.QuerierMock{}
 			mockQuerier.GetBatchByIDFunc = func(ctx context.Context, id uuid.UUID) (batchsqlc.Batch, error) {

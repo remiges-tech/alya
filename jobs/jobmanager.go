@@ -21,6 +21,57 @@ import (
 	"github.com/remiges-tech/logharbour/logharbour"
 )
 
+// Error types for common processing failures
+var (
+	ErrProcessorNotFound    = errors.New("processor not found for this app and operation")
+	ErrInitializerNotFound  = errors.New("initializer not found for this app")
+	ErrInitializerFailed    = errors.New("initializer failed for this app")
+	ErrInvalidProcessorType = errors.New("invalid processor type for this app and operation")
+)
+
+// ConfigurationError represents an error related to system configuration or setup
+// such as missing processors, initializers, or type mismatches. These typically
+// affect all jobs of a certain type and require admin intervention to resolve.
+type ConfigurationError struct {
+	BaseErr error  // The underlying error type
+	App     string // The application name
+	Op      string // The operation name, if applicable
+	Details string // Additional error details
+}
+
+// Make sure ConfigurationError implements the error interface
+func (e ConfigurationError) Error() string {
+	if e.Op != "" {
+		return fmt.Sprintf("%v for app %s and op %s: %s",
+			e.BaseErr, e.App, e.Op, e.Details)
+	}
+	return fmt.Sprintf("%v for app %s: %s",
+		e.BaseErr, e.App, e.Details)
+}
+
+// Allow unwrapping to get the base error
+func (e ConfigurationError) Unwrap() error {
+	return e.BaseErr
+}
+
+// ProcessorNotFoundError wraps ErrProcessorNotFound with app, op, and processor type details.
+type ProcessorNotFoundError struct {
+	App           string
+	Op            string
+	ProcessorType string // "Batch" or "SlowQuery"
+}
+
+// Make sure ProcessorNotFoundError implements the error interface
+func (e ProcessorNotFoundError) Error() string {
+	return fmt.Sprintf("no %sProcessor registered for app %s and op %s",
+		e.ProcessorType, e.App, e.Op)
+}
+
+// Allow unwrapping to get the base error
+func (e ProcessorNotFoundError) Unwrap() error {
+	return ErrProcessorNotFound
+}
+
 const ALYA_BATCHCHUNK_NROWS = 10
 const ALYA_BATCHSTATUS_CACHEDUR_SEC = 60
 
@@ -109,90 +160,161 @@ func (jm *JobManager) RegisterInitializer(app string, initializer Initializer) e
 // getOrCreateInitBlock retrieves an existing InitBlock for the given app, or creates a new one
 // if it doesn't exist. It ensures thread-safe access to the initblocks map using a mutex lock.
 func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
-	// Lock the mutex to ensure thread-safe access to the initblocks map
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Check if an InitBlock already exists for the app
-	if initBlock, exists := jm.initblocks[app]; exists {
+	// Check if an InitBlock already exists for this app
+	initBlock, exists := jm.initblocks[app]
+	if exists && initBlock != nil {
 		return initBlock, nil
 	}
-	// Check if an Initializer is registered for the app
+
+	// No InitBlock exists for this app, so we need to create one
+	// First, check if an initializer is registered for this app
 	initializer, exists := jm.initfuncs[app]
 	if !exists {
-		log.Printf("no initializer registered for app %s", app)
-		return nil, fmt.Errorf("no initializer registered for app %s", app)
+		return nil, &ConfigurationError{
+			BaseErr: ErrInitializerNotFound,
+			App:     app,
+			Details: "no initializer registered",
+		}
 	}
 
-	// Create a new InitBlock using the registered Initializer
+	// Call the initializer to create a new InitBlock
 	initBlock, err := initializer.Init(app)
 	if err != nil {
-		return nil, fmt.Errorf("error initializing InitBlock for app %s: %v", app, err)
+		return nil, &ConfigurationError{
+			BaseErr: ErrInitializerFailed,
+			App:     app,
+			Details: fmt.Sprintf("initialization failed: %v", err),
+		}
 	}
 
 	// Cache the InitBlock for future use
 	jm.initblocks[app] = initBlock
-
 	return initBlock, nil
 }
 
 // Run is the main loop of the JobManager. It continuously fetches a block of rows from the database,
 // processes each row either as a slow query or a batch job. After processing a block, it checks for
-// completed batches and summarizes them. Fetching, processing and updating happens in the same transaction.
+// completed batches and summarizes them.
 // This method should be called in a separate goroutine. It is thread safe -- updates to database and Redis
-// are executed atomically (check updateStatusInRedis()).
+// are executed atomically.
 func (jm *JobManager) Run() {
 	for {
-		ctx := context.Background()
+		// Run a single iteration of the job processing loop
+		// Only sleep if no rows were processed
+		hadRows := jm.RunOneIteration()
 
-		// Begin a transaction
-		tx, err := jm.Db.Begin(ctx)
-		if err != nil {
-			log.Println("Error starting transaction:", err)
+		// Sleep only if no rows were found to process
+		if !hadRows {
 			time.Sleep(getRandomSleepDuration())
-			continue
+		}
+	}
+}
+
+// RunWithContext is the context-aware version of the Run method. It performs the same operations
+// as Run but respects context cancellation for clean shutdown. When the provided context is
+// canceled, the method will exit cleanly.
+// This should be preferred over Run() in production environments to allow for graceful shutdown.
+func (jm *JobManager) RunWithContext(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			// Context was canceled, exit cleanly
+			return
+		default:
+			// Run a single iteration of the job processing loop
+			hadRows := jm.RunOneIterationWithContext(ctx)
+
+			// Sleep only if no rows were found to process
+			if !hadRows {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(getRandomSleepDuration()):
+					// Continue to the next iteration
+				}
+			}
+		}
+	}
+}
+
+// RunOneIteration executes a single iteration of the job processing loop.
+// It fetches a block of rows, processes them, and summarizes completed batches.
+// This method is useful both for the main Run loop and for testing.
+// Returns true if rows were processed, false otherwise.
+func (jm *JobManager) RunOneIteration() bool {
+	ctx := context.Background()
+
+	// Use the context-aware version with a background context
+	return jm.RunOneIterationWithContext(ctx)
+}
+
+// RunOneIterationWithContext executes a single iteration of the job processing loop,
+// respecting the provided context for cancellation. If the context is canceled during
+// execution, the method will attempt to clean up and exit as soon as possible.
+// Returns true if rows were processed, false otherwise.
+func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) bool {
+	// CANCELLATION POINT 1: Early check before starting any work
+	// Prevents starting any operations if shutdown is already requested
+	if ctx.Err() != nil {
+		return false
+	}
+
+	// Begin a transaction
+	tx, err := jm.Db.Begin(ctx)
+	if err != nil {
+		log.Println("Error starting transaction:", err)
+		return false
+	}
+
+	// Create a new Queries instance using the transaction
+	txQueries := batchsqlc.New(tx)
+
+	// Fetch a block of rows from the database
+	blockOfRows, err := txQueries.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
+		Status: batchsqlc.StatusEnumQueued,
+		Limit:  int32(jm.Config.BatchChunkNRows),
+	})
+	if err != nil {
+		log.Println("Error fetching block of rows:", err)
+		tx.Rollback(ctx)
+		return false
+	}
+
+	// If no rows are found, rollback and return false
+	if len(blockOfRows) == 0 {
+		log.Println("No rows found, skipping iteration")
+		tx.Rollback(ctx)
+		return false
+	}
+
+	// Process each row in the block
+	for _, row := range blockOfRows {
+		// CANCELLATION POINT 2: Before updating row statuses
+		// Prevents unnecessary database updates and rolls back the transaction
+		// Important check in loops to bail out early before each database operation
+		if ctx.Err() != nil {
+			tx.Rollback(ctx)
+			return false
 		}
 
-		// Create a new Queries instance using the transaction
-		txQueries := batchsqlc.New(tx)
-
-		// Fetch a block of rows from the database
-		blockOfRows, err := txQueries.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
-			Status: batchsqlc.StatusEnumQueued,
-			Limit:  int32(jm.Config.BatchChunkNRows),
+		// Update the status of the batch row to "inprog"
+		err := txQueries.UpdateBatchRowStatus(ctx, batchsqlc.UpdateBatchRowStatusParams{
+			Rowid:  row.Rowid,
+			Status: batchsqlc.StatusEnumInprog,
 		})
 		if err != nil {
-			log.Println("Error fetching block of rows:", err)
+			log.Println("Error updating batch row status:", err)
 			tx.Rollback(ctx)
-			time.Sleep(getRandomSleepDuration())
-			continue
+			return false
 		}
 
-		// If no rows are found, sleep and continue
-		if len(blockOfRows) == 0 {
-			log.Println("No rows found, sleeping...")
-			tx.Rollback(ctx)
-			time.Sleep(getRandomSleepDuration())
-			continue
-		}
-
-		// Process each row in the block
-		for _, row := range blockOfRows {
-			// Update the status of the batch row to "inprog"
-			err := txQueries.UpdateBatchRowStatus(ctx, batchsqlc.UpdateBatchRowStatusParams{
-				Rowid:  row.Rowid,
-				Status: batchsqlc.StatusEnumInprog,
-			})
-			if err != nil {
-				log.Println("Error updating batch row status:", err)
-				tx.Rollback(ctx)
-				time.Sleep(getRandomSleepDuration())
-				continue
-			}
-
-			if row.Status == batchsqlc.StatusEnumQueued {
-				// Update the status of the batch to "inprog"
-				// Log the status change
+		if row.Status == batchsqlc.StatusEnumQueued {
+			// Update the status of the batch to "inprog"
+			// Log the status change
+			if jm.Logger != nil {
 				changeDetails := logharbour.ChangeInfo{
 					Entity: "BatchRow",
 					Op:     "StatusUpdated",
@@ -201,72 +323,108 @@ func (jm *JobManager) Run() {
 					},
 				}
 				jm.Logger.LogDataChange("Batch row status updated to inprog", changeDetails)
-				err := txQueries.UpdateBatchStatus(ctx, batchsqlc.UpdateBatchStatusParams{
-					ID:     row.Batch,
-					Status: batchsqlc.StatusEnumInprog,
-				})
-				if err != nil {
-					log.Println("Error updating batch status:", err)
-					tx.Rollback(ctx)
-					time.Sleep(getRandomSleepDuration())
-					continue
-				}
 			}
 
-		}
-
-		// let us commit the transaction
-		err = tx.Commit(ctx)
-		if err != nil {
-			log.Println("Error committing transaction:", err)
-			time.Sleep(getRandomSleepDuration())
-			continue
-		}
-
-		// Process the rows
-		for _, row := range blockOfRows {
-			// send queries instance, not transaction
-			q := jm.Queries
-			_, err = jm.processRow(q, row)
+			err := txQueries.UpdateBatchStatus(ctx, batchsqlc.UpdateBatchStatusParams{
+				ID:     row.Batch,
+				Status: batchsqlc.StatusEnumInprog,
+			})
 			if err != nil {
-				log.Println("Error processing row:", err)
-				time.Sleep(getRandomSleepDuration())
-				continue
+				log.Println("Error updating batch status:", err)
+				tx.Rollback(ctx)
+				return false
 			}
 		}
-
-		// create a new transaction for the summarizeCompletedBatches
-		tx, err = jm.Db.Begin(ctx)
-		if err != nil {
-			log.Println("Error starting transaction:", err)
-			time.Sleep(getRandomSleepDuration())
-			continue
-		}
-
-		txQueries = batchsqlc.New(tx)
-
-		// Create a map to store unique batch IDs
-		batchSet := make(map[uuid.UUID]bool)
-		for _, row := range blockOfRows {
-			batchSet[row.Batch] = true
-		}
-
-		// Check for completed batches and summarize them
-		if err := jm.summarizeCompletedBatches(txQueries, batchSet); err != nil {
-			log.Println("Error summarizing completed batches:", err)
-		}
-
-		// Commit the transaction after processing the entire block
-		err = tx.Commit(ctx)
-		if err != nil {
-			log.Println("Error committing transaction:", err)
-			time.Sleep(getRandomSleepDuration())
-			continue
-		}
-
-		// Close and clean up initblocks
-		jm.closeInitBlocks()
 	}
+
+	// CANCELLATION POINT 3: Before committing first transaction
+	// Avoids committing changes if shutdown was requested during row status updates
+	// Ensures database consistency by rolling back incomplete work
+	if ctx.Err() != nil {
+		tx.Rollback(ctx)
+		return false
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		log.Println("Error committing transaction:", err)
+	return false
+	}
+
+	// Process the rows
+	// Track which batch+app+op combinations we've already processed for errors
+	processedErrorCombinations := make(map[string]bool)
+
+	for _, row := range blockOfRows {
+		// CANCELLATION POINT 4: Before processing each row
+		// Prevents starting potentially long-running processor functions
+		// Important because row processing happens outside a transaction
+		// Allows fast response to cancellation during CPU-intensive operations
+		if ctx.Err() != nil {
+			return false
+		}
+
+		// send queries instance, not transaction
+		q := jm.Queries
+		_, err = jm.processRow(q, row)
+		if err != nil {
+			log.Println("Error processing row:", err)
+			// Apply appropriate error handling strategy based on error type
+			jm.handleProcessingError(err, row, processedErrorCombinations)
+			continue
+		}
+	}
+
+	// CANCELLATION POINT 5: Before starting summary transaction
+	// Avoids starting a new transaction phase if shutdown is requested
+	// Batch summarization is a separate logical phase that can be skipped
+	// Prevents unnecessary work after the main processing is complete
+	if ctx.Err() != nil {
+		return true // Return true because we did process rows
+	}
+
+	// create a new transaction for the summarizeCompletedBatches
+	tx, err = jm.Db.Begin(ctx)
+	if err != nil {
+		log.Println("Error starting transaction:", err)
+		return true // Return true because we did process rows
+	}
+
+	txQueries = batchsqlc.New(tx)
+
+	// Create a map to store unique batch IDs
+	batchSet := make(map[uuid.UUID]bool)
+	for _, row := range blockOfRows {
+		batchSet[row.Batch] = true
+	}
+
+	// Check for completed batches and summarize them
+	if err := jm.summarizeCompletedBatches(txQueries, batchSet); err != nil {
+		log.Println("Error summarizing completed batches:", err)
+		tx.Rollback(ctx)
+		return true // Return true because we did process rows
+	}
+
+	// CANCELLATION POINT 6: Before committing summary transaction
+	// Ensures summary changes aren't committed if shutdown was requested
+	// Maintains database consistency during shutdown
+	// Last chance to roll back before making summarization changes permanent
+	if ctx.Err() != nil {
+		tx.Rollback(ctx)
+		return true // Return true because we did process rows
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		log.Println("Error committing transaction:", err)
+	return false
+	}
+
+	// Close and clean up initblocks
+	jm.closeInitBlocks()
+	
+	// Return true to indicate rows were processed
+	return true
 }
 
 func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
@@ -290,13 +448,22 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 	// Retrieve the SlowQueryProcessor for the app and op
 	p, exists := jm.slowqueryprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("no SlowQueryProcessor registered for app %s and op %s", row.App, row.Op)
+		return batchsqlc.StatusEnumFailed, &ProcessorNotFoundError{
+			App:           string(row.App),
+			Op:            row.Op,
+			ProcessorType: "SlowQuery",
+		}
 	}
 
 	// Assert that the processor is of the correct type
 	processor, ok := p.(SlowQueryProcessor)
 	if !ok {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("invalid SlowQueryProcessor type for app %s and op %s", row.App, row.Op)
+		return batchsqlc.StatusEnumFailed, &ConfigurationError{
+			BaseErr: ErrInvalidProcessorType,
+			App:     string(row.App),
+			Op:      row.Op,
+			Details: "registered processor does not implement SlowQueryProcessor interface",
+		}
 	}
 
 	// Get or create the initblock for the app
@@ -336,13 +503,22 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 	// Retrieve the BatchProcessor for the app and op
 	p, exists := jm.batchprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("no BatchProcessor registered for app %s and op %s", row.App, row.Op)
+		return batchsqlc.StatusEnumFailed, &ProcessorNotFoundError{
+			App:           string(row.App),
+			Op:            row.Op,
+			ProcessorType: "Batch",
+		}
 	}
 
 	// Assert that the processor is of the correct type
 	processor, ok := p.(BatchProcessor)
 	if !ok {
-		return batchsqlc.StatusEnumFailed, fmt.Errorf("invalid BatchProcessor type for app %s and op %s", row.App, row.Op)
+		return batchsqlc.StatusEnumFailed, &ConfigurationError{
+			BaseErr: ErrInvalidProcessorType,
+			App:     string(row.App),
+			Op:      row.Op,
+			Details: "registered processor does not implement BatchProcessor interface",
+		}
 	}
 
 	// Get or create the initblock for the app
@@ -496,4 +672,295 @@ func (jm *JobManager) closeInitBlocks() {
 func getRandomSleepDuration() time.Duration {
 	// Generate a random sleep duration between 30 and 60 seconds
 	return time.Duration(rand.Intn(31)+30) * time.Second
+}
+
+// updateRowStatusToFailed updates a single row's status to failed with the given error information.
+func (jm *JobManager) updateRowStatusToFailed(rowid int64, errCode string, msgID int, errMsg string) error {
+	errorMessages := []wscutils.ErrorMessage{
+		{
+			MsgID:   msgID,
+			ErrCode: errCode,
+			Vals:    []string{errMsg}, // Include the detailed error message in Vals
+			// Field is optional and can be left empty
+		},
+	}
+
+	messagesJSON, err := json.Marshal(errorMessages)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error messages: %v", err)
+	}
+
+	// Update the batch row using the BatchJob update function (since it includes message field)
+	err = jm.Queries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
+		Rowid:    rowid,
+		Status:   batchsqlc.StatusEnumFailed,
+		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
+		Res:      []byte("{}"), // Empty result
+		Messages: messagesJSON,
+		Blobrows: nil,
+		Doneby:   doneBy,
+	})
+
+	return err
+}
+
+// markAllRowsWithSameAppOpAsFailed marks all rows in the same batch with the same app+op as failed.
+func (jm *JobManager) markAllRowsWithSameAppOpAsFailed(batchID uuid.UUID, app, op, errCode string, msgID int, errMsg string) error {
+	// Prepare error message JSON
+	errorMessages := []wscutils.ErrorMessage{
+		{
+			MsgID:   msgID,
+			ErrCode: errCode,
+			Vals:    []string{errMsg}, // Include the detailed error message in Vals
+			// Field is optional and can be left empty
+		},
+	}
+	messagesJSON, err := json.Marshal(errorMessages)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error messages: %v", err)
+	}
+
+	// Update all rows in the batch with this app+op that are not already completed
+	// using the sqlc-generated function
+	err = jm.Queries.UpdateBatchRowsByBatchAppOp(context.Background(), batchsqlc.UpdateBatchRowsByBatchAppOpParams{
+		Status:   batchsqlc.StatusEnumFailed,
+		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
+		Messages: messagesJSON,
+		ID:       batchID,
+		App:      app,
+		Op:       op,
+	})
+
+	return err
+}
+
+// updateBatchStatusToFailed updates a batch's status to failed.
+func (jm *JobManager) updateBatchStatusToFailed(batchID uuid.UUID) error {
+	// Update the batch status to failed
+	err := jm.Queries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
+		ID:     batchID,
+		Status: batchsqlc.StatusEnumFailed,
+		Doneat: pgtype.Timestamp{Time: time.Now(), Valid: true},
+	})
+
+	if err == nil {
+		// Also update Redis cache if applicable
+		if jm.RedisClient != nil {
+			cacheErr := updateStatusInRedis(jm.RedisClient, batchID, batchsqlc.StatusEnumFailed,
+				jm.Config.BatchStatusCacheDurSec)
+			if cacheErr != nil {
+				log.Printf("Warning: Failed to update Redis cache for batch %s: %v", batchID, cacheErr)
+			}
+		}
+	}
+
+	return err
+}
+
+// handleProcessingError handles various error scenarios that may occur during job processing.
+// It categorizes errors and applies the appropriate handling strategy based on the error type.
+func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockOfRowsRow, processedBatches map[string]bool) {
+	batchID := row.Batch
+	app := string(row.App)
+	op := row.Op
+
+	// Log the start of error handling with context
+	if jm.Logger != nil {
+		jm.Logger.Info().LogActivity("Starting error handling for job", map[string]any{
+			"batchID": batchID.String(),
+			"app":     app,
+			"op":      op,
+			"rowID":   row.Rowid,
+		})
+	}
+
+	// Handle different error types
+	switch {
+	case isConfigurationError(err):
+		// Configuration errors affect all rows with the same app or app+op
+		// These include missing processors, invalid processor types, or initializer issues
+
+		// Create a unique key based on the error type
+		var key string
+		var errCode string
+		var msgID int
+
+		// Determine the scope of the error (app-wide or app+op)
+		if errors.Is(err, ErrProcessorNotFound) || errors.Is(err, ErrInvalidProcessorType) {
+			// These errors affect all rows with the same app+op
+			key = fmt.Sprintf("%s|%s|%s", batchID.String(), app, op)
+
+			if errors.Is(err, ErrProcessorNotFound) {
+				errCode = ErrCodeConfiguration
+				msgID = MsgIDProcessorNotFound
+			} else {
+				errCode = ErrCodeConfiguration
+				msgID = MsgIDInvalidProcessorType
+			}
+
+			// Check if we've already handled this batch+app+op combination
+			if processedBatches[key] {
+				return
+			}
+			processedBatches[key] = true
+
+			// Mark all other rows with the same batch+app+op as failed
+			if failErr := jm.markAllRowsWithSameAppOpAsFailed(batchID, app, op, errCode, msgID, err.Error()); failErr != nil {
+				if jm.Logger != nil {
+					jm.Logger.Error(failErr).LogActivity("Error marking all rows with same batch+app+op as failed", map[string]any{
+						"batchID": batchID.String(),
+						"app":     app,
+						"op":      op,
+						"errCode": errCode,
+					})
+				}
+			}
+		} else if errors.Is(err, ErrInitializerNotFound) || errors.Is(err, ErrInitializerFailed) {
+			// These errors affect all rows with the same app
+			key = fmt.Sprintf("%s|%s", batchID.String(), app)
+
+			if errors.Is(err, ErrInitializerNotFound) {
+				errCode = ErrCodeConfiguration
+				msgID = MsgIDInitializerNotFound
+			} else {
+				errCode = ErrCodeConfiguration
+				msgID = MsgIDInitializerFailed
+			}
+
+			// Check if we've already handled this batch+app combination
+			if processedBatches[key] {
+				return
+			}
+			processedBatches[key] = true
+
+			// Mark all rows with the same batch+app as failed
+			if failErr := jm.markAllRowsWithSameAppAsFailed(batchID, app, errCode, msgID, err.Error()); failErr != nil {
+				if jm.Logger != nil {
+					jm.Logger.Error(failErr).LogActivity("Error marking all rows with same batch+app as failed", map[string]any{
+						"batchID": batchID.String(),
+						"app":     app,
+						"errCode": errCode,
+					})
+				}
+			}
+		} else {
+			// Unknown configuration error, just handle the current row
+			errCode = ErrCodeConfiguration
+			msgID = MsgIDUnknownConfigurationError
+			// Update the specific row status to failed
+			if rowErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); rowErr != nil {
+				if jm.Logger != nil {
+					jm.Logger.Error(rowErr).LogActivity("Error updating row status to failed", map[string]any{
+						"rowID":   row.Rowid,
+						"batchID": batchID.String(),
+						"errCode": errCode,
+					})
+				}
+			}
+		}
+
+		// Mark the current row as failed
+		if failErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); failErr != nil {
+			if jm.Logger != nil {
+				jm.Logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
+					"rowID":   row.Rowid,
+					"batchID": batchID.String(),
+					"errCode": errCode,
+				})
+			}
+		}
+
+		// Update the batch status to failed
+		if failErr := jm.updateBatchStatusToFailed(batchID); failErr != nil {
+			if jm.Logger != nil {
+				jm.Logger.Error(failErr).LogActivity("Error updating batch status to failed", map[string]any{
+					"batchID": batchID.String(),
+					"errCode": errCode,
+				})
+			}
+		} else {
+			if jm.Logger != nil {
+				jm.Logger.Info().LogActivity("Batch marked as failed due to configuration error", map[string]any{
+					"batchID": batchID.String(),
+					"app":     app,
+					"op":      op,
+					"error":   err.Error(),
+					"errCode": errCode,
+				})
+			}
+		}
+
+	default:
+		// For other errors, we just mark the individual row as failed
+		// These are typically transient or data-specific errors
+		errCode := ErrCodeProcessing
+		msgID := MsgIDProcessingError
+
+		// Mark just this row as failed
+		if failErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); failErr != nil {
+			log.Println("Error updating row status to failed:", failErr)
+			if jm.Logger != nil {
+				jm.Logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
+					"rowID":   row.Rowid,
+					"batchID": batchID.String(),
+					"errCode": errCode,
+				})
+			}
+		} else {
+			if jm.Logger != nil {
+				jm.Logger.Info().LogActivity("Row marked as failed due to processing error", map[string]any{
+					"rowID":   row.Rowid,
+					"batchID": batchID.String(),
+					"app":     app,
+					"op":      op,
+					"error":   err.Error(),
+				})
+			}
+		}
+	}
+}
+
+// isConfigurationError checks if an error is a configuration-related error
+func isConfigurationError(err error) bool {
+	// Check for errors.Is matches
+	if errors.Is(err, ErrProcessorNotFound) ||
+		errors.Is(err, ErrInitializerNotFound) ||
+		errors.Is(err, ErrInitializerFailed) ||
+		errors.Is(err, ErrInvalidProcessorType) {
+		return true
+	}
+
+	// Check for errors.As matches
+	var configErr ConfigurationError
+	var procNotFoundErr ProcessorNotFoundError
+	return errors.As(err, &configErr) || errors.As(err, &procNotFoundErr)
+}
+
+// markAllRowsWithSameAppAsFailed marks all rows in the same batch with the same app as failed
+func (jm *JobManager) markAllRowsWithSameAppAsFailed(batchID uuid.UUID, app, errCode string, msgID int, errMsg string) error {
+	// Prepare error message JSON
+	errorMessages := []wscutils.ErrorMessage{
+		{
+			MsgID:   msgID,
+			ErrCode: errCode,
+			Vals:    []string{errMsg}, // Include the detailed error message in Vals
+			// Field is optional and can be left empty
+		},
+	}
+	messagesJSON, err := json.Marshal(errorMessages)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error messages: %v", err)
+	}
+
+	// Update all rows in the batch with this app that are not already completed
+	// using the sqlc-generated function
+	err = jm.Queries.UpdateBatchRowsByBatchApp(context.Background(), batchsqlc.UpdateBatchRowsByBatchAppParams{
+		Status:   batchsqlc.StatusEnumFailed,
+		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
+		Messages: messagesJSON,
+		ID:       batchID,
+		App:      app,
+	})
+
+	return err
 }

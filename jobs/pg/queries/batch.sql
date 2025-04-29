@@ -151,3 +151,28 @@ SET outputfiles = $1,
    status = $2,
    doneat = $3
  WHERE id = $4;
+
+-- name: UpdateBatchRowsByBatchAndStatus :exec
+UPDATE batchrows
+SET status = $1, doneat = $2, messages = $3
+WHERE batch = $4 AND status IN ('queued', 'inprog');
+
+-- name: UpdateBatchRowsByBatchAppOp :exec
+UPDATE batchrows
+SET status = $1, doneat = $2, messages = $3
+WHERE rowid IN (
+    SELECT br.rowid 
+    FROM batchrows br
+    JOIN batches b ON br.batch = b.id
+    WHERE b.id = $4 AND b.app = $5 AND b.op = $6 AND br.status IN ('queued', 'inprog')
+);
+
+-- name: UpdateBatchRowsByBatchApp :exec
+UPDATE batchrows
+SET status = $1, doneat = $2, messages = $3
+WHERE rowid IN (
+    SELECT br.rowid 
+    FROM batchrows br
+    JOIN batches b ON br.batch = b.id
+    WHERE b.id = $4 AND b.app = $5 AND br.status IN ('queued', 'inprog')
+);

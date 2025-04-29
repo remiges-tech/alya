@@ -34,19 +34,22 @@ type TransactionInput struct {
 	Amount        float64 `json:"amount"`
 }
 
-type TransactionBatchProcessor struct{}
+type TransactionBatchProcessor struct {
+}
 
 // Add MarkDone method
-func (p *TransactionBatchProcessor) MarkDone(initBlock jobs.InitBlock, context jobs.JSONstr, details jobs.BatchDetails_t) error {
+func (p *TransactionBatchProcessor) MarkDone(initBlock jobs.InitBlock, contextJson jobs.JSONstr, details jobs.BatchDetails_t) error {
 	// Parse the context to get our configuration
 	var contextData struct {
 		NotificationEmail string `json:"notification_email"`
 		BatchName         string `json:"batch_name"`
 		Department        string `json:"department"`
 		Priority          int    `json:"priority"`
+		Filename          string `json:"filename"`
+		BalanceKey        string `json:"balance_key"`
 	}
 
-	if err := json.Unmarshal([]byte(context.String()), &contextData); err != nil {
+	if err := json.Unmarshal([]byte(contextJson.String()), &contextData); err != nil {
 		return fmt.Errorf("failed to parse context in MarkDone: %v", err)
 	}
 
@@ -56,6 +59,23 @@ func (p *TransactionBatchProcessor) MarkDone(initBlock jobs.InitBlock, context j
 	log.Printf("- Batch Name: %s", contextData.BatchName)
 	log.Printf("- Department: %s", contextData.Department)
 	log.Printf("- Priority: %d", contextData.Priority)
+
+	// Get and print the final balance
+	if contextData.BalanceKey != "" {
+		// Access Redis client from main program context
+		redisClient := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+		// Use standard context package for Redis operations
+		ctx := context.Background()
+		balance, err := redisClient.Get(ctx, contextData.BalanceKey).Result()
+		if err != nil && err != redis.Nil {
+			log.Printf("Error getting final balance: %v", err)
+		} else {
+			log.Printf("\nFinal Redis Balance Key: %s", contextData.BalanceKey)
+			log.Printf("Final Balance Value: %s", balance)
+		}
+		// Close the Redis connection
+		redisClient.Close()
+	}
 
 	log.Printf("\nBatch Statistics:")
 	log.Printf("- Successfully processed: %d", details.NSuccess)
@@ -121,7 +141,8 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchct
 
 	// Parse the batchctx JSON to get the filename
 	var batchCtx struct {
-		Filename string `json:"filename"`
+		Filename   string `json:"filename"`
+		BalanceKey string `json:"balance_key"`
 	}
 	err = json.Unmarshal([]byte(batchctx.String()), &batchCtx)
 	if err != nil {
@@ -136,7 +157,7 @@ func (p *TransactionBatchProcessor) DoBatchJob(initBlock jobs.InitBlock, batchct
 
 	// Update the balance in Redis based on the transaction type
 	redisClient := initBlock.(*TransactionInitBlock).RedisClient
-	balanceKey := fmt.Sprintf("batch:%s:balance", batchCtx.Filename)
+	balanceKey := batchCtx.BalanceKey
 
 	const maxRetries = 50
 
@@ -287,7 +308,9 @@ func main() {
 	logger := logharbour.NewLogger(&lctx, "JobManager", os.Stdout)
 
 	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger, nil)
+	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger, &jobs.JobManagerConfig{
+		BatchOutputBucket: "batch-output",
+	})
 
 	// Register the batch processor and initializer
 	err := jm.RegisterProcessorBatch("transactionapp", "processtransactions", &TransactionBatchProcessor{})
@@ -308,9 +331,7 @@ func main() {
 
 	// Prepare the batch context with the filename
 	filename := "transactions.csv"
-
-	// Set the initial balance in Redis to 0
-	balanceKey := fmt.Sprintf("batch:%s:%d:balance", filename, rand.Intn(1000))
+	balanceKey := fmt.Sprintf("batch:%s:balance", filename)
 	err = redisClient.Set(context.Background(), balanceKey, 0, 0).Err()
 	if err != nil {
 		log.Fatal("Failed to set initial balance in Redis:", err)
@@ -322,6 +343,8 @@ func main() {
 		"batch_name":         "Daily Transaction Processing",
 		"department":         "Finance",
 		"priority":           1,
+		"filename":           filename,   // Add the filename to context to use in DoBatchJob
+		"balance_key":        balanceKey, // Store the balance key in context for MarkDone
 	}
 
 	contextJSON, err := json.Marshal(contextData)
@@ -340,6 +363,7 @@ func main() {
 	log.Printf("- Batch Name: %s", contextData["batch_name"])
 	log.Printf("- Department: %s", contextData["department"])
 	log.Printf("- Priority: %d", contextData["priority"])
+	log.Printf("- Filename: %s", contextData["filename"])
 
 	// Submit the batch with our context
 	batchID, err := jm.BatchSubmit(
