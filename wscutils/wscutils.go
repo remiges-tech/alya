@@ -1,6 +1,7 @@
 package wscutils
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -202,4 +203,92 @@ func SetMsgIDInvalidJSON(msgID int) {
 // SetErrCodeInvalidJSON allows external code to set a custom error code for errors related to invalid JSON.
 func SetErrCodeInvalidJSON(errCode string) {
 	errCodeInvalidJSON = errCode
+}
+
+// Optional is a generic type that can distinguish between non-existent JSON fields and null values.
+// It can be used in struct fields where you need to know if a field was:
+// 1. Present in the JSON and had a value (Present = true, Null = false)
+// 2. Present in the JSON but was null (Present = true, Null = true)
+// 3. Not present in the JSON at all (Present = false)
+//
+// Example usage:
+//
+//	// Custom settings type
+//	type Settings struct {
+//	    Theme       string `json:"theme"`
+//	    Notifications bool  `json:"notifications"`
+//	}
+//
+//	type User struct {
+//	    ID        int              `json:"id"`
+//	    Name      string           `json:"name"`
+//	    Email     Optional[string] `json:"email"`
+//	    IsActive  Optional[bool]   `json:"isActive"`
+//	    Settings  Optional[Settings] `json:"settings"`
+//	}
+//
+//	// After unmarshaling JSON
+//	var user User
+//	json.Unmarshal(data, &user)
+//
+//	// Using the Get() method for simple access to values
+//	if email, ok := user.Email.Get(); ok {
+//	    fmt.Println("Email is provided:", email)
+//	} else {
+//	    fmt.Println("Email is absent or null")
+//	}
+//
+//	// Similarly for boolean and custom type values
+//	if isActive, ok := user.IsActive.Get(); ok {
+//	    fmt.Println("User active status provided:", isActive)
+//	}
+type Optional[T any] struct {
+	Value   T
+	Present bool
+	Null    bool
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+// This allows Optional to detect both missing fields and explicit nulls during JSON unmarshaling.
+// When a field is omitted completely from JSON:
+// - UnmarshalJSON is never called for that field
+// - The field retains its zero values (Present=false, Null=false)
+func (o *Optional[T]) UnmarshalJSON(data []byte) error {
+	// Check for null value
+	if string(data) == "null" {
+		o.Present = true
+		o.Null = true
+		return nil
+	}
+
+	// Not null, try to unmarshal into Value
+	var value T
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+
+	o.Value = value
+	o.Present = true
+	o.Null = false
+	return nil
+}
+
+// Get returns the Value and true if the Optional has a defined value,
+// or the zero value of T and false if it doesn't have a value or is null.
+// This method simplifies extracting values from Optional fields without
+// having to write complex conditionals combining Present and Null fields.
+//
+// Example usage:
+//
+//	if value, ok := optional.Get(); ok {
+//	    // Use value here, it exists and is not null
+//	} else {
+//	    // Handle missing or null case
+//	}
+func (o Optional[T]) Get() (T, bool) {
+	if o.Present && !o.Null {
+		return o.Value, true
+	}
+	var zero T
+	return zero, false
 }
