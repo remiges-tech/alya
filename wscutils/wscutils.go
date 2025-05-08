@@ -292,3 +292,15 @@ func (o Optional[T]) Get() (T, bool) {
 	var zero T
 	return zero, false
 }
+
+// ValidatorValue implements the ValidatorValuer interface for validator v10.
+// This allows validator to correctly validate the underlying value when validating structs that contain Optional fields.
+// If the Optional has a value (Present=true and Null=false), it returns the Value.
+// Otherwise, it returns the zero value of type T.
+func (o Optional[T]) ValidatorValue() any {
+	if o.Present && !o.Null {
+		return o.Value
+	}
+	var zero T
+	return zero
+}

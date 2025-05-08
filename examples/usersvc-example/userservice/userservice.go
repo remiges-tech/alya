@@ -80,14 +80,25 @@ var ValidationMessages = map[string]string{
 }
 
 //-----------------------------------------------------------------------------
+// Data Structures
+//-----------------------------------------------------------------------------
+
+// Preferences represents user interface preferences
+type Preferences struct {
+	Theme string `json:"theme" validate:"required,oneof=light dark system"`
+}
+
+//-----------------------------------------------------------------------------
 // Request Types
 //-----------------------------------------------------------------------------
 
 type CreateUserRequest struct {
-	Name        string `json:"name" validate:"required,min=2,max=50"`
-	Email       string `json:"email" validate:"required,email,max=100"`
-	Username    string `json:"username" validate:"required,min=3,max=30,alphanum"`
-	PhoneNumber string `json:"phone_number" validate:"omitempty,e164"`
+	Name        string                         `json:"name" validate:"required,min=2,max=50"`
+	Email       string                         `json:"email" validate:"required,email,max=100"`
+	Username    wscutils.Optional[string]      `json:"username" validate:"required,min=3,max=30,alphanum"`
+	PhoneNumber string                         `json:"phone_number" validate:"omitempty,e164"`
+	Preferences wscutils.Optional[Preferences] `json:"preferences" validate:"omitempty"`
+	Settings    wscutils.Optional[[]string]    `json:"settings" validate:"omitempty,dive,required,alpha"`
 }
 
 //-----------------------------------------------------------------------------
@@ -189,7 +200,13 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 		case "alphanum":
 			return []string{err.Value().(string)}
 
+		case "alpha":
+			return []string{err.Value().(string)}
+
 		case "e164":
+			return []string{err.Value().(string)}
+
+		case "oneof":
 			return []string{err.Value().(string)}
 
 		default:
@@ -214,7 +231,7 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 	//-------------------------------------------------------------------------
 	// Step 4: Check data dependencies
 	//-------------------------------------------------------------------------
-	exists, err := queries.CheckUsernameExists(c.Request.Context(), createUserReq.Username)
+	exists, err := queries.CheckUsernameExists(c.Request.Context(), createUserReq.Username.Value)
 	if err != nil {
 		logger.Error(fmt.Errorf("error checking existing user: %w", err)).LogActivity("Database error", nil)
 		c.JSON(500, wscutils.NewErrorResponse(ErrMsgIDInternalErr, ErrCodeInternalErr))
@@ -232,7 +249,7 @@ func HandleCreateUserRequest(c *gin.Context, s *service.Service) {
 	user, err := queries.CreateUser(c.Request.Context(), sqlc.CreateUserParams{
 		Name:        createUserReq.Name,
 		Email:       createUserReq.Email,
-		Username:    createUserReq.Username,
+		Username:    createUserReq.Username.Value,
 		PhoneNumber: sql.NullString{String: createUserReq.PhoneNumber, Valid: createUserReq.PhoneNumber != ""},
 	})
 	if err != nil {
