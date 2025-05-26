@@ -20,8 +20,14 @@ func main() {
 	logger := logharbour.NewLogger(lctx, "TimeoutService", fallbackWriter)
 	logger.WithPriority(logharbour.Debug2)
 
+	// Create the LogHarbour adapter for request logging
+	logAdapter := router.NewLogHarbourAdapter(logger)
+
 	// Create Gin router
 	r := gin.Default()
+
+	// Add request logging middleware
+	r.Use(router.LogRequest(logAdapter))
 
 	// Register timeout error codes and messages
 	router.RegisterMiddlewareMsgID(router.RequestTimeout, 5001)
@@ -38,7 +44,7 @@ func main() {
 	timeoutService.RegisterRoute(http.MethodGet, "/slow", handleSlowRequest)
 
 	// Start server
-	if err := r.Run(":8080"); err != nil {
+	if err := r.Run(":8090"); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
