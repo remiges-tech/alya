@@ -115,6 +115,12 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 	if config.BatchStatusCacheDurSec == 0 {
 		config.BatchStatusCacheDurSec = ALYA_BATCHSTATUS_CACHEDUR_SEC
 	}
+	if config.BatchOutputBucket == "" {
+		config.BatchOutputBucket = "alya-batch-output"
+		if logger != nil {
+			logger.Warn().LogActivity("No BatchOutputBucket configured, using default: alya-batch-output", nil)
+		}
+	}
 
 	return &JobManager{
 		Db:                      db,

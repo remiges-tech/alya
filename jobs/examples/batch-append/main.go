@@ -103,8 +103,11 @@ func main() {
 	lctx := logharbour.NewLoggerContext(logharbour.DefaultPriority)
 	logger := logharbour.NewLogger(lctx, "JobManager", os.Stdout)
 
-	// Initialize JobManager
-	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger, nil)
+	// Initialize JobManager with configuration
+	config := &jobs.JobManagerConfig{
+		BatchOutputBucket: bucketName, // Use the bucket we created above
+	}
+	jm := jobs.NewJobManager(pool, redisClient, minioClient, logger, config)
 
 	// Register the batch processor and initializer
 	err = jm.RegisterProcessorBatch("emailapp", "sendbulkemail", &EmailBatchProcessor{})
@@ -121,16 +124,23 @@ func main() {
 	batchID := submitBatch(jm)
 
 	// Prepare additional batch input data
-	additionalBatchInput := []batchsqlc.InsertIntoBatchRowsParams{
+	input3, err := jobs.NewJSONstr(`{"recipientEmail": "user3@example.com", "subject": "Batch Email 3", "body": "Hello, this is batch email 3."}`)
+	if err != nil {
+		log.Fatal("Error creating JSONstr for batch input at line 3:", err)
+	}
+	input4, err := jobs.NewJSONstr(`{"recipientEmail": "user4@example.com", "subject": "Batch Email 4", "body": "Hello, this is batch email 4."}`)
+	if err != nil {
+		log.Fatal("Error creating JSONstr for batch input at line 4:", err)
+	}
+
+	additionalBatchInput := []jobs.BatchInput_t{
 		{
-			Batch: batchID,
 			Line:  3,
-			Input: []byte(`{"recipientEmail": "user3@example.com", "subject": "Batch Email 3", "body": "Hello, this is batch email 3."}`),
+			Input: input3,
 		},
 		{
-			Batch: batchID,
 			Line:  4,
-			Input: []byte(`{"recipientEmail": "user4@example.com", "subject": "Batch Email 4", "body": "Hello, this is batch email 4."}`),
+			Input: input4,
 		},
 		// Add more batch input records as needed
 	}

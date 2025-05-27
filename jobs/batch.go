@@ -306,9 +306,15 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	return batchsqlc.StatusEnumAborted, successCount, failedCount, abortedCount, nil
 }
 
-func (jm *JobManager) BatchAppend(batchID string, batchinput []batchsqlc.InsertIntoBatchRowsParams, waitabit bool) (nrows int, err error) {
+func (jm *JobManager) BatchAppend(batchID string, batchinput []BatchInput_t, waitabit bool) (nrows int, err error) {
+	// Parse batch UUID
+	batchUUID, err := uuid.Parse(batchID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid batch ID: %v", err)
+	}
+
 	// Check if the batch record exists in the batches table
-	batch, err := jm.Queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
+	batch, err := jm.Queries.GetBatchByID(context.Background(), batchUUID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, fmt.Errorf("batch not found: %v", err)
@@ -334,7 +340,15 @@ func (jm *JobManager) BatchAppend(batchID string, batchinput []batchsqlc.InsertI
 			return 0, fmt.Errorf("invalid line number: %d", input.Line)
 		}
 
-		err := jm.Queries.InsertIntoBatchRows(context.Background(), input)
+		// Convert BatchInput_t to InsertIntoBatchRowsParams
+		dbParams := batchsqlc.InsertIntoBatchRowsParams{
+			Batch: batchUUID,
+			Line:  int32(input.Line),
+			Input: []byte(input.Input.String()),
+			Reqat: pgtype.Timestamp{Time: time.Now(), Valid: true},
+		}
+
+		err := jm.Queries.InsertIntoBatchRows(context.Background(), dbParams)
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert batch row: %v", err)
 		}
