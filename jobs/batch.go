@@ -75,8 +75,11 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 	// Convert op to lowercase before inserting into the database
 	op = strings.ToLower(op)
 
+	// Create transaction-bound queries
+	txQueries := batchsqlc.New(tx)
+
 	// Insert a record into the batches table
-	_, err = jm.Queries.InsertIntoBatches(context.Background(), batchsqlc.InsertIntoBatchesParams{
+	_, err = txQueries.InsertIntoBatches(context.Background(), batchsqlc.InsertIntoBatchesParams{
 		ID:      batchUUID,
 		App:     app,
 		Op:      op,
@@ -101,7 +104,7 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 		batchRowsParam.Input[i] = []byte(input.Input.String())
 		batchRowsParam.Reqat[i] = pgtype.Timestamp{Time: time.Now(), Valid: true}
 	}
-	_, err = jm.Queries.BulkInsertIntoBatchRows(context.Background(), batchRowsParam)
+	_, err = txQueries.BulkInsertIntoBatchRows(context.Background(), batchRowsParam)
 	if err != nil {
 		return "", err
 	}
@@ -334,6 +337,9 @@ func (jm *JobManager) BatchAppend(batchID string, batchinput []BatchInput_t, wai
 	}
 	defer tx.Rollback(context.Background())
 
+	// Create transaction-bound queries
+	txQueries := batchsqlc.New(tx)
+
 	// Insert records into the batchrows table
 	for _, input := range batchinput {
 		if input.Line <= 0 {
@@ -348,7 +354,7 @@ func (jm *JobManager) BatchAppend(batchID string, batchinput []BatchInput_t, wai
 			Reqat: pgtype.Timestamp{Time: time.Now(), Valid: true},
 		}
 
-		err := jm.Queries.InsertIntoBatchRows(context.Background(), dbParams)
+		err := txQueries.InsertIntoBatchRows(context.Background(), dbParams)
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert batch row: %v", err)
 		}
@@ -356,7 +362,7 @@ func (jm *JobManager) BatchAppend(batchID string, batchinput []BatchInput_t, wai
 
 	// Update the batch status to "queued" if waitabit is false
 	if !waitabit {
-		err = jm.Queries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
+		err = txQueries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
 			ID:     uuid.MustParse(batchID),
 			Status: batchsqlc.StatusEnumQueued,
 		})

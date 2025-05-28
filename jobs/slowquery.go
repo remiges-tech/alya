@@ -51,11 +51,14 @@ func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONst
 		return "", err
 	}
 
+	// Create transaction-bound queries
+	txQueries := batchsqlc.New(tx)
+
 	// Convert op to lowercase before inserting into the database
 	op = strings.ToLower(op)
 
 	// Use sqlc generated function to insert into batches table
-	_, err = jm.Queries.InsertIntoBatches(ctx, batchsqlc.InsertIntoBatchesParams{
+	_, err = txQueries.InsertIntoBatches(ctx, batchsqlc.InsertIntoBatchesParams{
 		ID:      batchId,
 		App:     app,
 		Op:      op,
@@ -69,7 +72,7 @@ func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONst
 	}
 
 	// Use sqlc generated function to insert into batchrows table
-	err = jm.Queries.InsertIntoBatchRows(ctx, batchsqlc.InsertIntoBatchRowsParams{
+	err = txQueries.InsertIntoBatchRows(ctx, batchsqlc.InsertIntoBatchRowsParams{
 		Batch: batchId,
 		Line:  0,
 		Input: []byte(input.String()),
