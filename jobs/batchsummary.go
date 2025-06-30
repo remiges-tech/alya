@@ -20,41 +20,78 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	ctx := context.Background()
 
 	// Fetch the batch record
+	jm.Logger.Debug0().LogActivity("Fetching batch record for summarization", map[string]any{
+		"batchId": batchID.String(),
+	})
 	batch, err := q.GetBatchByID(ctx, batchID)
 	if err != nil {
+		jm.Logger.Error(err).LogActivity("Failed to get batch by ID", map[string]any{
+			"batchId": batchID.String(),
+		})
 		return fmt.Errorf("failed to get batch by ID: %v", err)
 	}
 
 	// Check if the batch is already summarized
 	if !batch.Doneat.Time.IsZero() {
+		jm.Logger.Debug0().LogActivity("Batch already summarized", map[string]any{
+			"batchId": batchID.String(),
+			"doneAt": batch.Doneat.Time,
+		})
 		return nil
 	}
 
 	// fetch count of records where status = queued or inprogress
+	jm.Logger.Debug0().LogActivity("Checking for pending batch rows", map[string]any{
+		"batchId": batchID.String(),
+	})
 	count, err := q.CountBatchRowsByBatchIDAndStatus(ctx, batchsqlc.CountBatchRowsByBatchIDAndStatusParams{
 		Batch:    batchID,
 		Status:   batchsqlc.StatusEnumQueued,
 		Status_2: batchsqlc.StatusEnumInprog,
 	})
 	if err != nil {
+		jm.Logger.Error(err).LogActivity("Failed to count batch rows by status", map[string]any{
+			"batchId": batchID.String(),
+		})
 		return fmt.Errorf("failed to count batch rows by batch ID and status: %v", err)
 	}
 
 	if count > 0 {
+		jm.Logger.Info().LogActivity("Batch has pending rows, skipping summarization", map[string]any{
+			"batchId": batchID.String(),
+			"pendingCount": count,
+		})
 		return nil
 	}
 
 	// Fetch all batchrows records for the batch, sorted by "line"
+	jm.Logger.Debug0().LogActivity("Fetching all batch rows for summarization", map[string]any{
+		"batchId": batchID.String(),
+	})
 	batchRows, err := q.GetBatchRowsByBatchIDSorted(ctx, batchID)
 	if err != nil {
+		jm.Logger.Error(err).LogActivity("Failed to get batch rows sorted", map[string]any{
+			"batchId": batchID.String(),
+		})
 		return fmt.Errorf("failed to get batch rows sorted: %v", err)
 	}
 
 	// Calculate the summary counters
 	nsuccess, nfailed, naborted := calculateSummaryCounters(batchRows)
+	jm.Logger.Info().LogActivity("Batch summary counters calculated", map[string]any{
+		"batchId": batchID.String(),
+		"nSuccess": nsuccess,
+		"nFailed": nfailed,
+		"nAborted": naborted,
+		"totalRows": len(batchRows),
+	})
 
 	// Determine the overall batch status based on the counter values
 	batchStatus := determineBatchStatus(nsuccess, nfailed, naborted)
+	jm.Logger.Info().LogActivity("Batch status determined", map[string]any{
+		"batchId": batchID.String(),
+		"status": batchStatus,
+	})
 
 	// Fetch processed batchrows records for the batch to create temporary files
 	processedBatchRows, err := q.GetProcessedBatchRowsByBatchIDSorted(ctx, batchID)
@@ -82,14 +119,30 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	}
 
 	// Update the batches record with summarized information
+	jm.Logger.Info().LogActivity("Updating batch summary", map[string]any{
+		"batchId": batchID.String(),
+		"status": batchStatus,
+		"outputFileCount": len(objStoreFiles),
+	})
 	err = updateBatchSummary(q, ctx, batchID, batchStatus, objStoreFiles, nsuccess, nfailed, naborted)
 	if err != nil {
+		jm.Logger.Error(err).LogActivity("Failed to update batch summary", map[string]any{
+			"batchId": batchID.String(),
+		})
 		return fmt.Errorf("failed to update batch summary: %v", err)
 	}
 
 	// Update status in redis
+	jm.Logger.Debug0().LogActivity("Updating batch status in Redis cache", map[string]any{
+		"batchId": batchID.String(),
+		"status": batchStatus,
+		"cacheDuration": 100*jm.Config.BatchStatusCacheDurSec,
+	})
 	err = updateStatusInRedis(jm.RedisClient, batchID, batchStatus, 100*jm.Config.BatchStatusCacheDurSec)
 	if err != nil {
+		jm.Logger.Error(err).LogActivity("Failed to update status in Redis", map[string]any{
+			"batchId": batchID.String(),
+		})
 		return fmt.Errorf("failed to update status in redis: %v", err)
 	}
 
@@ -135,19 +188,43 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	// Get the processor for this app+op
 	processor, exists := jm.batchprocessorfuncs[batch.App+batch.Op]
 	if exists {
-		log.Printf("Calling MarkDone for batch %s", batchID)
+		jm.Logger.Info().LogActivity("Calling MarkDone for batch", map[string]any{
+			"batchId": batchID.String(),
+			"app": batch.App,
+			"op": batch.Op,
+			"processorType": "batch",
+		})
 		if err := processor.MarkDone(initBlock, context, details); err != nil {
-			log.Printf("MarkDone failed for batch %s: %v", batchID, err)
+			jm.Logger.Error(err).LogActivity("MarkDone failed for batch", map[string]any{
+				"batchId": batchID.String(),
+				"app": batch.App,
+				"op": batch.Op,
+			})
 			// We log the error but don't return it, as the batch is already complete
 		}
 	} else {
 		slowqueryprocessor, exists := jm.slowqueryprocessorfuncs[batch.App+batch.Op]
 		if exists {
-			log.Printf("Calling MarkDone for batch %s", batchID)
+			jm.Logger.Info().LogActivity("Calling MarkDone for slow query", map[string]any{
+				"batchId": batchID.String(),
+				"app": batch.App,
+				"op": batch.Op,
+				"processorType": "slowquery",
+			})
 			if err := slowqueryprocessor.MarkDone(initBlock, context, details); err != nil {
-				log.Printf("MarkDone failed for batch %s: %v", batchID, err)
+				jm.Logger.Error(err).LogActivity("MarkDone failed for slow query", map[string]any{
+					"batchId": batchID.String(),
+					"app": batch.App,
+					"op": batch.Op,
+				})
 				// We log the error but don't return it, as the batch is already complete
 			}
+		} else {
+			jm.Logger.Warn().LogActivity("No processor found for MarkDone", map[string]any{
+				"app": batch.App,
+				"op": batch.Op,
+				"batchId": batchID.String(),
+			})
 		}
 	}
 
@@ -207,6 +284,7 @@ func createTemporaryFiles(batchRows []batchsqlc.GetProcessedBatchRowsByBatchIDSo
 func cleanupTemporaryFiles(tmpFiles map[string]*os.File) {
 	for _, file := range tmpFiles {
 		if err := file.Close(); err != nil {
+			// Use standard log for cleanup errors as we don't have access to JobManager here
 			log.Printf("failed to close temporary file: %v", err)
 		}
 		if err := os.Remove(file.Name()); err != nil {
