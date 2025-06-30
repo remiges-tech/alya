@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/remiges-tech/logharbour/logharbour"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -35,7 +36,10 @@ func (m *mockBatchProcessor) MarkDone(initBlock InitBlock, context JSONstr, deta
 }
 
 func TestRegisterBatchProcessor(t *testing.T) {
-	jm := NewJobManager(nil, nil, nil, nil, nil)
+	// Create a test logger
+	loggerCtx := &logharbour.LoggerContext{}
+	logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())
+	jm := NewJobManager(nil, nil, nil, logger, nil)
 
 	// Test registering a new processor
 	err := jm.RegisterProcessorBatch("app1", "op1", &mockBatchProcessor{})
@@ -168,7 +172,10 @@ func TestBatchMarkDone(t *testing.T) {
 	defer redisClient.Close()
 
 	processor := &mockBatchProcessor{t: t}
-	jm := NewJobManager(db, redisClient, nil, nil, nil)
+	// Create a test logger
+	loggerCtx := &logharbour.LoggerContext{}
+	logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())
+	jm := NewJobManager(db, redisClient, nil, logger, nil)
 
 	err := jm.RegisterInitializer("testapp", &MockInitializer{})
 	assert.NoError(t, err)

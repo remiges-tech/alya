@@ -105,6 +105,9 @@ type JobManager struct {
 // NewJobManager creates a new instance of JobManager.
 // It initializes the necessary fields and returns a pointer to the JobManager.
 func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *minio.Client, logger *logharbour.Logger, config *JobManagerConfig) *JobManager {
+	if logger == nil {
+		panic("logger cannot be nil")
+	}
 	if config == nil {
 		config = &JobManagerConfig{}
 	}
@@ -117,9 +120,7 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 	}
 	if config.BatchOutputBucket == "" {
 		config.BatchOutputBucket = "alya-batch-output"
-		if logger != nil {
-			logger.Warn().LogActivity("No BatchOutputBucket configured, using default: alya-batch-output", nil)
-		}
+		logger.Warn().LogActivity("No BatchOutputBucket configured, using default: alya-batch-output", nil)
 	}
 
 	return &JobManager{
@@ -320,16 +321,14 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) bool {
 		if row.Status == batchsqlc.StatusEnumQueued {
 			// Update the status of the batch to "inprog"
 			// Log the status change
-			if jm.Logger != nil {
-				changeDetails := logharbour.ChangeInfo{
-					Entity: "BatchRow",
-					Op:     "StatusUpdated",
-					Changes: []logharbour.ChangeDetail{
-						{"status", batchsqlc.StatusEnumQueued, batchsqlc.StatusEnumInprog},
-					},
-				}
-				jm.Logger.LogDataChange("Batch row status updated to inprog", changeDetails)
+			changeDetails := logharbour.ChangeInfo{
+				Entity: "BatchRow",
+				Op:     "StatusUpdated",
+				Changes: []logharbour.ChangeDetail{
+					{"status", batchsqlc.StatusEnumQueued, batchsqlc.StatusEnumInprog},
+				},
 			}
+			jm.Logger.LogDataChange("Batch row status updated to inprog", changeDetails)
 
 			err := txQueries.UpdateBatchStatus(ctx, batchsqlc.UpdateBatchStatusParams{
 				ID:     row.Batch,
@@ -771,14 +770,12 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 	op := row.Op
 
 	// Log the start of error handling with context
-	if jm.Logger != nil {
-		jm.Logger.Info().LogActivity("Starting error handling for job", map[string]any{
-			"batchID": batchID.String(),
-			"app":     app,
-			"op":      op,
-			"rowID":   row.Rowid,
-		})
-	}
+	jm.Logger.Info().LogActivity("Starting error handling for job", map[string]any{
+		"batchID": batchID.String(),
+		"app":     app,
+		"op":      op,
+		"rowID":   row.Rowid,
+	})
 
 	// Handle different error types
 	switch {
@@ -812,14 +809,12 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 
 			// Mark all other rows with the same batch+app+op as failed
 			if failErr := jm.markAllRowsWithSameAppOpAsFailed(batchID, app, op, errCode, msgID, err.Error()); failErr != nil {
-				if jm.Logger != nil {
-					jm.Logger.Error(failErr).LogActivity("Error marking all rows with same batch+app+op as failed", map[string]any{
-						"batchID": batchID.String(),
-						"app":     app,
-						"op":      op,
-						"errCode": errCode,
-					})
-				}
+				jm.Logger.Error(failErr).LogActivity("Error marking all rows with same batch+app+op as failed", map[string]any{
+					"batchID": batchID.String(),
+					"app":     app,
+					"op":      op,
+					"errCode": errCode,
+				})
 			}
 		} else if errors.Is(err, ErrInitializerNotFound) || errors.Is(err, ErrInitializerFailed) {
 			// These errors affect all rows with the same app
@@ -841,13 +836,11 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 
 			// Mark all rows with the same batch+app as failed
 			if failErr := jm.markAllRowsWithSameAppAsFailed(batchID, app, errCode, msgID, err.Error()); failErr != nil {
-				if jm.Logger != nil {
-					jm.Logger.Error(failErr).LogActivity("Error marking all rows with same batch+app as failed", map[string]any{
-						"batchID": batchID.String(),
-						"app":     app,
-						"errCode": errCode,
-					})
-				}
+				jm.Logger.Error(failErr).LogActivity("Error marking all rows with same batch+app as failed", map[string]any{
+					"batchID": batchID.String(),
+					"app":     app,
+					"errCode": errCode,
+				})
 			}
 		} else {
 			// Unknown configuration error, just handle the current row
@@ -855,20 +848,7 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 			msgID = MsgIDUnknownConfigurationError
 			// Update the specific row status to failed
 			if rowErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); rowErr != nil {
-				if jm.Logger != nil {
-					jm.Logger.Error(rowErr).LogActivity("Error updating row status to failed", map[string]any{
-						"rowID":   row.Rowid,
-						"batchID": batchID.String(),
-						"errCode": errCode,
-					})
-				}
-			}
-		}
-
-		// Mark the current row as failed
-		if failErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); failErr != nil {
-			if jm.Logger != nil {
-				jm.Logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
+				jm.Logger.Error(rowErr).LogActivity("Error updating row status to failed", map[string]any{
 					"rowID":   row.Rowid,
 					"batchID": batchID.String(),
 					"errCode": errCode,
@@ -876,24 +856,29 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 			}
 		}
 
+		// Mark the current row as failed
+		if failErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); failErr != nil {
+			jm.Logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
+				"rowID":   row.Rowid,
+				"batchID": batchID.String(),
+				"errCode": errCode,
+			})
+		}
+
 		// Update the batch status to failed
 		if failErr := jm.updateBatchStatusToFailed(batchID); failErr != nil {
-			if jm.Logger != nil {
-				jm.Logger.Error(failErr).LogActivity("Error updating batch status to failed", map[string]any{
-					"batchID": batchID.String(),
-					"errCode": errCode,
-				})
-			}
+			jm.Logger.Error(failErr).LogActivity("Error updating batch status to failed", map[string]any{
+				"batchID": batchID.String(),
+				"errCode": errCode,
+			})
 		} else {
-			if jm.Logger != nil {
-				jm.Logger.Info().LogActivity("Batch marked as failed due to configuration error", map[string]any{
-					"batchID": batchID.String(),
-					"app":     app,
-					"op":      op,
-					"error":   err.Error(),
-					"errCode": errCode,
-				})
-			}
+			jm.Logger.Info().LogActivity("Batch marked as failed due to configuration error", map[string]any{
+				"batchID": batchID.String(),
+				"app":     app,
+				"op":      op,
+				"error":   err.Error(),
+				"errCode": errCode,
+			})
 		}
 
 	default:
@@ -905,23 +890,19 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 		// Mark just this row as failed
 		if failErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); failErr != nil {
 			log.Println("Error updating row status to failed:", failErr)
-			if jm.Logger != nil {
-				jm.Logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
-					"rowID":   row.Rowid,
-					"batchID": batchID.String(),
-					"errCode": errCode,
-				})
-			}
+			jm.Logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
+				"rowID":   row.Rowid,
+				"batchID": batchID.String(),
+				"errCode": errCode,
+			})
 		} else {
-			if jm.Logger != nil {
-				jm.Logger.Info().LogActivity("Row marked as failed due to processing error", map[string]any{
-					"rowID":   row.Rowid,
-					"batchID": batchID.String(),
-					"app":     app,
-					"op":      op,
-					"error":   err.Error(),
-				})
-			}
+			jm.Logger.Info().LogActivity("Row marked as failed due to processing error", map[string]any{
+				"rowID":   row.Rowid,
+				"batchID": batchID.String(),
+				"app":     app,
+				"op":      op,
+				"error":   err.Error(),
+			})
 		}
 	}
 }

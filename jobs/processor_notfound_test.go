@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"testing"
 	"time"
@@ -162,8 +163,11 @@ func TestJobManagerWithMissingProcessor(t *testing.T) {
 	redisClient := getRedisClient()
 	defer redisClient.Close()
 
+	// Create a test logger
+	loggerCtx := &logharbour.LoggerContext{}
+	logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())
 	// Create JobManager
-	jm := NewJobManager(db, redisClient, nil, nil, nil)
+	jm := NewJobManager(db, redisClient, nil, logger, nil)
 
 	// Register initializer only (no processor)
 	err := jm.RegisterInitializer("testapp", &MockInitializer{})

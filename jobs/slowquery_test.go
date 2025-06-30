@@ -2,11 +2,13 @@ package jobs_test
 
 import (
 	"errors"
+	"log"
 	"testing"
 
 	"github.com/remiges-tech/alya/jobs"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/wscutils"
+	"github.com/remiges-tech/logharbour/logharbour"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -26,7 +28,10 @@ func (m *mockSlowQueryProcessor) MarkDone(initBlock jobs.InitBlock, context jobs
 }
 
 func TestRegisterSlowQueryProcessor(t *testing.T) {
-	jm := jobs.NewJobManager(nil, nil, nil, nil, nil)
+	// Create a test logger
+	loggerCtx := &logharbour.LoggerContext{}
+	logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())
+	jm := jobs.NewJobManager(nil, nil, nil, logger, nil)
 
 	// Test registering a new processor
 	err := jm.RegisterProcessorSlowQuery("app1", "op1", &mockSlowQueryProcessor{})
