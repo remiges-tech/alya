@@ -294,6 +294,13 @@ func getBatchDetails(jm *JobManager, reqIDUUID uuid.UUID) (status batchsqlc.Stat
 		return batchStatus, result, nil, err
 	}
 
+	// TODO: This condition is too restrictive for failed queries. When a slow query fails,
+	// the res and outputfiles fields may be empty/NULL, causing this function to report
+	// "No batch records found" even though the batch exists. We should check for batch
+	// existence separately from checking if results are available. Consider:
+	// 1. Always return the batch status if the batch exists
+	// 2. Handle empty res/outputfiles gracefully for failed/aborted batches
+	// 3. Only report "No batch records found" when the query actually returns no rows
 	if len(batchData.Res) != 0 && len(batchData.Outputfiles) != 0 && batchData.Status != "" {
 		batchStatus = batchData.Status
 		outputFilesData = batchData.Outputfiles

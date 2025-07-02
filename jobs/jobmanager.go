@@ -1079,6 +1079,32 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 				"error":   err.Error(),
 			})
 		}
+
+		// Quick fix for slow queries: If this is a slow query (line=0), update the batch status immediately
+		// since slow queries have only one row per batch
+		if row.Line == 0 {
+			jm.Logger.Info().LogActivity("Updating batch status for failed slow query", map[string]any{
+				"batchID": batchID.String(),
+				"rowID":   row.Rowid,
+			})
+			
+			// Update the batch status to failed
+			// TODO: The current processSlowQuery implementation returns immediately on error without
+			// preserving any outputFiles that the processor might have generated. We should consider
+			// modifying processSlowQuery to capture and store partial output files even when the
+			// processor returns an error, as these might be useful for debugging or recovery.
+			err := jm.Queries.UpdateBatchResult(context.Background(), batchsqlc.UpdateBatchResultParams{
+				ID:          batchID,
+				Status:      batchsqlc.StatusEnumFailed,
+				Doneat:      pgtype.Timestamp{Time: time.Now(), Valid: true},
+				Outputfiles: nil, // No output files for failed slow query
+			})
+			if err != nil {
+				jm.Logger.Error(err).LogActivity("Error updating batch status for failed slow query", map[string]any{
+					"batchID": batchID.String(),
+				})
+			}
+		}
 	}
 }
 
