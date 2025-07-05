@@ -60,7 +60,7 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 	batchUUID, err := uuid.NewUUID()
 
 	// Start a transaction
-	tx, err := jm.Db.Begin(context.Background())
+	tx, err := jm.db.Begin(context.Background())
 	if err != nil {
 		return "", err
 	}
@@ -122,22 +122,22 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 	var batch batchsqlc.Batch
 	// Check REDIS for the batch status
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
-	statusVal, err := jm.RedisClient.Get(context.Background(), redisKey).Result()
+	statusVal, err := jm.redisClient.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
-		batch, err = jm.Queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
+		batch, err = jm.queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
 		if err != nil {
 			return batchsqlc.StatusEnumWait, nil, nil, 0, 0, 0, err
 		}
 		status = batch.Status
 
 		// Update REDIS with batches.status and an expiry duration
-		expirySec := jm.Config.BatchStatusCacheDurSec
+		expirySec := jm.config.BatchStatusCacheDurSec
 		if status == batchsqlc.StatusEnumSuccess || status == batchsqlc.StatusEnumFailed || status == batchsqlc.StatusEnumAborted {
 			// final status, set expiry to 100 times the cache duration
-			expirySec = 100 * jm.Config.BatchStatusCacheDurSec
+			expirySec = 100 * jm.config.BatchStatusCacheDurSec
 		}
-		err = updateStatusInRedis(jm.RedisClient, uuid.MustParse(batchID), status, expirySec)
+		err = updateStatusInRedis(jm.redisClient, uuid.MustParse(batchID), status, expirySec)
 		if err != nil {
 			log.Printf("Error setting REDIS key %s: %v", redisKey, err)
 		}
@@ -147,7 +147,7 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 		// Key exists in REDIS, use the status value from REDIS
 		status = batchsqlc.StatusEnum(statusVal)
 		// Fetch the batch record from the database
-		batch, err = jm.Queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
+		batch, err = jm.queries.GetBatchByID(context.Background(), uuid.MustParse(batchID))
 		if err != nil {
 			return batchsqlc.StatusEnumWait, nil, nil, 0, 0, 0, err
 		}
@@ -156,7 +156,7 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 	switch status {
 	case batchsqlc.StatusEnumAborted, batchsqlc.StatusEnumFailed, batchsqlc.StatusEnumSuccess:
 		// Fetch batch rows data
-		batchRowsData, err := jm.Queries.FetchBatchRowsForBatchDone(context.Background(), uuid.MustParse(batchID))
+		batchRowsData, err := jm.queries.FetchBatchRowsForBatchDone(context.Background(), uuid.MustParse(batchID))
 		if err != nil {
 			return status, nil, nil, 0, 0, 0, err
 		}
@@ -206,7 +206,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	}
 
 	// Start a transaction
-	tx, err := jm.Db.Begin(context.Background())
+	tx, err := jm.db.Begin(context.Background())
 	if err != nil {
 		return "", 0, 0, 0, fmt.Errorf("failed to start transaction: %v", err)
 	}
@@ -302,7 +302,7 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	}
 
 	// Update status in Redis
-	err = updateStatusInRedis(jm.RedisClient, batchUUID, batchsqlc.StatusEnumAborted, 100*jm.Config.BatchStatusCacheDurSec)
+	err = updateStatusInRedis(jm.redisClient, batchUUID, batchsqlc.StatusEnumAborted, 100*jm.config.BatchStatusCacheDurSec)
 	if err != nil {
 		log.Printf("failed to update status in Redis: %v", err)
 	}
@@ -317,7 +317,7 @@ func (jm *JobManager) BatchAppend(batchID string, batchinput []BatchInput_t, wai
 	}
 
 	// Check if the batch record exists in the batches table
-	batch, err := jm.Queries.GetBatchByID(context.Background(), batchUUID)
+	batch, err := jm.queries.GetBatchByID(context.Background(), batchUUID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, fmt.Errorf("batch not found: %v", err)
@@ -331,7 +331,7 @@ func (jm *JobManager) BatchAppend(batchID string, batchinput []BatchInput_t, wai
 	}
 
 	// Start a transaction
-	tx, err := jm.Db.Begin(context.Background())
+	tx, err := jm.db.Begin(context.Background())
 	if err != nil {
 		return 0, fmt.Errorf("failed to start transaction: %v", err)
 	}
@@ -378,7 +378,7 @@ func (jm *JobManager) BatchAppend(batchID string, batchinput []BatchInput_t, wai
 	}
 
 	// Get the total count of rows in batchrows for the batch
-	batchRows, err := jm.Queries.GetBatchRowsByBatchID(context.Background(), uuid.MustParse(batchID))
+	batchRows, err := jm.queries.GetBatchRowsByBatchID(context.Background(), uuid.MustParse(batchID))
 	if err != nil {
 		return 0, fmt.Errorf("failed to get batch rows: %v", err)
 	}
@@ -395,14 +395,14 @@ func (jm *JobManager) WaitOff(batchID string) (string, int, error) {
 	}
 
 	// Start a transaction
-	tx, err := jm.Db.Begin(context.Background())
+	tx, err := jm.db.Begin(context.Background())
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer tx.Rollback(context.Background())
 
 	// Perform SELECT FOR UPDATE on the batches table
-	batch, err := jm.Queries.GetBatchByID(context.Background(), batchUUID)
+	batch, err := jm.queries.GetBatchByID(context.Background(), batchUUID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", 0, fmt.Errorf("batch not found: %v", err)
@@ -413,7 +413,7 @@ func (jm *JobManager) WaitOff(batchID string) (string, int, error) {
 	// Check if the batch status is already "queued"
 	if batch.Status == batchsqlc.StatusEnumQueued {
 		// Get the total count of rows in batchrows for the batch
-		batchRows, err := jm.Queries.GetBatchRowsCount(context.Background(), batchUUID)
+		batchRows, err := jm.queries.GetBatchRowsCount(context.Background(), batchUUID)
 		if err != nil {
 			return "", 0, fmt.Errorf("failed to get batch rows: %v", err)
 		}
@@ -428,7 +428,7 @@ func (jm *JobManager) WaitOff(batchID string) (string, int, error) {
 	}
 
 	// Update the batch status to "queued"
-	err = jm.Queries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
+	err = jm.queries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
 		ID:     batchUUID,
 		Status: batchsqlc.StatusEnumQueued,
 	})
@@ -437,7 +437,7 @@ func (jm *JobManager) WaitOff(batchID string) (string, int, error) {
 	}
 
 	// Get the total count of rows in batchrows for the batch
-	nrows, err := jm.Queries.GetBatchRowsCount(context.Background(), batchUUID)
+	nrows, err := jm.queries.GetBatchRowsCount(context.Background(), batchUUID)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to get batch rows count: %v", err)
 	}

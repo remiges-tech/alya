@@ -37,7 +37,7 @@ func (jm *JobManager) RegisterProcessorSlowQuery(app string, op string, p SlowQu
 
 func (jm *JobManager) SlowQuerySubmit(app, op string, inputContext, input JSONstr) (reqID string, err error) {
 	// Start a database transaction
-	tx, err := jm.Db.Begin(context.Background())
+	tx, err := jm.db.Begin(context.Background())
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +134,7 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		result, _ := NewJSONstr("")
 		return BatchTryLater, result, nil, outputfiles, fmt.Errorf("invalid request ID: %v", err)
 	}
-	statusVal, err := jm.RedisClient.Get(context.Background(), redisKey).Result()
+	statusVal, err := jm.redisClient.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
 		batchStatus, resultData, outputfiles, err := getBatchDetails(jm, reqIDUUID)
@@ -155,12 +155,12 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		status := getBatchStatus(enumStatus)
 
 		// Insert/update REDIS with 100x expiry if not found earlier
-		expirySec := jm.Config.BatchStatusCacheDurSec
+		expirySec := jm.config.BatchStatusCacheDurSec
 		if status == BatchSuccess || status == BatchFailed || status == BatchAborted {
-			expirySec = 100 * jm.Config.BatchStatusCacheDurSec
+			expirySec = 100 * jm.config.BatchStatusCacheDurSec
 		}
 
-		updateStatusAndOutputFilesDataInRedis(jm.RedisClient, reqIDUUID, batchStatus, outputfiles, resultData.String(), expirySec)
+		updateStatusAndOutputFilesDataInRedis(jm.redisClient, reqIDUUID, batchStatus, outputfiles, resultData.String(), expirySec)
 
 		// Return the formatted result, messages, and nil for error
 		return status, result, messages, outputfiles, nil
@@ -173,13 +173,13 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 		// Key exists in REDIS, determine the action based on its value
 
 		// Fetch the result and outputFiles from Redis
-		resultVal, err := jm.RedisClient.Get(context.Background(), redisResultKey).Result()
+		resultVal, err := jm.redisClient.Get(context.Background(), redisResultKey).Result()
 		if err != nil {
 			result, _ := NewJSONstr("")
 			return BatchTryLater, result, nil, outputfiles, err
 		}
 
-		outputFilesVal, err := jm.RedisClient.Get(context.Background(), redisOutputFilesKey).Result()
+		outputFilesVal, err := jm.redisClient.Get(context.Background(), redisOutputFilesKey).Result()
 		if err != nil {
 			result, _ := NewJSONstr("")
 			return BatchTryLater, result, nil, outputfiles, err
@@ -213,14 +213,14 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	}
 
 	// Start a transaction
-	tx, err := jm.Db.Begin(context.Background())
+	tx, err := jm.db.Begin(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer tx.Rollback(context.Background())
 
 	// Perform SELECT FOR UPDATE on batches and batchrows for the given request ID
-	batch, err := jm.Queries.GetBatchByID(context.Background(), reqIDUUID)
+	batch, err := jm.queries.GetBatchByID(context.Background(), reqIDUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get batch by ID: %v", err)
 	}
@@ -233,7 +233,7 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	}
 
 	// Update the batch status to aborted and set doneat timestamp
-	err = jm.Queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
+	err = jm.queries.UpdateBatchSummary(context.Background(), batchsqlc.UpdateBatchSummaryParams{
 		ID:     reqIDUUID,
 		Status: batchsqlc.StatusEnumAborted,
 		Doneat: pgtype.Timestamp{Time: time.Now(), Valid: true},
@@ -243,7 +243,7 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	}
 
 	// Fetch the pending batchrows records associated with the batch ID
-	pendingRows, err := jm.Queries.GetPendingBatchRows(context.Background(), reqIDUUID)
+	pendingRows, err := jm.queries.GetPendingBatchRows(context.Background(), reqIDUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get pending batchrows: %v", err)
 	}
@@ -255,7 +255,7 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	}
 
 	// Update the batchrows status to aborted for rows with status queued or inprog
-	err = jm.Queries.UpdateBatchRowsStatus(context.Background(), batchsqlc.UpdateBatchRowsStatusParams{
+	err = jm.queries.UpdateBatchRowsStatus(context.Background(), batchsqlc.UpdateBatchRowsStatusParams{
 		Status:  batchsqlc.StatusEnumAborted,
 		Column2: rowids,
 	})
@@ -271,8 +271,8 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 
 	// Set the Redis batch status record to aborted with an expiry time
 	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
-	expiry := time.Duration(jm.Config.BatchStatusCacheDurSec*100) * time.Second
-	err = jm.RedisClient.Set(context.Background(), redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
+	expiry := time.Duration(jm.config.BatchStatusCacheDurSec*100) * time.Second
+	err = jm.redisClient.Set(context.Background(), redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
 	if err != nil {
 		log.Printf("failed to set Redis batch status: %v", err)
 	}
@@ -287,7 +287,7 @@ func getBatchDetails(jm *JobManager, reqIDUUID uuid.UUID) (status batchsqlc.Stat
 		outputFilesData, resultData []byte
 	)
 
-	batchData, err := jm.Queries.GetBatchStatusAndOutputFiles(context.Background(), reqIDUUID)
+	batchData, err := jm.queries.GetBatchStatusAndOutputFiles(context.Background(), reqIDUUID)
 	if err != nil {
 		log.Printf("getBatchDetails GetBatchStatusAndOutputFiles failed for request %v: %v", reqIDUUID, err)
 		result, _ = NewJSONstr("")

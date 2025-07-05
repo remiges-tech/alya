@@ -90,16 +90,16 @@ var (
 // 3. Update the corresponding batchrows and batches records with the results
 // 4. Check for completed batches and summarize them
 type JobManager struct {
-	Db                      *pgxpool.Pool
-	Queries                 batchsqlc.Querier
-	RedisClient             *redis.Client
-	ObjStore                objstore.ObjectStore
+	db                      *pgxpool.Pool
+	queries                 batchsqlc.Querier
+	redisClient             *redis.Client
+	objStore                objstore.ObjectStore
 	initblocks              map[string]InitBlock
 	initfuncs               map[string]Initializer
 	slowqueryprocessorfuncs map[string]SlowQueryProcessor
 	batchprocessorfuncs     map[string]BatchProcessor
-	Logger                  *logharbour.Logger
-	Config                  JobManagerConfig
+	logger                  *logharbour.Logger
+	config                  JobManagerConfig
 }
 
 // NewJobManager creates a new instance of JobManager.
@@ -124,16 +124,16 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 	}
 
 	return &JobManager{
-		Db:                      db,
-		Queries:                 batchsqlc.New(db),
-		RedisClient:             redisClient,
-		ObjStore:                objstore.NewMinioObjectStore(minioClient),
+		db:                      db,
+		queries:                 batchsqlc.New(db),
+		redisClient:             redisClient,
+		objStore:                objstore.NewMinioObjectStore(minioClient),
 		initblocks:              make(map[string]InitBlock),
 		initfuncs:               make(map[string]Initializer),
 		slowqueryprocessorfuncs: make(map[string]SlowQueryProcessor),
 		batchprocessorfuncs:     make(map[string]BatchProcessor),
-		Logger:                  logger,
-		Config:                  *config,
+		logger:                  logger,
+		config:                  *config,
 	}
 }
 
@@ -221,7 +221,7 @@ func (jm *JobManager) Run() {
 			defer func() {
 				if r := recover(); r != nil {
 					consecutivePanics++
-					jm.Logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in JobManager.Run", map[string]any{
+					jm.logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in JobManager.Run", map[string]any{
 						"panic": fmt.Sprintf("%v", r),
 						"stackTrace": string(debug.Stack()),
 						"consecutivePanics": consecutivePanics,
@@ -231,7 +231,7 @@ func (jm *JobManager) Run() {
 					// If too many consecutive panics, re-panic to crash the goroutine
 					// This indicates a systemic issue that requires intervention
 					if consecutivePanics >= maxConsecutivePanics {
-						jm.Logger.Error(nil).LogActivity("Circuit breaker triggered - too many consecutive panics", map[string]any{
+						jm.logger.Error(nil).LogActivity("Circuit breaker triggered - too many consecutive panics", map[string]any{
 							"consecutivePanics": consecutivePanics,
 							"threshold": maxConsecutivePanics,
 						})
@@ -248,7 +248,7 @@ func (jm *JobManager) Run() {
 			// If we reach here, the iteration completed successfully
 			// Reset the panic counter
 			if consecutivePanics > 0 {
-				jm.Logger.Info().LogActivity("JobManager iteration succeeded, resetting panic counter", map[string]any{
+				jm.logger.Info().LogActivity("JobManager iteration succeeded, resetting panic counter", map[string]any{
 					"previousConsecutivePanics": consecutivePanics,
 				})
 				consecutivePanics = 0
@@ -275,7 +275,7 @@ func (jm *JobManager) RunWithContext(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			// Context was canceled, exit cleanly
-			jm.Logger.Info().LogActivity("JobManager exiting due to context cancellation", nil)
+			jm.logger.Info().LogActivity("JobManager exiting due to context cancellation", nil)
 			return
 		default:
 			// Wrap each iteration with panic recovery and circuit breaker
@@ -283,7 +283,7 @@ func (jm *JobManager) RunWithContext(ctx context.Context) {
 				defer func() {
 					if r := recover(); r != nil {
 						consecutivePanics++
-						jm.Logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in JobManager.RunWithContext", map[string]any{
+						jm.logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in JobManager.RunWithContext", map[string]any{
 							"panic": fmt.Sprintf("%v", r),
 							"stackTrace": string(debug.Stack()),
 							"consecutivePanics": consecutivePanics,
@@ -292,7 +292,7 @@ func (jm *JobManager) RunWithContext(ctx context.Context) {
 						
 						// Circuit breaker: exit if too many consecutive panics
 						if consecutivePanics >= maxConsecutivePanics {
-							jm.Logger.Error(nil).LogActivity("Circuit breaker triggered - too many consecutive panics", map[string]any{
+							jm.logger.Error(nil).LogActivity("Circuit breaker triggered - too many consecutive panics", map[string]any{
 								"consecutivePanics": consecutivePanics,
 								"threshold": maxConsecutivePanics,
 							})
@@ -307,7 +307,7 @@ func (jm *JobManager) RunWithContext(ctx context.Context) {
 				
 				// Success - reset panic counter
 				if consecutivePanics > 0 {
-					jm.Logger.Info().LogActivity("JobManager iteration succeeded, resetting panic counter", map[string]any{
+					jm.logger.Info().LogActivity("JobManager iteration succeeded, resetting panic counter", map[string]any{
 						"previousConsecutivePanics": consecutivePanics,
 					})
 					consecutivePanics = 0
@@ -352,7 +352,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	// let the supervisor layer (Run/RunWithContext) decide whether to exit.
 	defer func() {
 		if r := recover(); r != nil {
-			jm.Logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in RunOneIterationWithContext", map[string]any{
+			jm.logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in RunOneIterationWithContext", map[string]any{
 				"panic": fmt.Sprintf("%v", r),
 				"stackTrace": string(debug.Stack()),
 			})
@@ -368,10 +368,10 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	}
 
 	// Begin a transaction
-	jm.Logger.Debug0().LogActivity("Starting transaction for row status updates", nil)
-	tx, err := jm.Db.Begin(ctx)
+	jm.logger.Debug0().LogActivity("Starting transaction for row status updates", nil)
+	tx, err := jm.db.Begin(ctx)
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error starting transaction", nil)
+		jm.logger.Error(err).LogActivity("Error starting transaction", nil)
 		return false
 	}
 	// Critical: Ensure transaction is rolled back if not committed.
@@ -382,7 +382,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	defer func() {
 		if tx != nil {
 			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && rollbackErr.Error() != "tx is closed" {
-				jm.Logger.Debug0().LogActivity("Transaction rollback attempted", map[string]any{
+				jm.logger.Debug0().LogActivity("Transaction rollback attempted", map[string]any{
 					"error": rollbackErr.Error(),
 				})
 			}
@@ -393,30 +393,30 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	txQueries := batchsqlc.New(tx)
 
 	// Fetch a block of rows from the database
-	jm.Logger.Debug0().LogActivity("Fetching block of rows", map[string]any{
+	jm.logger.Debug0().LogActivity("Fetching block of rows", map[string]any{
 		"status": "queued",
-		"limit": jm.Config.BatchChunkNRows,
+		"limit": jm.config.BatchChunkNRows,
 	})
 	blockOfRows, err := txQueries.FetchBlockOfRows(ctx, batchsqlc.FetchBlockOfRowsParams{
 		Status: batchsqlc.StatusEnumQueued,
-		Limit:  int32(jm.Config.BatchChunkNRows),
+		Limit:  int32(jm.config.BatchChunkNRows),
 	})
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error fetching block of rows", nil)
+		jm.logger.Error(err).LogActivity("Error fetching block of rows", nil)
 		tx.Rollback(ctx)
 		return false
 	}
 
 	// If no rows are found, rollback and return false
 	if len(blockOfRows) == 0 {
-		jm.Logger.Debug0().LogActivity("No rows found in queue, rolling back transaction", nil)
+		jm.logger.Debug0().LogActivity("No rows found in queue, rolling back transaction", nil)
 		if err := tx.Rollback(ctx); err != nil {
-			jm.Logger.Error(err).LogActivity("Error rolling back transaction", nil)
+			jm.logger.Error(err).LogActivity("Error rolling back transaction", nil)
 		}
 		return false
 	}
 	
-	jm.Logger.Info().LogActivity("Processing batch rows", map[string]any{
+	jm.logger.Info().LogActivity("Processing batch rows", map[string]any{
 		"rowCount": len(blockOfRows),
 	})
 
@@ -457,7 +457,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 
 	// Step 2: Bulk update batch statuses (only for batches that need it)
 	if len(batchIDs) > 0 {
-		jm.Logger.Debug0().LogActivity("Bulk updating batch statuses to inprog", map[string]any{
+		jm.logger.Debug0().LogActivity("Bulk updating batch statuses to inprog", map[string]any{
 			"batchCount": len(batchIDs),
 			"batchIDs": batchIDs,
 		})
@@ -467,7 +467,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 			Status:   batchsqlc.StatusEnumInprog,
 		})
 		if err != nil {
-			jm.Logger.Error(err).LogActivity("Error bulk updating batch statuses", map[string]any{
+			jm.logger.Error(err).LogActivity("Error bulk updating batch statuses", map[string]any{
 				"batchCount": len(batchIDs),
 			})
 			tx.Rollback(ctx)
@@ -482,11 +482,11 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 				{"status", batchsqlc.StatusEnumQueued, batchsqlc.StatusEnumInprog},
 			},
 		}
-		jm.Logger.LogDataChange(fmt.Sprintf("%d batch statuses updated to inprog", len(batchIDs)), changeDetails)
+		jm.logger.LogDataChange(fmt.Sprintf("%d batch statuses updated to inprog", len(batchIDs)), changeDetails)
 	}
 
 	// Step 3: Bulk update all row statuses
-	jm.Logger.Debug0().LogActivity("Bulk updating batch row statuses to inprog", map[string]any{
+	jm.logger.Debug0().LogActivity("Bulk updating batch row statuses to inprog", map[string]any{
 		"rowCount": len(rowIDs),
 	})
 	
@@ -495,7 +495,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		Status: batchsqlc.StatusEnumInprog,
 	})
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error bulk updating batch row statuses", map[string]any{
+		jm.logger.Error(err).LogActivity("Error bulk updating batch row statuses", map[string]any{
 			"rowCount": len(rowIDs),
 		})
 		tx.Rollback(ctx)
@@ -510,12 +510,12 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		return false
 	}
 
-	jm.Logger.Debug0().LogActivity("Committing transaction for status updates", map[string]any{
+	jm.logger.Debug0().LogActivity("Committing transaction for status updates", map[string]any{
 		"rowCount": len(blockOfRows),
 	})
 	err = tx.Commit(ctx)
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error committing transaction", nil)
+		jm.logger.Error(err).LogActivity("Error committing transaction", nil)
 		return false
 	}
 	// Set tx to nil to prevent rollback in defer
@@ -535,8 +535,8 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		}
 
 		// send queries instance, not transaction
-		q := jm.Queries
-		jm.Logger.Debug0().LogActivity("Processing row", map[string]any{
+		q := jm.queries
+		jm.logger.Debug0().LogActivity("Processing row", map[string]any{
 			"rowId": row.Rowid,
 			"batchId": row.Batch.String(),
 			"app": row.App,
@@ -545,7 +545,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		})
 		_, err = jm.processRow(q, row)
 		if err != nil {
-			jm.Logger.Error(err).LogActivity("Error processing row", map[string]any{
+			jm.logger.Error(err).LogActivity("Error processing row", map[string]any{
 				"rowId": row.Rowid,
 				"batchId": row.Batch.String(),
 				"app": row.App,
@@ -566,10 +566,10 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	}
 
 	// create a new transaction for the summarizeCompletedBatches
-	jm.Logger.Debug0().LogActivity("Starting transaction for batch summarization", nil)
-	tx, err = jm.Db.Begin(ctx)
+	jm.logger.Debug0().LogActivity("Starting transaction for batch summarization", nil)
+	tx, err = jm.db.Begin(ctx)
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error starting transaction for summarization", nil)
+		jm.logger.Error(err).LogActivity("Error starting transaction for summarization", nil)
 		return true // Return true because we did process rows
 	}
 
@@ -582,11 +582,11 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	}
 
 	// Check for completed batches and summarize them
-	jm.Logger.Debug0().LogActivity("Checking for completed batches", map[string]any{
+	jm.logger.Debug0().LogActivity("Checking for completed batches", map[string]any{
 		"batchCount": len(batchSet),
 	})
 	if err := jm.summarizeCompletedBatches(txQueries, batchSet); err != nil {
-		jm.Logger.Error(err).LogActivity("Error summarizing completed batches", nil)
+		jm.logger.Error(err).LogActivity("Error summarizing completed batches", nil)
 		tx.Rollback(ctx)
 		return true // Return true because we did process rows
 	}
@@ -600,10 +600,10 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		return true // Return true because we did process rows
 	}
 
-	jm.Logger.Debug0().LogActivity("Committing transaction for batch summarization", nil)
+	jm.logger.Debug0().LogActivity("Committing transaction for batch summarization", nil)
 	err = tx.Commit(ctx)
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error committing summarization transaction", nil)
+		jm.logger.Error(err).LogActivity("Error committing summarization transaction", nil)
 		return false
 	}
 	// Set tx to nil to prevent rollback in defer
@@ -629,7 +629,7 @@ func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.Fetc
 	// the row status appropriately. This is pure error handling, not health decisions.
 	defer func() {
 		if r := recover(); r != nil {
-			jm.Logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in processRow", map[string]any{
+			jm.logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in processRow", map[string]any{
 				"panic": fmt.Sprintf("%v", r),
 				"rowId": row.Rowid,
 				"batchId": row.Batch.String(),
@@ -645,7 +645,7 @@ func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.Fetc
 
 	// Process the row based on its type (slow query or batch job)
 	if row.Line == 0 {
-		jm.Logger.Debug0().LogActivity("Processing slow query", map[string]any{
+		jm.logger.Debug0().LogActivity("Processing slow query", map[string]any{
 			"rowId": row.Rowid,
 			"batchId": row.Batch.String(),
 			"app": row.App,
@@ -653,7 +653,7 @@ func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.Fetc
 		})
 		return jm.processSlowQuery(txQueries, row)
 	} else {
-		jm.Logger.Debug0().LogActivity("Processing batch job", map[string]any{
+		jm.logger.Debug0().LogActivity("Processing batch job", map[string]any{
 			"rowId": row.Rowid,
 			"batchId": row.Batch.String(),
 			"app": row.App,
@@ -670,7 +670,7 @@ func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.Fetc
 // with the processing results. If the processor is not found or the processing fails, an error is returned.
 
 func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
-	jm.Logger.Info().LogActivity("Starting slow query processing", map[string]any{
+	jm.logger.Info().LogActivity("Starting slow query processing", map[string]any{
 		"rowId": row.Rowid,
 		"batchId": row.Batch.String(),
 		"app": row.App,
@@ -700,7 +700,7 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 	// Get or create the initblock for the app
 	initBlock, err := jm.getOrCreateInitBlock(string(row.App))
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error getting or creating initblock", map[string]any{
+		jm.logger.Error(err).LogActivity("Error getting or creating initblock", map[string]any{
 			"app": row.App,
 			"rowId": row.Rowid,
 		})
@@ -710,26 +710,26 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 	// Process the slow query using the registered processor
 	rowContext, err := NewJSONstr(string(row.Context))
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error parsing row context for slow query", map[string]any{
+		jm.logger.Error(err).LogActivity("Error parsing row context for slow query", map[string]any{
 			"rowId": row.Rowid,
 		})
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 	}
 	rowInput, err := NewJSONstr(string(row.Input))
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error parsing row input for slow query", map[string]any{
+		jm.logger.Error(err).LogActivity("Error parsing row input for slow query", map[string]any{
 			"rowId": row.Rowid,
 		})
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 	}
 	
-	jm.Logger.Debug0().LogActivity("Executing slow query processor", map[string]any{
+	jm.logger.Debug0().LogActivity("Executing slow query processor", map[string]any{
 		"rowId": row.Rowid,
 		"processor": fmt.Sprintf("%T", processor),
 	})
 	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, rowContext, rowInput)
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Slow query processor failed", map[string]any{
+		jm.logger.Error(err).LogActivity("Slow query processor failed", map[string]any{
 			"rowId": row.Rowid,
 			"app": row.App,
 			"op": row.Op,
@@ -737,7 +737,7 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing slow query for app %s and op %s: %v", row.App, row.Op, err)
 	}
 	
-	jm.Logger.Info().LogActivity("Slow query processor completed", map[string]any{
+	jm.logger.Info().LogActivity("Slow query processor completed", map[string]any{
 		"rowId": row.Rowid,
 		"status": status,
 		"hasMessages": len(messages) > 0,
@@ -745,12 +745,12 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 	})
 
 	// Update the corresponding batchrows and batches records with the results
-	jm.Logger.Debug0().LogActivity("Updating slow query result", map[string]any{
+	jm.logger.Debug0().LogActivity("Updating slow query result", map[string]any{
 		"rowId": row.Rowid,
 		"status": status,
 	})
 	if err := updateSlowQueryResult(txQueries, row, status, result, messages, outputFiles); err != nil {
-		jm.Logger.Error(err).LogActivity("Error updating slow query result", map[string]any{
+		jm.logger.Error(err).LogActivity("Error updating slow query result", map[string]any{
 			"rowId": row.Rowid,
 			"app": row.App,
 			"op": row.Op,
@@ -758,7 +758,7 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating slow query result for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
-	jm.Logger.Info().LogActivity("Slow query completed successfully", map[string]any{
+	jm.logger.Info().LogActivity("Slow query completed successfully", map[string]any{
 		"rowId": row.Rowid,
 		"batchId": row.Batch.String(),
 		"status": status,
@@ -771,7 +771,7 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 // It then calls updateBatchJobResult to update the corresponding batchrows record with the processing results.
 // If the processor is not found or the processing fails, an error is returned.
 func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
-	jm.Logger.Info().LogActivity("Starting batch job processing", map[string]any{
+	jm.logger.Info().LogActivity("Starting batch job processing", map[string]any{
 		"rowId": row.Rowid,
 		"batchId": row.Batch.String(),
 		"app": row.App,
@@ -781,7 +781,7 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 	// Retrieve the BatchProcessor for the app and op
 	p, exists := jm.batchprocessorfuncs[string(row.App)+row.Op]
 	if !exists {
-		jm.Logger.Warn().LogActivity("Batch processor not found", map[string]any{
+		jm.logger.Warn().LogActivity("Batch processor not found", map[string]any{
 			"app": row.App,
 			"op": row.Op,
 			"rowId": row.Rowid,
@@ -807,7 +807,7 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 	// Get or create the initblock for the app
 	initBlock, err := jm.getOrCreateInitBlock(string(row.App))
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error getting or creating initblock", map[string]any{
+		jm.logger.Error(err).LogActivity("Error getting or creating initblock", map[string]any{
 			"app": row.App,
 			"rowId": row.Rowid,
 		})
@@ -817,27 +817,27 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 	// Process the batch job using the registered processor
 	rowContext, err := NewJSONstr(string(row.Context))
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error parsing row context for batch job", map[string]any{
+		jm.logger.Error(err).LogActivity("Error parsing row context for batch job", map[string]any{
 			"rowId": row.Rowid,
 		})
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 	}
 	rowInput, err := NewJSONstr(string(row.Input))
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Error parsing row input for batch job", map[string]any{
+		jm.logger.Error(err).LogActivity("Error parsing row input for batch job", map[string]any{
 			"rowId": row.Rowid,
 		})
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error processing batch job for app %s and op %s: %v", row.App, row.Op, err)
 	}
 	
-	jm.Logger.Debug0().LogActivity("Executing batch processor", map[string]any{
+	jm.logger.Debug0().LogActivity("Executing batch processor", map[string]any{
 		"rowId": row.Rowid,
 		"processor": fmt.Sprintf("%T", processor),
 		"line": row.Line,
 	})
 	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, rowContext, int(row.Line), rowInput)
 	if err != nil {
-		jm.Logger.Error(err).LogActivity("Batch processor failed", map[string]any{
+		jm.logger.Error(err).LogActivity("Batch processor failed", map[string]any{
 			"rowId": row.Rowid,
 			"app": row.App,
 			"op": row.Op,
@@ -845,7 +845,7 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 		})
 	}
 	
-	jm.Logger.Info().LogActivity("Batch processor completed", map[string]any{
+	jm.logger.Info().LogActivity("Batch processor completed", map[string]any{
 		"rowId": row.Rowid,
 		"status": status,
 		"hasMessages": len(messages) > 0,
@@ -858,12 +858,12 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 	// }
 
 	// Update the corresponding batchrows record with the results
-	jm.Logger.Debug0().LogActivity("Updating batch job result", map[string]any{
+	jm.logger.Debug0().LogActivity("Updating batch job result", map[string]any{
 		"rowId": row.Rowid,
 		"status": status,
 	})
 	if err := jm.updateBatchJobResult(txQueries, row, status, result, messages, blobRows); err != nil {
-		jm.Logger.Error(err).LogActivity("Error updating batch job result", map[string]any{
+		jm.logger.Error(err).LogActivity("Error updating batch job result", map[string]any{
 			"rowId": row.Rowid,
 			"app": row.App,
 			"op": row.Op,
@@ -871,7 +871,7 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
 	}
 
-	jm.Logger.Info().LogActivity("Batch job completed successfully", map[string]any{
+	jm.logger.Info().LogActivity("Batch job completed successfully", map[string]any{
 		"rowId": row.Rowid,
 		"batchId": row.Batch.String(),
 		"status": status,
@@ -950,7 +950,7 @@ func (jm *JobManager) updateBatchJobResult(txQueries batchsqlc.Querier, row batc
 	}
 
 	// Update the batchrows record with the results
-	jm.Logger.LogDataChange("Batch row updated", logharbour.ChangeInfo{
+	jm.logger.LogDataChange("Batch row updated", logharbour.ChangeInfo{
 		Entity: "BatchRow",
 		Op:     "Update",
 		Changes: []logharbour.ChangeDetail{
@@ -974,15 +974,15 @@ func (jm *JobManager) updateBatchJobResult(txQueries batchsqlc.Querier, row batc
 }
 
 func (jm *JobManager) summarizeCompletedBatches(q *batchsqlc.Queries, batchSet map[uuid.UUID]bool) error {
-	jm.Logger.Debug0().LogActivity("Summarizing completed batches", map[string]any{
+	jm.logger.Debug0().LogActivity("Summarizing completed batches", map[string]any{
 		"batchCount": len(batchSet),
 	})
 	for batchID := range batchSet {
-		jm.Logger.Debug0().LogActivity("Summarizing batch", map[string]any{
+		jm.logger.Debug0().LogActivity("Summarizing batch", map[string]any{
 			"batchId": batchID.String(),
 		})
 		if err := jm.summarizeBatch(q, batchID); err != nil {
-			jm.Logger.Error(err).LogActivity("Error summarizing batch", map[string]any{
+			jm.logger.Error(err).LogActivity("Error summarizing batch", map[string]any{
 				"batchId": batchID.String(),
 			})
 			continue
@@ -997,7 +997,7 @@ func (jm *JobManager) closeInitBlocks() {
 		if initBlock != nil {
 			if closer, ok := initBlock.(interface{ Close() error }); ok {
 				if err := closer.Close(); err != nil {
-					jm.Logger.Error(err).LogActivity("Error closing initblock", map[string]any{
+					jm.logger.Error(err).LogActivity("Error closing initblock", map[string]any{
 						"app": app,
 					})
 				}
@@ -1029,7 +1029,7 @@ func (jm *JobManager) updateRowStatusToFailed(rowid int64, errCode string, msgID
 	}
 
 	// Update the batch row using the BatchJob update function (since it includes message field)
-	err = jm.Queries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
+	err = jm.queries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
 		Rowid:    rowid,
 		Status:   batchsqlc.StatusEnumFailed,
 		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
@@ -1060,7 +1060,7 @@ func (jm *JobManager) markAllRowsWithSameAppOpAsFailed(batchID uuid.UUID, app, o
 
 	// Update all rows in the batch with this app+op that are not already completed
 	// using the sqlc-generated function
-	err = jm.Queries.UpdateBatchRowsByBatchAppOp(context.Background(), batchsqlc.UpdateBatchRowsByBatchAppOpParams{
+	err = jm.queries.UpdateBatchRowsByBatchAppOp(context.Background(), batchsqlc.UpdateBatchRowsByBatchAppOpParams{
 		Status:   batchsqlc.StatusEnumFailed,
 		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Messages: messagesJSON,
@@ -1075,7 +1075,7 @@ func (jm *JobManager) markAllRowsWithSameAppOpAsFailed(batchID uuid.UUID, app, o
 // updateBatchStatusToFailed updates a batch's status to failed.
 func (jm *JobManager) updateBatchStatusToFailed(batchID uuid.UUID) error {
 	// Update the batch status to failed
-	err := jm.Queries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
+	err := jm.queries.UpdateBatchStatus(context.Background(), batchsqlc.UpdateBatchStatusParams{
 		ID:     batchID,
 		Status: batchsqlc.StatusEnumFailed,
 		Doneat: pgtype.Timestamp{Time: time.Now(), Valid: true},
@@ -1083,11 +1083,11 @@ func (jm *JobManager) updateBatchStatusToFailed(batchID uuid.UUID) error {
 
 	if err == nil {
 		// Also update Redis cache if applicable
-		if jm.RedisClient != nil {
-			cacheErr := updateStatusInRedis(jm.RedisClient, batchID, batchsqlc.StatusEnumFailed,
-				jm.Config.BatchStatusCacheDurSec)
+		if jm.redisClient != nil {
+			cacheErr := updateStatusInRedis(jm.redisClient, batchID, batchsqlc.StatusEnumFailed,
+				jm.config.BatchStatusCacheDurSec)
 			if cacheErr != nil {
-				jm.Logger.Warn().LogActivity("Failed to update Redis cache for batch", map[string]any{
+				jm.logger.Warn().LogActivity("Failed to update Redis cache for batch", map[string]any{
 					"batchId": batchID.String(),
 					"error": cacheErr.Error(),
 				})
@@ -1106,7 +1106,7 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 	op := row.Op
 
 	// Log the start of error handling with context
-	jm.Logger.Info().LogActivity("Starting error handling for job", map[string]any{
+	jm.logger.Info().LogActivity("Starting error handling for job", map[string]any{
 		"batchID": batchID.String(),
 		"app":     app,
 		"op":      op,
@@ -1145,7 +1145,7 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 
 			// Mark all other rows with the same batch+app+op as failed
 			if failErr := jm.markAllRowsWithSameAppOpAsFailed(batchID, app, op, errCode, msgID, err.Error()); failErr != nil {
-				jm.Logger.Error(failErr).LogActivity("Error marking all rows with same batch+app+op as failed", map[string]any{
+				jm.logger.Error(failErr).LogActivity("Error marking all rows with same batch+app+op as failed", map[string]any{
 					"batchID": batchID.String(),
 					"app":     app,
 					"op":      op,
@@ -1172,7 +1172,7 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 
 			// Mark all rows with the same batch+app as failed
 			if failErr := jm.markAllRowsWithSameAppAsFailed(batchID, app, errCode, msgID, err.Error()); failErr != nil {
-				jm.Logger.Error(failErr).LogActivity("Error marking all rows with same batch+app as failed", map[string]any{
+				jm.logger.Error(failErr).LogActivity("Error marking all rows with same batch+app as failed", map[string]any{
 					"batchID": batchID.String(),
 					"app":     app,
 					"errCode": errCode,
@@ -1184,7 +1184,7 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 			msgID = MsgIDUnknownConfigurationError
 			// Update the specific row status to failed
 			if rowErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); rowErr != nil {
-				jm.Logger.Error(rowErr).LogActivity("Error updating row status to failed", map[string]any{
+				jm.logger.Error(rowErr).LogActivity("Error updating row status to failed", map[string]any{
 					"rowID":   row.Rowid,
 					"batchID": batchID.String(),
 					"errCode": errCode,
@@ -1194,7 +1194,7 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 
 		// Mark the current row as failed
 		if failErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); failErr != nil {
-			jm.Logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
+			jm.logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
 				"rowID":   row.Rowid,
 				"batchID": batchID.String(),
 				"errCode": errCode,
@@ -1203,12 +1203,12 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 
 		// Update the batch status to failed
 		if failErr := jm.updateBatchStatusToFailed(batchID); failErr != nil {
-			jm.Logger.Error(failErr).LogActivity("Error updating batch status to failed", map[string]any{
+			jm.logger.Error(failErr).LogActivity("Error updating batch status to failed", map[string]any{
 				"batchID": batchID.String(),
 				"errCode": errCode,
 			})
 		} else {
-			jm.Logger.Info().LogActivity("Batch marked as failed due to configuration error", map[string]any{
+			jm.logger.Info().LogActivity("Batch marked as failed due to configuration error", map[string]any{
 				"batchID": batchID.String(),
 				"app":     app,
 				"op":      op,
@@ -1225,13 +1225,13 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 
 		// Mark just this row as failed
 		if failErr := jm.updateRowStatusToFailed(row.Rowid, errCode, msgID, err.Error()); failErr != nil {
-			jm.Logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
+			jm.logger.Error(failErr).LogActivity("Error updating row status to failed", map[string]any{
 				"rowID":   row.Rowid,
 				"batchID": batchID.String(),
 				"errCode": errCode,
 			})
 		} else {
-			jm.Logger.Info().LogActivity("Row marked as failed due to processing error", map[string]any{
+			jm.logger.Info().LogActivity("Row marked as failed due to processing error", map[string]any{
 				"rowID":   row.Rowid,
 				"batchID": batchID.String(),
 				"app":     app,
@@ -1243,7 +1243,7 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 		// Quick fix for slow queries: If this is a slow query (line=0), update the batch status immediately
 		// since slow queries have only one row per batch
 		if row.Line == 0 {
-			jm.Logger.Info().LogActivity("Updating batch status for failed slow query", map[string]any{
+			jm.logger.Info().LogActivity("Updating batch status for failed slow query", map[string]any{
 				"batchID": batchID.String(),
 				"rowID":   row.Rowid,
 			})
@@ -1253,14 +1253,14 @@ func (jm *JobManager) handleProcessingError(err error, row batchsqlc.FetchBlockO
 			// preserving any outputFiles that the processor might have generated. We should consider
 			// modifying processSlowQuery to capture and store partial output files even when the
 			// processor returns an error, as these might be useful for debugging or recovery.
-			err := jm.Queries.UpdateBatchResult(context.Background(), batchsqlc.UpdateBatchResultParams{
+			err := jm.queries.UpdateBatchResult(context.Background(), batchsqlc.UpdateBatchResultParams{
 				ID:          batchID,
 				Status:      batchsqlc.StatusEnumFailed,
 				Doneat:      pgtype.Timestamp{Time: time.Now(), Valid: true},
 				Outputfiles: nil, // No output files for failed slow query
 			})
 			if err != nil {
-				jm.Logger.Error(err).LogActivity("Error updating batch status for failed slow query", map[string]any{
+				jm.logger.Error(err).LogActivity("Error updating batch status for failed slow query", map[string]any{
 					"batchID": batchID.String(),
 				})
 			}
@@ -1302,7 +1302,7 @@ func (jm *JobManager) markAllRowsWithSameAppAsFailed(batchID uuid.UUID, app, err
 
 	// Update all rows in the batch with this app that are not already completed
 	// using the sqlc-generated function
-	err = jm.Queries.UpdateBatchRowsByBatchApp(context.Background(), batchsqlc.UpdateBatchRowsByBatchAppParams{
+	err = jm.queries.UpdateBatchRowsByBatchApp(context.Background(), batchsqlc.UpdateBatchRowsByBatchAppParams{
 		Status:   batchsqlc.StatusEnumFailed,
 		Doneat:   pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Messages: messagesJSON,
