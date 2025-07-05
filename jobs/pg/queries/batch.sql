@@ -176,3 +176,20 @@ WHERE rowid IN (
     JOIN batches b ON br.batch = b.id
     WHERE b.id = $4 AND b.app = $5 AND br.status IN ('queued', 'inprog')
 );
+
+-- name: UpdateBatchesStatusBulk :exec
+-- Bulk update batch statuses for multiple batches at once.
+-- This is used during job processing to efficiently mark all relevant batches
+-- as 'inprog' in a single query instead of updating each one individually.
+-- Only updates batches that are currently 'queued' to prevent unnecessary updates.
+UPDATE batches 
+SET status = @status 
+WHERE id = ANY(@batch_ids::uuid[]) AND status = 'queued';
+
+-- name: UpdateBatchRowsStatusBulk :exec  
+-- Bulk update batchrow statuses for multiple rows at once.
+-- This significantly improves performance when processing multiple rows
+-- by reducing database round trips from N queries to 1 query.
+UPDATE batchrows 
+SET status = @status 
+WHERE rowid = ANY(@row_ids::bigint[]);

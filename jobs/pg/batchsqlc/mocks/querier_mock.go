@@ -98,6 +98,9 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //			UpdateBatchRowsStatusFunc: func(ctx context.Context, arg batchsqlc.UpdateBatchRowsStatusParams) error {
 //				panic("mock out the UpdateBatchRowsStatus method")
 //			},
+//			UpdateBatchRowsStatusBulkFunc: func(ctx context.Context, arg batchsqlc.UpdateBatchRowsStatusBulkParams) error {
+//				panic("mock out the UpdateBatchRowsStatusBulk method")
+//			},
 //			UpdateBatchStatusFunc: func(ctx context.Context, arg batchsqlc.UpdateBatchStatusParams) error {
 //				panic("mock out the UpdateBatchStatus method")
 //			},
@@ -106,6 +109,9 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //			},
 //			UpdateBatchSummaryOnAbortFunc: func(ctx context.Context, arg batchsqlc.UpdateBatchSummaryOnAbortParams) error {
 //				panic("mock out the UpdateBatchSummaryOnAbort method")
+//			},
+//			UpdateBatchesStatusBulkFunc: func(ctx context.Context, arg batchsqlc.UpdateBatchesStatusBulkParams) error {
+//				panic("mock out the UpdateBatchesStatusBulk method")
 //			},
 //		}
 //
@@ -192,6 +198,9 @@ type QuerierMock struct {
 	// UpdateBatchRowsStatusFunc mocks the UpdateBatchRowsStatus method.
 	UpdateBatchRowsStatusFunc func(ctx context.Context, arg batchsqlc.UpdateBatchRowsStatusParams) error
 
+	// UpdateBatchRowsStatusBulkFunc mocks the UpdateBatchRowsStatusBulk method.
+	UpdateBatchRowsStatusBulkFunc func(ctx context.Context, arg batchsqlc.UpdateBatchRowsStatusBulkParams) error
+
 	// UpdateBatchStatusFunc mocks the UpdateBatchStatus method.
 	UpdateBatchStatusFunc func(ctx context.Context, arg batchsqlc.UpdateBatchStatusParams) error
 
@@ -200,6 +209,9 @@ type QuerierMock struct {
 
 	// UpdateBatchSummaryOnAbortFunc mocks the UpdateBatchSummaryOnAbort method.
 	UpdateBatchSummaryOnAbortFunc func(ctx context.Context, arg batchsqlc.UpdateBatchSummaryOnAbortParams) error
+
+	// UpdateBatchesStatusBulkFunc mocks the UpdateBatchesStatusBulk method.
+	UpdateBatchesStatusBulkFunc func(ctx context.Context, arg batchsqlc.UpdateBatchesStatusBulkParams) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -383,6 +395,13 @@ type QuerierMock struct {
 			// Arg is the arg argument value.
 			Arg batchsqlc.UpdateBatchRowsStatusParams
 		}
+		// UpdateBatchRowsStatusBulk holds details about calls to the UpdateBatchRowsStatusBulk method.
+		UpdateBatchRowsStatusBulk []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Arg is the arg argument value.
+			Arg batchsqlc.UpdateBatchRowsStatusBulkParams
+		}
 		// UpdateBatchStatus holds details about calls to the UpdateBatchStatus method.
 		UpdateBatchStatus []struct {
 			// Ctx is the ctx argument value.
@@ -403,6 +422,13 @@ type QuerierMock struct {
 			Ctx context.Context
 			// Arg is the arg argument value.
 			Arg batchsqlc.UpdateBatchSummaryOnAbortParams
+		}
+		// UpdateBatchesStatusBulk holds details about calls to the UpdateBatchesStatusBulk method.
+		UpdateBatchesStatusBulk []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Arg is the arg argument value.
+			Arg batchsqlc.UpdateBatchesStatusBulkParams
 		}
 	}
 	lockBulkInsertIntoBatchRows              sync.RWMutex
@@ -431,9 +457,11 @@ type QuerierMock struct {
 	lockUpdateBatchRowsByBatchAppOp          sync.RWMutex
 	lockUpdateBatchRowsSlowQuery             sync.RWMutex
 	lockUpdateBatchRowsStatus                sync.RWMutex
+	lockUpdateBatchRowsStatusBulk            sync.RWMutex
 	lockUpdateBatchStatus                    sync.RWMutex
 	lockUpdateBatchSummary                   sync.RWMutex
 	lockUpdateBatchSummaryOnAbort            sync.RWMutex
+	lockUpdateBatchesStatusBulk              sync.RWMutex
 }
 
 // BulkInsertIntoBatchRows calls BulkInsertIntoBatchRowsFunc.
@@ -1368,6 +1396,42 @@ func (mock *QuerierMock) UpdateBatchRowsStatusCalls() []struct {
 	return calls
 }
 
+// UpdateBatchRowsStatusBulk calls UpdateBatchRowsStatusBulkFunc.
+func (mock *QuerierMock) UpdateBatchRowsStatusBulk(ctx context.Context, arg batchsqlc.UpdateBatchRowsStatusBulkParams) error {
+	if mock.UpdateBatchRowsStatusBulkFunc == nil {
+		panic("QuerierMock.UpdateBatchRowsStatusBulkFunc: method is nil but Querier.UpdateBatchRowsStatusBulk was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		Arg batchsqlc.UpdateBatchRowsStatusBulkParams
+	}{
+		Ctx: ctx,
+		Arg: arg,
+	}
+	mock.lockUpdateBatchRowsStatusBulk.Lock()
+	mock.calls.UpdateBatchRowsStatusBulk = append(mock.calls.UpdateBatchRowsStatusBulk, callInfo)
+	mock.lockUpdateBatchRowsStatusBulk.Unlock()
+	return mock.UpdateBatchRowsStatusBulkFunc(ctx, arg)
+}
+
+// UpdateBatchRowsStatusBulkCalls gets all the calls that were made to UpdateBatchRowsStatusBulk.
+// Check the length with:
+//
+//	len(mockedQuerier.UpdateBatchRowsStatusBulkCalls())
+func (mock *QuerierMock) UpdateBatchRowsStatusBulkCalls() []struct {
+	Ctx context.Context
+	Arg batchsqlc.UpdateBatchRowsStatusBulkParams
+} {
+	var calls []struct {
+		Ctx context.Context
+		Arg batchsqlc.UpdateBatchRowsStatusBulkParams
+	}
+	mock.lockUpdateBatchRowsStatusBulk.RLock()
+	calls = mock.calls.UpdateBatchRowsStatusBulk
+	mock.lockUpdateBatchRowsStatusBulk.RUnlock()
+	return calls
+}
+
 // UpdateBatchStatus calls UpdateBatchStatusFunc.
 func (mock *QuerierMock) UpdateBatchStatus(ctx context.Context, arg batchsqlc.UpdateBatchStatusParams) error {
 	if mock.UpdateBatchStatusFunc == nil {
@@ -1473,5 +1537,41 @@ func (mock *QuerierMock) UpdateBatchSummaryOnAbortCalls() []struct {
 	mock.lockUpdateBatchSummaryOnAbort.RLock()
 	calls = mock.calls.UpdateBatchSummaryOnAbort
 	mock.lockUpdateBatchSummaryOnAbort.RUnlock()
+	return calls
+}
+
+// UpdateBatchesStatusBulk calls UpdateBatchesStatusBulkFunc.
+func (mock *QuerierMock) UpdateBatchesStatusBulk(ctx context.Context, arg batchsqlc.UpdateBatchesStatusBulkParams) error {
+	if mock.UpdateBatchesStatusBulkFunc == nil {
+		panic("QuerierMock.UpdateBatchesStatusBulkFunc: method is nil but Querier.UpdateBatchesStatusBulk was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		Arg batchsqlc.UpdateBatchesStatusBulkParams
+	}{
+		Ctx: ctx,
+		Arg: arg,
+	}
+	mock.lockUpdateBatchesStatusBulk.Lock()
+	mock.calls.UpdateBatchesStatusBulk = append(mock.calls.UpdateBatchesStatusBulk, callInfo)
+	mock.lockUpdateBatchesStatusBulk.Unlock()
+	return mock.UpdateBatchesStatusBulkFunc(ctx, arg)
+}
+
+// UpdateBatchesStatusBulkCalls gets all the calls that were made to UpdateBatchesStatusBulk.
+// Check the length with:
+//
+//	len(mockedQuerier.UpdateBatchesStatusBulkCalls())
+func (mock *QuerierMock) UpdateBatchesStatusBulkCalls() []struct {
+	Ctx context.Context
+	Arg batchsqlc.UpdateBatchesStatusBulkParams
+} {
+	var calls []struct {
+		Ctx context.Context
+		Arg batchsqlc.UpdateBatchesStatusBulkParams
+	}
+	mock.lockUpdateBatchesStatusBulk.RLock()
+	calls = mock.calls.UpdateBatchesStatusBulk
+	mock.lockUpdateBatchesStatusBulk.RUnlock()
 	return calls
 }

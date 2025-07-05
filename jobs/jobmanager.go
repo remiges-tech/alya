@@ -420,69 +420,86 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		"rowCount": len(blockOfRows),
 	})
 
-	// Process each row in the block
-	for _, row := range blockOfRows {
-		// CANCELLATION POINT 2: Before updating row statuses
-		// Prevents unnecessary database updates and rolls back the transaction
-		// Important check in loops to bail out early before each database operation
-		if ctx.Err() != nil {
-			tx.Rollback(ctx)
-			return false
-		}
+	// BULK STATUS UPDATE OPTIMIZATION:
+	// Instead of updating each row/batch individually in a loop (2N queries),
+	// we collect all IDs and perform bulk updates (2 queries total).
+	// This significantly improves performance and reduces database load.
+	//
+	// The order is important:
+	// 1. First update batch statuses - this marks batches as being processed
+	// 2. Then update row statuses - this marks individual rows as being processed
+	// This ensures that if we fail between these operations, we can identify
+	// partially processed batches.
 
-		// Update the status of the batch row to "inprog"
-		jm.Logger.Debug0().LogActivity("Updating batch row status to inprog", map[string]any{
-			"rowId": row.Rowid,
-			"batchId": row.Batch.String(),
-			"app": row.App,
-			"op": row.Op,
-			"line": row.Line,
+	// Step 1: Collect unique batch IDs and row IDs
+	batchIDSet := make(map[uuid.UUID]bool)
+	rowIDs := make([]int64, 0, len(blockOfRows))
+	
+	for _, row := range blockOfRows {
+		// Only collect batches that are currently 'queued' (need status update)
+		if row.Status == batchsqlc.StatusEnumQueued {
+			batchIDSet[row.Batch] = true
+		}
+		rowIDs = append(rowIDs, row.Rowid)
+	}
+
+	// Convert batch ID set to slice
+	batchIDs := make([]uuid.UUID, 0, len(batchIDSet))
+	for batchID := range batchIDSet {
+		batchIDs = append(batchIDs, batchID)
+	}
+
+	// CANCELLATION POINT 2: Before status updates
+	if ctx.Err() != nil {
+		tx.Rollback(ctx)
+		return false
+	}
+
+	// Step 2: Bulk update batch statuses (only for batches that need it)
+	if len(batchIDs) > 0 {
+		jm.Logger.Debug0().LogActivity("Bulk updating batch statuses to inprog", map[string]any{
+			"batchCount": len(batchIDs),
+			"batchIDs": batchIDs,
 		})
-		err := txQueries.UpdateBatchRowStatus(ctx, batchsqlc.UpdateBatchRowStatusParams{
-			Rowid:  row.Rowid,
-			Status: batchsqlc.StatusEnumInprog,
+		
+		err := txQueries.UpdateBatchesStatusBulk(ctx, batchsqlc.UpdateBatchesStatusBulkParams{
+			BatchIds: batchIDs,
+			Status:   batchsqlc.StatusEnumInprog,
 		})
 		if err != nil {
-			jm.Logger.Error(err).LogActivity("Error updating batch row status", map[string]any{
-				"rowId": row.Rowid,
-				"batchId": row.Batch.String(),
+			jm.Logger.Error(err).LogActivity("Error bulk updating batch statuses", map[string]any{
+				"batchCount": len(batchIDs),
 			})
 			tx.Rollback(ctx)
 			return false
 		}
-
-		if row.Status == batchsqlc.StatusEnumQueued {
-			// Update the status of the batch to "inprog"
-			// Log the status change
-			changeDetails := logharbour.ChangeInfo{
-				Entity: "BatchRow",
-				Op:     "StatusUpdated",
-				Changes: []logharbour.ChangeDetail{
-					{"status", batchsqlc.StatusEnumQueued, batchsqlc.StatusEnumInprog},
-				},
-			}
-			jm.Logger.LogDataChange("Batch row status updated to inprog", changeDetails)
-
-			jm.Logger.Debug0().LogActivity("Updating batch status to inprog", map[string]any{
-				"batchId": row.Batch.String(),
-				"app": row.App,
-				"op": row.Op,
-			})
-			err := txQueries.UpdateBatchStatus(ctx, batchsqlc.UpdateBatchStatusParams{
-				ID:     row.Batch,
-				Status: batchsqlc.StatusEnumInprog,
-			})
-			if err != nil {
-				jm.Logger.Error(err).LogActivity("Error updating batch status", map[string]any{
-					"batchId": row.Batch.String(),
-				})
-				jm.Logger.Debug0().LogActivity("Rolling back transaction due to batch status update error", nil)
-				if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-					jm.Logger.Error(rollbackErr).LogActivity("Error rolling back transaction", nil)
-				}
-				return false
-			}
+		
+		// Log the batch status changes
+		changeDetails := logharbour.ChangeInfo{
+			Entity: "Batch",
+			Op:     "StatusUpdated",
+			Changes: []logharbour.ChangeDetail{
+				{"status", batchsqlc.StatusEnumQueued, batchsqlc.StatusEnumInprog},
+			},
 		}
+		jm.Logger.LogDataChange(fmt.Sprintf("%d batch statuses updated to inprog", len(batchIDs)), changeDetails)
+	}
+
+	// Step 3: Bulk update all row statuses
+	jm.Logger.Debug0().LogActivity("Bulk updating batch row statuses to inprog", map[string]any{
+		"rowCount": len(rowIDs),
+	})
+	
+	err = txQueries.UpdateBatchRowsStatusBulk(ctx, batchsqlc.UpdateBatchRowsStatusBulkParams{
+		RowIds: rowIDs,
+		Status: batchsqlc.StatusEnumInprog,
+	})
+	if err != nil {
+		jm.Logger.Error(err).LogActivity("Error bulk updating batch row statuses", map[string]any{
+			"rowCount": len(rowIDs),
+		})
+		tx.Rollback(ctx)
+		return false
 	}
 
 	// CANCELLATION POINT 3: Before committing first transaction

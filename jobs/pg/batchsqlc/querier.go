@@ -37,9 +37,18 @@ type Querier interface {
 	UpdateBatchRowsByBatchAppOp(ctx context.Context, arg UpdateBatchRowsByBatchAppOpParams) error
 	UpdateBatchRowsSlowQuery(ctx context.Context, arg UpdateBatchRowsSlowQueryParams) error
 	UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRowsStatusParams) error
+	// Bulk update batchrow statuses for multiple rows at once.
+	// This significantly improves performance when processing multiple rows
+	// by reducing database round trips from N queries to 1 query.
+	UpdateBatchRowsStatusBulk(ctx context.Context, arg UpdateBatchRowsStatusBulkParams) error
 	UpdateBatchStatus(ctx context.Context, arg UpdateBatchStatusParams) error
 	UpdateBatchSummary(ctx context.Context, arg UpdateBatchSummaryParams) error
 	UpdateBatchSummaryOnAbort(ctx context.Context, arg UpdateBatchSummaryOnAbortParams) error
+	// Bulk update batch statuses for multiple batches at once.
+	// This is used during job processing to efficiently mark all relevant batches
+	// as 'inprog' in a single query instead of updating each one individually.
+	// Only updates batches that are currently 'queued' to prevent unnecessary updates.
+	UpdateBatchesStatusBulk(ctx context.Context, arg UpdateBatchesStatusBulkParams) error
 }
 
 var _ Querier = (*Queries)(nil)

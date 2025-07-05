@@ -774,6 +774,25 @@ func (q *Queries) UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRows
 	return err
 }
 
+const updateBatchRowsStatusBulk = `-- name: UpdateBatchRowsStatusBulk :exec
+UPDATE batchrows 
+SET status = $1 
+WHERE rowid = ANY($2::bigint[])
+`
+
+type UpdateBatchRowsStatusBulkParams struct {
+	Status StatusEnum `json:"status"`
+	RowIds []int64    `json:"row_ids"`
+}
+
+// Bulk update batchrow statuses for multiple rows at once.
+// This significantly improves performance when processing multiple rows
+// by reducing database round trips from N queries to 1 query.
+func (q *Queries) UpdateBatchRowsStatusBulk(ctx context.Context, arg UpdateBatchRowsStatusBulkParams) error {
+	_, err := q.db.Exec(ctx, updateBatchRowsStatusBulk, arg.Status, arg.RowIds)
+	return err
+}
+
 const updateBatchStatus = `-- name: UpdateBatchStatus :exec
 UPDATE batches
 SET status = $2, doneat = $3, outputfiles = $4, nsuccess = $5, nfailed = $6, naborted = $7
@@ -852,5 +871,25 @@ func (q *Queries) UpdateBatchSummaryOnAbort(ctx context.Context, arg UpdateBatch
 		arg.Doneat,
 		arg.Naborted,
 	)
+	return err
+}
+
+const updateBatchesStatusBulk = `-- name: UpdateBatchesStatusBulk :exec
+UPDATE batches 
+SET status = $1 
+WHERE id = ANY($2::uuid[]) AND status = 'queued'
+`
+
+type UpdateBatchesStatusBulkParams struct {
+	Status   StatusEnum  `json:"status"`
+	BatchIds []uuid.UUID `json:"batch_ids"`
+}
+
+// Bulk update batch statuses for multiple batches at once.
+// This is used during job processing to efficiently mark all relevant batches
+// as 'inprog' in a single query instead of updating each one individually.
+// Only updates batches that are currently 'queued' to prevent unnecessary updates.
+func (q *Queries) UpdateBatchesStatusBulk(ctx context.Context, arg UpdateBatchesStatusBulkParams) error {
+	_, err := q.db.Exec(ctx, updateBatchesStatusBulk, arg.Status, arg.BatchIds)
 	return err
 }
