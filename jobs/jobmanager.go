@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -207,15 +208,57 @@ func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 // This method should be called in a separate goroutine. It is thread safe -- updates to database and Redis
 // are executed atomically.
 func (jm *JobManager) Run() {
+	// Circuit breaker pattern at the supervisor layer:
+	// This is the ONLY layer where we make health decisions about the entire system.
+	// We tolerate occasional panics (transient issues) but exit on repeated failures
+	// (systemic issues). Lower layers MUST always recover to ensure cleanup.
+	consecutivePanics := 0
+	const maxConsecutivePanics = 3
+	
 	for {
-		// Run a single iteration of the job processing loop
-		// Only sleep if no rows were processed
-		hadRows := jm.RunOneIteration()
+		// Wrap each iteration in a function with panic recovery
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					consecutivePanics++
+					jm.Logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in JobManager.Run", map[string]any{
+						"panic": fmt.Sprintf("%v", r),
+						"stackTrace": string(debug.Stack()),
+						"consecutivePanics": consecutivePanics,
+						"maxConsecutivePanics": maxConsecutivePanics,
+					})
+					
+					// If too many consecutive panics, re-panic to crash the goroutine
+					// This indicates a systemic issue that requires intervention
+					if consecutivePanics >= maxConsecutivePanics {
+						jm.Logger.Error(nil).LogActivity("Circuit breaker triggered - too many consecutive panics", map[string]any{
+							"consecutivePanics": consecutivePanics,
+							"threshold": maxConsecutivePanics,
+						})
+						panic(fmt.Sprintf("JobManager circuit breaker: %d consecutive panics (threshold: %d), last panic: %v", 
+							consecutivePanics, maxConsecutivePanics, r))
+					}
+				}
+			}()
 
-		// Sleep only if no rows were found to process
-		if !hadRows {
-			time.Sleep(getRandomSleepDuration())
-		}
+			// Run a single iteration of the job processing loop
+			// Only sleep if no rows were processed
+			hadRows := jm.RunOneIteration()
+			
+			// If we reach here, the iteration completed successfully
+			// Reset the panic counter
+			if consecutivePanics > 0 {
+				jm.Logger.Info().LogActivity("JobManager iteration succeeded, resetting panic counter", map[string]any{
+					"previousConsecutivePanics": consecutivePanics,
+				})
+				consecutivePanics = 0
+			}
+
+			// Sleep only if no rows were found to process
+			if !hadRows {
+				time.Sleep(getRandomSleepDuration())
+			}
+		}()
 	}
 }
 
@@ -224,24 +267,62 @@ func (jm *JobManager) Run() {
 // canceled, the method will exit cleanly.
 // This should be preferred over Run() in production environments to allow for graceful shutdown.
 func (jm *JobManager) RunWithContext(ctx context.Context) {
+	// Circuit breaker pattern: same as Run() but respects context cancellation
+	consecutivePanics := 0
+	const maxConsecutivePanics = 3
+	
 	for {
 		select {
 		case <-ctx.Done():
 			// Context was canceled, exit cleanly
+			jm.Logger.Info().LogActivity("JobManager exiting due to context cancellation", nil)
 			return
 		default:
-			// Run a single iteration of the job processing loop
-			hadRows := jm.RunOneIterationWithContext(ctx)
+			// Wrap each iteration with panic recovery and circuit breaker
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						consecutivePanics++
+						jm.Logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in JobManager.RunWithContext", map[string]any{
+							"panic": fmt.Sprintf("%v", r),
+							"stackTrace": string(debug.Stack()),
+							"consecutivePanics": consecutivePanics,
+							"maxConsecutivePanics": maxConsecutivePanics,
+						})
+						
+						// Circuit breaker: exit if too many consecutive panics
+						if consecutivePanics >= maxConsecutivePanics {
+							jm.Logger.Error(nil).LogActivity("Circuit breaker triggered - too many consecutive panics", map[string]any{
+								"consecutivePanics": consecutivePanics,
+								"threshold": maxConsecutivePanics,
+							})
+							panic(fmt.Sprintf("JobManager circuit breaker: %d consecutive panics (threshold: %d), last panic: %v", 
+								consecutivePanics, maxConsecutivePanics, r))
+						}
+					}
+				}()
 
-			// Sleep only if no rows were found to process
-			if !hadRows {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(getRandomSleepDuration()):
-					// Continue to the next iteration
+				// Run a single iteration of the job processing loop
+				hadRows := jm.RunOneIterationWithContext(ctx)
+				
+				// Success - reset panic counter
+				if consecutivePanics > 0 {
+					jm.Logger.Info().LogActivity("JobManager iteration succeeded, resetting panic counter", map[string]any{
+						"previousConsecutivePanics": consecutivePanics,
+					})
+					consecutivePanics = 0
 				}
-			}
+
+				// Sleep only if no rows were found to process
+				if !hadRows {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(getRandomSleepDuration()):
+						// Continue to the next iteration
+					}
+				}
+			}()
 		}
 	}
 }
@@ -261,7 +342,25 @@ func (jm *JobManager) RunOneIteration() bool {
 // respecting the provided context for cancellation. If the context is canceled during
 // execution, the method will attempt to clean up and exit as soon as possible.
 // Returns true if rows were processed, false otherwise.
-func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) bool {
+func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows bool) {
+	// CRITICAL: This layer MUST ALWAYS recover from panics. Here's why:
+	// 1. We manage database transactions that MUST be rolled back on failure
+	// 2. Panics here would leave rows locked with FOR UPDATE, causing permanent stuck batches
+	// 3. Database connections would leak without proper cleanup
+	// 
+	// This is NOT the place to make health decisions - we just ensure cleanup and
+	// let the supervisor layer (Run/RunWithContext) decide whether to exit.
+	defer func() {
+		if r := recover(); r != nil {
+			jm.Logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in RunOneIterationWithContext", map[string]any{
+				"panic": fmt.Sprintf("%v", r),
+				"stackTrace": string(debug.Stack()),
+			})
+			// Return false to indicate no successful processing
+			hadRows = false
+		}
+	}()
+
 	// CANCELLATION POINT 1: Early check before starting any work
 	// Prevents starting any operations if shutdown is already requested
 	if ctx.Err() != nil {
@@ -275,6 +374,20 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) bool {
 		jm.Logger.Error(err).LogActivity("Error starting transaction", nil)
 		return false
 	}
+	// Critical: Ensure transaction is rolled back if not committed.
+	// This defer MUST be immediately after Begin() to handle all error paths including panics.
+	// Previously, missing this defer could leave transactions hanging if a panic occurred,
+	// causing database connection pool exhaustion and row locks that prevent retry.
+	// The tx=nil pattern after Commit() prevents unnecessary rollback attempts.
+	defer func() {
+		if tx != nil {
+			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && rollbackErr.Error() != "tx is closed" {
+				jm.Logger.Debug0().LogActivity("Transaction rollback attempted", map[string]any{
+					"error": rollbackErr.Error(),
+				})
+			}
+		}
+	}()
 
 	// Create a new Queries instance using the transaction
 	txQueries := batchsqlc.New(tx)
@@ -388,6 +501,8 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) bool {
 		jm.Logger.Error(err).LogActivity("Error committing transaction", nil)
 		return false
 	}
+	// Set tx to nil to prevent rollback in defer
+	tx = nil
 
 	// Process the rows
 	// Track which batch+app+op combinations we've already processed for errors
@@ -474,6 +589,8 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) bool {
 		jm.Logger.Error(err).LogActivity("Error committing summarization transaction", nil)
 		return false
 	}
+	// Set tx to nil to prevent rollback in defer
+	tx = nil
 
 	// Close and clean up initblocks
 	jm.closeInitBlocks()
@@ -482,7 +599,33 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) bool {
 	return true
 }
 
-func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow) (batchsqlc.StatusEnum, error) {
+func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.FetchBlockOfRowsRow) (status batchsqlc.StatusEnum, err error) {
+	// Row-level recovery: MUST ALWAYS recover to isolate failures.
+	// This layer handles individual row failures without affecting other rows.
+	// 
+	// Why we MUST recover here:
+	// 1. One bad row shouldn't stop processing of other rows in the batch
+	// 2. User-provided processors might panic on specific data
+	// 3. We need to properly mark the row as failed in the database
+	// 
+	// The panic is converted to an error so handleProcessingError can update 
+	// the row status appropriately. This is pure error handling, not health decisions.
+	defer func() {
+		if r := recover(); r != nil {
+			jm.Logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in processRow", map[string]any{
+				"panic": fmt.Sprintf("%v", r),
+				"rowId": row.Rowid,
+				"batchId": row.Batch.String(),
+				"app": row.App,
+				"op": row.Op,
+				"line": row.Line,
+				"stackTrace": string(debug.Stack()),
+			})
+			status = batchsqlc.StatusEnumFailed
+			err = fmt.Errorf("panic during row processing: %v", r)
+		}
+	}()
+
 	// Process the row based on its type (slow query or batch job)
 	if row.Line == 0 {
 		jm.Logger.Debug0().LogActivity("Processing slow query", map[string]any{
