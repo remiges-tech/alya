@@ -194,13 +194,20 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 			"op": batch.Op,
 			"processorType": "batch",
 		})
+		markDoneStart := time.Now()
 		if err := processor.MarkDone(initBlock, context, details); err != nil {
 			jm.logger.Error(err).LogActivity("MarkDone failed for batch", map[string]any{
 				"batchId": batchID.String(),
 				"app": batch.App,
 				"op": batch.Op,
+				"elapsedMs": time.Since(markDoneStart).Milliseconds(),
 			})
 			// We log the error but don't return it, as the batch is already complete
+		} else {
+			jm.logger.Debug0().LogActivity("MarkDone completed for batch", map[string]any{
+				"batchId": batchID.String(),
+				"elapsedMs": time.Since(markDoneStart).Milliseconds(),
+			})
 		}
 	} else {
 		slowqueryprocessor, exists := jm.slowqueryprocessorfuncs[batch.App+batch.Op]
@@ -211,13 +218,20 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 				"op": batch.Op,
 				"processorType": "slowquery",
 			})
+			markDoneStart := time.Now()
 			if err := slowqueryprocessor.MarkDone(initBlock, context, details); err != nil {
 				jm.logger.Error(err).LogActivity("MarkDone failed for slow query", map[string]any{
 					"batchId": batchID.String(),
 					"app": batch.App,
 					"op": batch.Op,
+					"elapsedMs": time.Since(markDoneStart).Milliseconds(),
 				})
 				// We log the error but don't return it, as the batch is already complete
+			} else {
+				jm.logger.Debug0().LogActivity("MarkDone completed for slow query", map[string]any{
+					"batchId": batchID.String(),
+					"elapsedMs": time.Since(markDoneStart).Milliseconds(),
+				})
 			}
 		} else {
 			jm.logger.Warn().LogActivity("No processor found for MarkDone", map[string]any{

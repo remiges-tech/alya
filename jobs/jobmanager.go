@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -168,15 +169,24 @@ func (jm *JobManager) RegisterInitializer(app string, initializer Initializer) e
 // if it doesn't exist. It ensures thread-safe access to the initblocks map using a mutex lock.
 func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 	// First try with read lock for better performance
+	jm.logger.Debug0().LogActivity("Acquiring read lock for initblock lookup", map[string]any{
+		"app": app,
+	})
 	jm.mu.RLock()
 	initBlock, exists := jm.initblocks[app]
 	jm.mu.RUnlock()
 	
 	if exists && initBlock != nil {
+		jm.logger.Debug0().LogActivity("InitBlock found in cache", map[string]any{
+			"app": app,
+		})
 		return initBlock, nil
 	}
 
 	// Need to create new InitBlock, so acquire write lock
+	jm.logger.Debug0().LogActivity("Acquiring write lock to create initblock", map[string]any{
+		"app": app,
+	})
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 
@@ -198,17 +208,34 @@ func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 	}
 
 	// Call the initializer to create a new InitBlock
+	jm.logger.Debug0().LogActivity("Calling initializer.Init", map[string]any{
+		"app": app,
+		"initializer": fmt.Sprintf("%T", initializer),
+	})
+	initStartTime := time.Now()
 	initBlock, err := initializer.Init(app)
+	initElapsed := time.Since(initStartTime)
 	if err != nil {
+		jm.logger.Error(err).LogActivity("Initializer.Init failed", map[string]any{
+			"app": app,
+			"elapsedMs": initElapsed.Milliseconds(),
+		})
 		return nil, &ConfigurationError{
 			BaseErr: ErrInitializerFailed,
 			App:     app,
 			Details: fmt.Sprintf("initialization failed: %v", err),
 		}
 	}
+	jm.logger.Debug0().LogActivity("Initializer.Init completed", map[string]any{
+		"app": app,
+		"elapsedMs": initElapsed.Milliseconds(),
+	})
 
 	// Cache the InitBlock for future use
 	jm.initblocks[app] = initBlock
+	jm.logger.Debug0().LogActivity("InitBlock cached successfully", map[string]any{
+		"app": app,
+	})
 	return initBlock, nil
 }
 
@@ -378,12 +405,20 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	}
 
 	// Begin a transaction
-	jm.logger.Debug0().LogActivity("Starting transaction for row status updates", nil)
+	jm.logger.Debug0().LogActivity("Starting transaction for row status updates", map[string]any{
+		"iteration": "start",
+	})
+	txStartTime := time.Now()
 	tx, err := jm.db.Begin(ctx)
 	if err != nil {
-		jm.logger.Error(err).LogActivity("Error starting transaction", nil)
+		jm.logger.Error(err).LogActivity("Error starting transaction", map[string]any{
+			"elapsedMs": time.Since(txStartTime).Milliseconds(),
+		})
 		return false
 	}
+	jm.logger.Debug0().LogActivity("Transaction started successfully", map[string]any{
+		"elapsedMs": time.Since(txStartTime).Milliseconds(),
+	})
 	// Critical: Ensure transaction is rolled back if not committed.
 	// This defer MUST be immediately after Begin() to handle all error paths including panics.
 	// Previously, missing this defer could leave transactions hanging if a panic occurred,
@@ -498,6 +533,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	// Step 3: Bulk update all row statuses
 	jm.logger.Debug0().LogActivity("Bulk updating batch row statuses to inprog", map[string]any{
 		"rowCount": len(rowIDs),
+		"rowIDs": rowIDs,
 	})
 	
 	err = txQueries.UpdateBatchRowsStatusBulk(ctx, batchsqlc.UpdateBatchRowsStatusBulkParams{
@@ -610,12 +646,22 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		return true // Return true because we did process rows
 	}
 
-	jm.logger.Debug0().LogActivity("Committing transaction for batch summarization", nil)
+	jm.logger.Debug0().LogActivity("Committing transaction for batch summarization", map[string]any{
+		"transactionDurationMs": time.Since(txStartTime).Milliseconds(),
+	})
+	commitStartTime := time.Now()
 	err = tx.Commit(ctx)
 	if err != nil {
-		jm.logger.Error(err).LogActivity("Error committing summarization transaction", nil)
+		jm.logger.Error(err).LogActivity("Error committing summarization transaction", map[string]any{
+			"commitElapsedMs": time.Since(commitStartTime).Milliseconds(),
+			"transactionDurationMs": time.Since(txStartTime).Milliseconds(),
+		})
 		return false
 	}
+	jm.logger.Debug0().LogActivity("Transaction committed successfully", map[string]any{
+		"commitElapsedMs": time.Since(commitStartTime).Milliseconds(),
+		"transactionDurationMs": time.Since(txStartTime).Milliseconds(),
+	})
 	// Set tx to nil to prevent rollback in defer
 	tx = nil
 
@@ -639,15 +685,27 @@ func (jm *JobManager) processRow(txQueries batchsqlc.Querier, row batchsqlc.Fetc
 	// the row status appropriately. This is pure error handling, not health decisions.
 	defer func() {
 		if r := recover(); r != nil {
-			jm.logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in processRow", map[string]any{
+			panicDetails := map[string]any{
 				"panic": fmt.Sprintf("%v", r),
 				"rowId": row.Rowid,
 				"batchId": row.Batch.String(),
 				"app": row.App,
 				"op": row.Op,
 				"line": row.Line,
+				"jobType": row.Op,
 				"stackTrace": string(debug.Stack()),
-			})
+			}
+			jm.logger.Error(fmt.Errorf("panic recovered: %v", r)).LogActivity("Panic in processRow", panicDetails)
+			
+			// Log specific panic location for debugging
+			stackStr := string(debug.Stack())
+			if strings.Contains(stackStr, "DoSlowQuery") {
+				jm.logger.Error(nil).LogActivity("Panic occurred in SlowQuery processor", panicDetails)
+			} else if strings.Contains(stackStr, "DoBatchJob") {
+				jm.logger.Error(nil).LogActivity("Panic occurred in Batch processor", panicDetails)
+			} else if strings.Contains(stackStr, "getOrCreateInitBlock") {
+				jm.logger.Error(nil).LogActivity("Panic occurred in getOrCreateInitBlock", panicDetails)
+			}
 			status = batchsqlc.StatusEnumFailed
 			err = fmt.Errorf("panic during row processing: %v", r)
 		}
@@ -708,6 +766,10 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 	}
 
 	// Get or create the initblock for the app
+	jm.logger.Debug0().LogActivity("Getting or creating initblock for slow query", map[string]any{
+		"app": row.App,
+		"rowId": row.Rowid,
+	})
 	initBlock, err := jm.getOrCreateInitBlock(string(row.App))
 	if err != nil {
 		jm.logger.Error(err).LogActivity("Error getting or creating initblock", map[string]any{
@@ -716,6 +778,10 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 		})
 		return batchsqlc.StatusEnumFailed, err
 	}
+	jm.logger.Debug0().LogActivity("Initblock obtained successfully", map[string]any{
+		"app": row.App,
+		"rowId": row.Rowid,
+	})
 
 	// Process the slow query using the registered processor
 	rowContext, err := NewJSONstr(string(row.Context))
@@ -737,7 +803,15 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 		"rowId": row.Rowid,
 		"processor": fmt.Sprintf("%T", processor),
 	})
+	startTime := time.Now()
 	status, result, messages, outputFiles, err := processor.DoSlowQuery(initBlock, rowContext, rowInput)
+	elapsedTime := time.Since(startTime)
+	jm.logger.Debug0().LogActivity("Slow query processor execution completed", map[string]any{
+		"rowId": row.Rowid,
+		"elapsedMs": elapsedTime.Milliseconds(),
+		"status": status,
+		"error": err != nil,
+	})
 	if err != nil {
 		jm.logger.Error(err).LogActivity("Slow query processor failed", map[string]any{
 			"rowId": row.Rowid,
@@ -767,12 +841,40 @@ func (jm *JobManager) processSlowQuery(txQueries batchsqlc.Querier, row batchsql
 		})
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating slow query result for app %s and op %s: %v", row.App, row.Op, err)
 	}
+	
+	// Log the row and batch status change
+	rowChangeDetails := logharbour.ChangeInfo{
+		Entity: "BatchRow",
+		Op:     "Update",
+		Changes: []logharbour.ChangeDetail{
+			{"status", row.Status, status},
+		},
+	}
+	jm.logger.LogDataChange("Slow query row updated", rowChangeDetails)
+	jm.logger.Debug0().LogActivity("Slow query status updated", map[string]any{
+		"rowId": row.Rowid,
+		"batchId": row.Batch.String(),
+		"oldStatus": row.Status,
+		"newStatus": status,
+	})
 
 	jm.logger.Info().LogActivity("Slow query completed successfully", map[string]any{
 		"rowId": row.Rowid,
 		"batchId": row.Batch.String(),
 		"status": status,
 	})
+	
+	// Log warning if job took unusually long
+	if elapsedTime > 30*time.Second {
+		jm.logger.Warn().LogActivity("Slow query took unusually long", map[string]any{
+			"rowId": row.Rowid,
+			"batchId": row.Batch.String(),
+			"elapsedSeconds": elapsedTime.Seconds(),
+			"app": row.App,
+			"op": row.Op,
+		})
+	}
+	
 	return status, nil
 }
 
@@ -845,7 +947,16 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 		"processor": fmt.Sprintf("%T", processor),
 		"line": row.Line,
 	})
+	startTime := time.Now()
 	status, result, messages, blobRows, err := processor.DoBatchJob(initBlock, rowContext, int(row.Line), rowInput)
+	elapsedTime := time.Since(startTime)
+	jm.logger.Debug0().LogActivity("Batch processor execution completed", map[string]any{
+		"rowId": row.Rowid,
+		"line": row.Line,
+		"elapsedMs": elapsedTime.Milliseconds(),
+		"status": status,
+		"error": err != nil,
+	})
 	if err != nil {
 		jm.logger.Error(err).LogActivity("Batch processor failed", map[string]any{
 			"rowId": row.Rowid,
@@ -880,6 +991,23 @@ func (jm *JobManager) processBatchJob(txQueries batchsqlc.Querier, row batchsqlc
 		})
 		return batchsqlc.StatusEnumFailed, fmt.Errorf("error updating batch job result for app %s and op %s: %v", row.App, row.Op, err)
 	}
+	
+	// Log the row status change
+	rowChangeDetails := logharbour.ChangeInfo{
+		Entity: "BatchRow",
+		Op:     "Update",
+		Changes: []logharbour.ChangeDetail{
+			{"status", row.Status, status},
+		},
+	}
+	jm.logger.LogDataChange("Batch row updated", rowChangeDetails)
+	jm.logger.Debug0().LogActivity("Batch row status updated", map[string]any{
+		"rowId": row.Rowid,
+		"batchId": row.Batch.String(),
+		"line": row.Line,
+		"oldStatus": row.Status,
+		"newStatus": status,
+	})
 
 	jm.logger.Info().LogActivity("Batch job completed successfully", map[string]any{
 		"rowId": row.Rowid,
@@ -960,13 +1088,6 @@ func (jm *JobManager) updateBatchJobResult(txQueries batchsqlc.Querier, row batc
 	}
 
 	// Update the batchrows record with the results
-	jm.logger.LogDataChange("Batch row updated", logharbour.ChangeInfo{
-		Entity: "BatchRow",
-		Op:     "Update",
-		Changes: []logharbour.ChangeDetail{
-			{"status", row.Status, batchsqlc.StatusEnum(status)},
-		},
-	})
 	err := txQueries.UpdateBatchRowsBatchJob(context.Background(), batchsqlc.UpdateBatchRowsBatchJobParams{
 		Rowid:    int64(row.Rowid),
 		Status:   batchsqlc.StatusEnum(status),
