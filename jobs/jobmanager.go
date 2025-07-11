@@ -78,7 +78,6 @@ const ALYA_BATCHSTATUS_CACHEDUR_SEC = 60
 // Assuming global variables are defined elsewhere
 // make all the maps sync maps to make them thread safe
 var (
-	mu     sync.Mutex // Ensures thread-safe access to the initfuncs map
 	doneBy pgtype.Text
 )
 
@@ -100,6 +99,7 @@ type JobManager struct {
 	batchprocessorfuncs     map[string]BatchProcessor
 	logger                  *logharbour.Logger
 	config                  JobManagerConfig
+	mu                      sync.RWMutex // Protects initblocks and initfuncs maps
 }
 
 // NewJobManager creates a new instance of JobManager.
@@ -151,8 +151,8 @@ var ErrInitializerAlreadyRegistered = errors.New("initializer already registered
 // slow query processor. It allows for proper initialization and
 // cleanup of resources used by the processing functions.
 func (jm *JobManager) RegisterInitializer(app string, initializer Initializer) error {
-	mu.Lock()
-	defer mu.Unlock()
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
 
 	// Check if an initializer for this app already exists to prevent accidental overwrites
 	if _, exists := jm.initfuncs[app]; exists {
@@ -167,11 +167,21 @@ func (jm *JobManager) RegisterInitializer(app string, initializer Initializer) e
 // getOrCreateInitBlock retrieves an existing InitBlock for the given app, or creates a new one
 // if it doesn't exist. It ensures thread-safe access to the initblocks map using a mutex lock.
 func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Check if an InitBlock already exists for this app
+	// First try with read lock for better performance
+	jm.mu.RLock()
 	initBlock, exists := jm.initblocks[app]
+	jm.mu.RUnlock()
+	
+	if exists && initBlock != nil {
+		return initBlock, nil
+	}
+
+	// Need to create new InitBlock, so acquire write lock
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+
+	// Double-check if an InitBlock was created while we were waiting for the lock
+	initBlock, exists = jm.initblocks[app]
 	if exists && initBlock != nil {
 		return initBlock, nil
 	}
@@ -993,6 +1003,9 @@ func (jm *JobManager) summarizeCompletedBatches(q *batchsqlc.Queries, batchSet m
 }
 
 func (jm *JobManager) closeInitBlocks() {
+	jm.mu.Lock()
+	defer jm.mu.Unlock()
+	
 	for app, initBlock := range jm.initblocks {
 		if initBlock != nil {
 			if closer, ok := initBlock.(interface{ Close() error }); ok {
