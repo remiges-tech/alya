@@ -151,11 +151,11 @@ func TestSummarizeBatch(t *testing.T) {
 			redisMock.ExpectTxPipelineExec()
 
 			jm := JobManager{
-				Queries:     mockQuerier,
-				ObjStore:    mockObjStore,
-				RedisClient: redisClient,
+				queries:     mockQuerier,
+				objStore:    mockObjStore,
+				redisClient: redisClient,
 				// Initialize Config with a non-zero BatchStatusCacheDurSec
-				Config: JobManagerConfig{
+				config: JobManagerConfig{
 					BatchStatusCacheDurSec: ALYA_BATCHSTATUS_CACHEDUR_SEC,
 				},
 				// Initialize other required fields for the test

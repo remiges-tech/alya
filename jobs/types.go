@@ -96,6 +96,7 @@ type JobManagerConfig struct {
 	BatchChunkNRows        int    // number of rows to send to the batch processor in each chunk
 	BatchStatusCacheDurSec int    // duration in seconds to cache the batch status
 	BatchOutputBucket      string // bucket name for batch files
+	PollingIntervalSec     int    // polling interval in seconds for checking jobs (default: 45)
 }
 
 // BatchDetails_t struct

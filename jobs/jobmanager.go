@@ -75,6 +75,7 @@ func (e ProcessorNotFoundError) Unwrap() error {
 
 const ALYA_BATCHCHUNK_NROWS = 10
 const ALYA_BATCHSTATUS_CACHEDUR_SEC = 60
+const ALYA_POLLING_INTERVAL_SEC = 45
 
 // Assuming global variables are defined elsewhere
 // make all the maps sync maps to make them thread safe
@@ -122,6 +123,9 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 	if config.BatchOutputBucket == "" {
 		config.BatchOutputBucket = "alya-batch-output"
 		logger.Warn().LogActivity("No BatchOutputBucket configured, using default: alya-batch-output", nil)
+	}
+	if config.PollingIntervalSec == 0 {
+		config.PollingIntervalSec = ALYA_POLLING_INTERVAL_SEC
 	}
 
 	return &JobManager{
@@ -293,7 +297,7 @@ func (jm *JobManager) Run() {
 
 			// Sleep only if no rows were found to process
 			if !hadRows {
-				time.Sleep(getRandomSleepDuration())
+				time.Sleep(jm.getRandomSleepDuration())
 			}
 		}()
 	}
@@ -355,7 +359,7 @@ func (jm *JobManager) RunWithContext(ctx context.Context) {
 					select {
 					case <-ctx.Done():
 						return
-					case <-time.After(getRandomSleepDuration()):
+					case <-time.After(jm.getRandomSleepDuration()):
 						// Continue to the next iteration
 					}
 				}
@@ -1141,9 +1145,19 @@ func (jm *JobManager) closeInitBlocks() {
 	jm.initblocks = make(map[string]InitBlock)
 }
 
-func getRandomSleepDuration() time.Duration {
-	// Generate a random sleep duration between 30 and 60 seconds
-	return time.Duration(rand.Intn(31)+30) * time.Second
+func (jm *JobManager) getRandomSleepDuration() time.Duration {
+	// Use the configured polling interval with some randomization (+/- 33%)
+	baseInterval := jm.config.PollingIntervalSec
+	if baseInterval == 0 {
+		baseInterval = ALYA_POLLING_INTERVAL_SEC
+	}
+	
+	// Add randomization: between 2/3 and 4/3 of the base interval
+	minInterval := baseInterval * 2 / 3
+	maxInterval := baseInterval * 4 / 3
+	randomRange := maxInterval - minInterval + 1
+	
+	return time.Duration(rand.Intn(randomRange)+minInterval) * time.Second
 }
 
 // updateRowStatusToFailed updates a single row's status to failed with the given error information.

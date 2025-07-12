@@ -78,8 +78,9 @@ func TestBatchDone(t *testing.T) {
 
 	// Create a JobManager instance with the database and Redis dependencies
 	jm := &JobManager{
-		Queries:     batchsqlc.New(db),
-		RedisClient: redisClient,
+		queries:     batchsqlc.New(db),
+		redisClient: redisClient,
+		config:      JobManagerConfig{},
 	}
 
 	// Generate a random batch ID
