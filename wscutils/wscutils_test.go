@@ -720,3 +720,415 @@ func TestOptionalGet(t *testing.T) {
 		})
 	}
 }
+
+// TestOptionalMarshalJSON tests the MarshalJSON implementation for Optional types
+func TestOptionalMarshalJSON(t *testing.T) {
+	type TestStruct struct {
+		Name     string           `json:"name"`
+		Age      Optional[int]    `json:"age,omitempty"`
+		IsActive Optional[bool]   `json:"isActive,omitempty"`
+		Email    Optional[string] `json:"email,omitempty"`
+		Score    Optional[float64] `json:"score,omitempty"`
+	}
+
+	tests := []struct {
+		name     string
+		input    TestStruct
+		expected string
+	}{
+		{
+			name: "All fields present with values",
+			input: TestStruct{
+				Name:     "John",
+				Age:      Optional[int]{Value: 30, Present: true, Null: false},
+				IsActive: Optional[bool]{Value: true, Present: true, Null: false},
+				Email:    Optional[string]{Value: "john@example.com", Present: true, Null: false},
+				Score:    Optional[float64]{Value: 95.5, Present: true, Null: false},
+			},
+			expected: `{"name":"John","age":30,"isActive":true,"email":"john@example.com","score":95.5}`,
+		},
+		{
+			name: "Some fields explicitly null",
+			input: TestStruct{
+				Name:     "Jane",
+				Age:      Optional[int]{Present: true, Null: true},
+				IsActive: Optional[bool]{Value: false, Present: true, Null: false},
+				Email:    Optional[string]{Present: true, Null: true},
+				Score:    Optional[float64]{Present: false}, // Not present, will show zero value
+			},
+			expected: `{"name":"Jane","age":null,"isActive":false,"email":null,"score":0}`,
+		},
+		{
+			name: "All optional fields missing",
+			input: TestStruct{
+				Name: "Bob",
+				// All Optional fields left at zero value (Present=false)
+			},
+			expected: `{"name":"Bob","age":0,"isActive":false,"email":"","score":0}`,
+		},
+		{
+			name: "Mixed: present, null, and missing",
+			input: TestStruct{
+				Name:     "Alice",
+				Age:      Optional[int]{Value: 25, Present: true, Null: false},
+				IsActive: Optional[bool]{Present: false}, // Missing, will show false
+				Email:    Optional[string]{Present: true, Null: true}, // Explicit null
+				Score:    Optional[float64]{Value: 0, Present: true, Null: false}, // Zero value but present
+			},
+			expected: `{"name":"Alice","age":25,"isActive":false,"email":null,"score":0}`,
+		},
+		{
+			name: "Boolean false value present",
+			input: TestStruct{
+				Name:     "Charlie",
+				IsActive: Optional[bool]{Value: false, Present: true, Null: false},
+				Age:      Optional[int]{Present: false},    // Missing
+				Email:    Optional[string]{Present: false}, // Missing
+				Score:    Optional[float64]{Present: false}, // Missing
+			},
+			expected: `{"name":"Charlie","isActive":false,"age":0,"email":"","score":0}`,
+		},
+		{
+			name: "Zero int value present",
+			input: TestStruct{
+				Name:     "David",
+				Age:      Optional[int]{Value: 0, Present: true, Null: false},
+				IsActive: Optional[bool]{Present: false},   // Missing
+				Email:    Optional[string]{Present: false}, // Missing
+				Score:    Optional[float64]{Present: false}, // Missing
+			},
+			expected: `{"name":"David","age":0,"isActive":false,"email":"","score":0}`,
+		},
+		{
+			name: "Empty string value present",
+			input: TestStruct{
+				Name:     "Eve",
+				Email:    Optional[string]{Value: "", Present: true, Null: false},
+				Age:      Optional[int]{Present: false},     // Missing
+				IsActive: Optional[bool]{Present: false},    // Missing
+				Score:    Optional[float64]{Present: false}, // Missing
+			},
+			expected: `{"name":"Eve","email":"","age":0,"isActive":false,"score":0}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.input)
+			assert.NoError(t, err)
+			assert.JSONEq(t, tt.expected, string(data))
+		})
+	}
+}
+
+// TestOptionalMarshalComplexTypes tests MarshalJSON with complex types
+func TestOptionalMarshalComplexTypes(t *testing.T) {
+	type Address struct {
+		Street string `json:"street"`
+		City   string `json:"city"`
+	}
+
+	type ComplexStruct struct {
+		Tags    Optional[[]string]       `json:"tags,omitempty"`
+		Address Optional[Address]        `json:"address,omitempty"`
+		Metadata Optional[map[string]any] `json:"metadata,omitempty"`
+	}
+
+	tests := []struct {
+		name     string
+		input    ComplexStruct
+		expected string
+	}{
+		{
+			name: "Complex types with values",
+			input: ComplexStruct{
+				Tags:    Optional[[]string]{Value: []string{"tag1", "tag2"}, Present: true},
+				Address: Optional[Address]{Value: Address{Street: "123 Main", City: "NYC"}, Present: true},
+				Metadata: Optional[map[string]any]{Value: map[string]any{"key": "value", "count": 42}, Present: true},
+			},
+			expected: `{"tags":["tag1","tag2"],"address":{"street":"123 Main","city":"NYC"},"metadata":{"key":"value","count":42}}`,
+		},
+		{
+			name: "Complex types with nulls",
+			input: ComplexStruct{
+				Tags:     Optional[[]string]{Present: true, Null: true},
+				Address:  Optional[Address]{Present: true, Null: true},
+				Metadata: Optional[map[string]any]{Present: true, Null: true},
+			},
+			expected: `{"tags":null,"address":null,"metadata":null}`,
+		},
+		{
+			name: "Empty collections",
+			input: ComplexStruct{
+				Tags:     Optional[[]string]{Value: []string{}, Present: true},
+				Metadata: Optional[map[string]any]{Value: map[string]any{}, Present: true},
+				Address:  Optional[Address]{Present: false}, // Missing, will show zero value
+			},
+			expected: `{"tags":[],"metadata":{},"address":{"street":"","city":""}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.input)
+			assert.NoError(t, err)
+			assert.JSONEq(t, tt.expected, string(data))
+		})
+	}
+}
+
+// TestOptionalRoundTrip tests that marshal/unmarshal behavior
+// Note: Due to JSON limitations, fields that are not present (Present=false) 
+// will marshal to their zero values and when unmarshaled will become present.
+// This is expected behavior and cannot preserve the "not present" state through JSON.
+func TestOptionalRoundTrip(t *testing.T) {
+	type TestData struct {
+		Value    Optional[string] `json:"value,omitempty"`
+		Number   Optional[int]    `json:"number,omitempty"`
+		Active   Optional[bool]   `json:"active,omitempty"`
+	}
+
+	tests := []struct {
+		name     string
+		input    TestData
+		expected TestData // Expected state after round-trip
+	}{
+		{
+			name: "All present",
+			input: TestData{
+				Value:  Optional[string]{Value: "test", Present: true},
+				Number: Optional[int]{Value: 42, Present: true},
+				Active: Optional[bool]{Value: true, Present: true},
+			},
+			expected: TestData{
+				Value:  Optional[string]{Value: "test", Present: true},
+				Number: Optional[int]{Value: 42, Present: true},
+				Active: Optional[bool]{Value: true, Present: true},
+			},
+		},
+		{
+			name: "All null",
+			input: TestData{
+				Value:  Optional[string]{Present: true, Null: true},
+				Number: Optional[int]{Present: true, Null: true},
+				Active: Optional[bool]{Present: true, Null: true},
+			},
+			expected: TestData{
+				Value:  Optional[string]{Present: true, Null: true},
+				Number: Optional[int]{Present: true, Null: true},
+				Active: Optional[bool]{Present: true, Null: true},
+			},
+		},
+		{
+			name: "Mixed states",
+			input: TestData{
+				Value:  Optional[string]{Value: "data", Present: true},
+				Number: Optional[int]{Present: true, Null: true},
+				Active: Optional[bool]{Present: false}, // Missing - will become present with false value
+			},
+			expected: TestData{
+				Value:  Optional[string]{Value: "data", Present: true},
+				Number: Optional[int]{Present: true, Null: true},
+				Active: Optional[bool]{Value: false, Present: true}, // Now present with zero value
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Marshal
+			data, err := json.Marshal(tt.input)
+			assert.NoError(t, err)
+
+			// Unmarshal
+			var result TestData
+			err = json.Unmarshal(data, &result)
+			assert.NoError(t, err)
+
+			// Compare states
+			assert.Equal(t, tt.expected.Value.Present, result.Value.Present)
+			assert.Equal(t, tt.expected.Value.Null, result.Value.Null)
+			if tt.expected.Value.Present && !tt.expected.Value.Null {
+				assert.Equal(t, tt.expected.Value.Value, result.Value.Value)
+			}
+
+			assert.Equal(t, tt.expected.Number.Present, result.Number.Present)
+			assert.Equal(t, tt.expected.Number.Null, result.Number.Null)
+			if tt.expected.Number.Present && !tt.expected.Number.Null {
+				assert.Equal(t, tt.expected.Number.Value, result.Number.Value)
+			}
+
+			assert.Equal(t, tt.expected.Active.Present, result.Active.Present)
+			assert.Equal(t, tt.expected.Active.Null, result.Active.Null)
+			if tt.expected.Active.Present && !tt.expected.Active.Null {
+				assert.Equal(t, tt.expected.Active.Value, result.Active.Value)
+			}
+		})
+	}
+}
+// TestOptionalHelperFunctions tests the helper functions for creating Optional values
+func TestOptionalHelperFunctions(t *testing.T) {
+	t.Run("NewOptional creates present non-null value", func(t *testing.T) {
+		// Test with string
+		strOpt := NewOptional("test")
+		assert.True(t, strOpt.Present)
+		assert.False(t, strOpt.Null)
+		assert.Equal(t, "test", strOpt.Value)
+		
+		// Test with int
+		intOpt := NewOptional(42)
+		assert.True(t, intOpt.Present)
+		assert.False(t, intOpt.Null)
+		assert.Equal(t, 42, intOpt.Value)
+		
+		// Test with struct
+		type Person struct {
+			Name string
+			Age  int
+		}
+		personOpt := NewOptional(Person{Name: "Arjun", Age: 30})
+		assert.True(t, personOpt.Present)
+		assert.False(t, personOpt.Null)
+		assert.Equal(t, Person{Name: "Arjun", Age: 30}, personOpt.Value)
+	})
+	
+	t.Run("NewOptionalNull creates present null value", func(t *testing.T) {
+		// Test with string
+		strOpt := NewOptionalNull[string]()
+		assert.True(t, strOpt.Present)
+		assert.True(t, strOpt.Null)
+		assert.Equal(t, "", strOpt.Value) // Zero value
+		
+		// Test with int
+		intOpt := NewOptionalNull[int]()
+		assert.True(t, intOpt.Present)
+		assert.True(t, intOpt.Null)
+		assert.Equal(t, 0, intOpt.Value) // Zero value
+		
+		// Test with slice
+		sliceOpt := NewOptionalNull[[]string]()
+		assert.True(t, sliceOpt.Present)
+		assert.True(t, sliceOpt.Null)
+		assert.Nil(t, sliceOpt.Value) // Zero value for slice is nil
+	})
+	
+	t.Run("NewOptionalAbsent creates not present value", func(t *testing.T) {
+		// Test with string
+		strOpt := NewOptionalAbsent[string]()
+		assert.False(t, strOpt.Present)
+		assert.False(t, strOpt.Null)
+		assert.Equal(t, "", strOpt.Value) // Zero value
+		
+		// Test with bool
+		boolOpt := NewOptionalAbsent[bool]()
+		assert.False(t, boolOpt.Present)
+		assert.False(t, boolOpt.Null)
+		assert.Equal(t, false, boolOpt.Value) // Zero value
+	})
+	
+	t.Run("Helper functions work with Get method", func(t *testing.T) {
+		// NewOptional with Get
+		opt1 := NewOptional("value")
+		val1, ok1 := opt1.Get()
+		assert.True(t, ok1)
+		assert.Equal(t, "value", val1)
+		
+		// NewOptionalNull with Get
+		opt2 := NewOptionalNull[string]()
+		val2, ok2 := opt2.Get()
+		assert.False(t, ok2)
+		assert.Equal(t, "", val2)
+		
+		// NewOptionalAbsent with Get
+		opt3 := NewOptionalAbsent[string]()
+		val3, ok3 := opt3.Get()
+		assert.False(t, ok3)
+		assert.Equal(t, "", val3)
+	})
+	
+	t.Run("Helper functions marshal correctly", func(t *testing.T) {
+		type TestStruct struct {
+			Value Optional[string] `json:"value"`
+			Count Optional[int]    `json:"count"`
+		}
+		
+		// Test with values
+		s1 := TestStruct{
+			Value: NewOptional("test"),
+			Count: NewOptional(10),
+		}
+		data1, err1 := json.Marshal(s1)
+		assert.NoError(t, err1)
+		assert.JSONEq(t, `{"value":"test","count":10}`, string(data1))
+		
+		// Test with nulls
+		s2 := TestStruct{
+			Value: NewOptionalNull[string](),
+			Count: NewOptionalNull[int](),
+		}
+		data2, err2 := json.Marshal(s2)
+		assert.NoError(t, err2)
+		assert.JSONEq(t, `{"value":null,"count":null}`, string(data2))
+		
+		// Test with absent (shows zero values)
+		s3 := TestStruct{
+			Value: NewOptionalAbsent[string](),
+			Count: NewOptionalAbsent[int](),
+		}
+		data3, err3 := json.Marshal(s3)
+		assert.NoError(t, err3)
+		assert.JSONEq(t, `{"value":"","count":0}`, string(data3))
+	})
+}
+
+// TestOptionalIsZero tests the IsZero method
+func TestOptionalIsZero(t *testing.T) {
+	tests := []struct {
+		name     string
+		optional interface{ IsZero() bool }
+		wantZero bool
+	}{
+		{
+			name:     "Absent string",
+			optional: NewOptionalAbsent[string](),
+			wantZero: true,
+		},
+		{
+			name:     "Present string with value",
+			optional: NewOptional("test"),
+			wantZero: false,
+		},
+		{
+			name:     "Null string",
+			optional: NewOptionalNull[string](),
+			wantZero: false,
+		},
+		{
+			name:     "Absent int",
+			optional: NewOptionalAbsent[int](),
+			wantZero: true,
+		},
+		{
+			name:     "Present int with zero value",
+			optional: NewOptional(0),
+			wantZero: false,
+		},
+		{
+			name:     "Absent bool",
+			optional: NewOptionalAbsent[bool](),
+			wantZero: true,
+		},
+		{
+			name:     "Present bool false",
+			optional: NewOptional(false),
+			wantZero: false,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.optional.IsZero()
+			assert.Equal(t, tt.wantZero, got)
+		})
+	}
+}

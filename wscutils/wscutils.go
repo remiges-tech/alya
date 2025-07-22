@@ -292,3 +292,68 @@ func (o Optional[T]) Get() (T, bool) {
 	var zero T
 	return zero, false
 }
+
+// MarshalJSON implements the json.Marshaler interface.
+// This allows Optional to properly serialize to JSON:
+// - If the field was explicitly set to null (Present=true, Null=true), it returns JSON null
+// - If the field has a value (Present=true, Null=false), it returns the marshaled value
+// - If the field was never set (Present=false), the value is marshaled as if it were not Optional
+//
+// Note: For omitting fields when not present, you should check the Present field before
+// including the field in your response struct, or use a custom response builder.
+func (o Optional[T]) MarshalJSON() ([]byte, error) {
+	if o.Present && o.Null {
+		// Field was explicitly set to null
+		return []byte("null"), nil
+	}
+	
+	// Field has a value or is not present - marshal the value
+	// When not present, this will marshal the zero value of T
+	return json.Marshal(o.Value)
+}
+
+// NewOptional creates an Optional with a value that is present and not null.
+// This is a convenience function for creating Optional values in responses.
+func NewOptional[T any](value T) Optional[T] {
+	return Optional[T]{
+		Value:   value,
+		Present: true,
+		Null:    false,
+	}
+}
+
+// NewOptionalNull creates an Optional that is present but explicitly null.
+// This is useful when you want to indicate that a field has been explicitly set to null.
+func NewOptionalNull[T any]() Optional[T] {
+	return Optional[T]{
+		Present: true,
+		Null:    true,
+	}
+}
+
+// NewOptionalAbsent creates an Optional that represents a field that was not provided.
+// The field is marked as not present (Present: false).
+// Note: When marshaled to JSON, this will serialize to the zero value of T due to Go's JSON limitations.
+// Use this when you need to represent that a field was not included in the request/data.
+func NewOptionalAbsent[T any]() Optional[T] {
+	return Optional[T]{
+		Present: false,
+		Null:    false,
+	}
+}
+
+// IsZero reports whether o represents a zero value for the Optional type.
+// It returns true when the Optional is not present (was never set).
+// This method enables the use of the omitzero struct tag in Go 1.24+ to omit
+// absent Optional fields from JSON output.
+//
+// Example:
+//
+//	type User struct {
+//	    Email Optional[string] `json:"email,omitzero"`
+//	}
+//
+// With omitzero, absent fields will be completely omitted from JSON output.
+func (o Optional[T]) IsZero() bool {
+	return !o.Present
+}

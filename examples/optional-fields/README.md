@@ -125,6 +125,85 @@ The server will start on port 8081
    
    This shows why `Optional[T]` is valuable - with regular fields, you can't tell if a zero value was explicitly provided or if the field was missing from the request entirely.
 
+## Response Serialization with Optional Fields
+
+The MarshalJSON implementation for Optional fields provides proper JSON serialization:
+
+1. **Fields with values** (`Present: true, Null: false`): Serialize to their actual values
+2. **Explicitly null fields** (`Present: true, Null: true`): Serialize to JSON `null`
+3. **Missing fields** (`Present: false`): 
+   - **Go 1.24+**: Use `omitzero` tag to omit absent fields from JSON
+   - **Go < 1.24**: Fields serialize to their zero values
+
+### Using omitzero (Go 1.24+)
+
+```go
+type UserResponse struct {
+    Name     string                 `json:"name,omitzero"`
+    Email    wscutils.Optional[string] `json:"email,omitzero"`
+    IsActive wscutils.Optional[bool]   `json:"isActive,omitzero"`
+}
+
+// Absent fields are completely omitted:
+user := UserResponse{
+    Name:     "Arjun",
+    Email:    wscutils.NewOptionalAbsent[string](),
+    IsActive: wscutils.NewOptionalAbsent[bool](),
+}
+// Marshals to: {"name":"Arjun"}
+```
+
+### Example Response
+
+```bash
+curl -X GET http://localhost:8081/profiles
+```
+
+Returns:
+```json
+{
+  "status": "success",
+  "data": {
+    "users": [
+      {
+        "username": "arjun_sharma",
+        "email": "arjun@example.com",
+        "isActive": true,
+        "preferences": {
+          "theme": "dark",
+          "tags": {
+            "role": "admin",
+            "dept": "engineering",
+            "city": "Bangalore"
+          }
+        },
+        "score": 100
+      },
+      {
+        "username": "priya_patel",
+        "email": null,
+        "isActive": false,
+        "preferences": null,
+        "score": 50
+      },
+      {
+        "username": "rahul_verma",
+        "email": "",
+        "isActive": false,
+        "preferences": {
+          "theme": "",
+          "tags": null
+        },
+        "score": 75
+      }
+    ],
+    "note": "Check how Optional fields serialize: present values, explicit nulls, and missing fields"
+  }
+}
+```
+
+Note: The third user shows the limitation - missing Optional fields serialize to their zero values rather than being omitted.
+
 ## Testing the API
 
 You can use curl to test the API:
@@ -136,8 +215,8 @@ curl -X POST http://localhost:8081/profileUpdate \
   -H "Content-Type: application/json" \
   -d '{
     "data": {
-      "username": "johndoe",
-      "email": "john@example.com",
+      "username": "arjun_sharma",
+      "email": "arjun.sharma@example.com",
       "isActive": true,
       "score": 100
     }
