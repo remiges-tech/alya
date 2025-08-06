@@ -52,7 +52,7 @@ FROM batchrows
 INNER JOIN batches ON batchrows.batch = batches.id
 WHERE batchrows.status = $1 AND batches.status != 'wait'
 LIMIT $2
-FOR UPDATE OF batchrows SKIP LOCKED;
+FOR UPDATE OF batchrows, batches SKIP LOCKED;
 
 
 -- name: UpdateBatchRowsStatus :exec
