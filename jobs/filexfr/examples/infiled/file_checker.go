@@ -11,7 +11,7 @@ import (
 
 // checkBankTransactionFile processes a CSV file containing bank transactions.
 // It validates the file format and content, and prepares data for batch submission (batchInput type).
-func checkBankTransactionFile(fileContents string, fileName string) (bool, jobs.JSONstr, []jobs.BatchInput_t, string, string, string) {
+func checkBankTransactionFile(fileContents string, fileName string, batchctx jobs.JSONstr) (bool, jobs.JSONstr, []jobs.BatchInput_t, string, string, string) {
 	// Create a new CSV reader from the file contents
 	reader := csv.NewReader(strings.NewReader(fileContents))
 
@@ -65,9 +65,9 @@ func checkBankTransactionFile(fileContents string, fileName string) (bool, jobs.
 	}
 
 	// Create a context JSON string containing the filename
-	context, _ := jobs.NewJSONstr(fmt.Sprintf(`{"filename": "%s"}`, fileName))
+	batchContext, _ := jobs.NewJSONstr(fmt.Sprintf(`{"filename": "%s"}`, fileName))
 
 	// Return true indicating the file is valid,
 	// along with the context, batch input, application name, and operation name
-	return true, context, batchInput, "bankapp", "processtransactions", ""
+	return true, batchContext, batchInput, "bankapp", "processtransactions", ""
 }

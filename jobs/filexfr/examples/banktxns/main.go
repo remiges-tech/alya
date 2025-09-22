@@ -157,10 +157,14 @@ func processSampleFile(fxs *filexfr.FileXfrServer) error {
 		return fmt.Errorf("failed to read sample file: %v", err)
 	}
 
-	err = fxs.BulkfileinProcess(string(fileContents), "transactions.csv", "csv")
+	batchctx, _ := jobs.NewJSONstr(`{"source": "banktxns_example", "version": "1.0", "user": "test_user", "processing_mode": "sample"}`)
+	log.Printf("Sending context to BulkfileinProcess: %s", batchctx.String())
+	batchID, err := fxs.BulkfileinProcess(string(fileContents), "transactions.csv", "csv", batchctx)
 	if err != nil {
 		return fmt.Errorf("failed to process sample file: %v", err)
 	}
+
+	log.Printf("Successfully created batch with ID: %s", batchID)
 
 	return nil
 }

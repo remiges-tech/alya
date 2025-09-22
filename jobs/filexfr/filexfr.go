@@ -20,7 +20,7 @@ import (
 )
 
 // FileChk is the type for file checking functions
-type FileChk func(fileContents string, fileName string) (bool, jobs.JSONstr, []jobs.BatchInput_t, string, string, string)
+type FileChk func(fileContents string, fileName string, batchctx jobs.JSONstr) (bool, jobs.JSONstr, []jobs.BatchInput_t, string, string, string)
 
 // FileXfrConfig holds configuration for file transfer operations
 type FileXfrConfig struct {
@@ -99,7 +99,7 @@ func (fxs *FileXfrServer) RegisterFileChk(fileType string, fileChkFn FileChk) er
 }
 
 // BulkfileinProcess handles the processing of incoming batch files
-func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) error {
+func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, batchctx jobs.JSONstr) (string, error) {
 	var fileContents string
 	var objectID string
 
@@ -114,7 +114,7 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 				"objectID": objectID,
 				"error":    err.Error(),
 			})
-			return fmt.Errorf("failed to read object contents: %v", err)
+			return "", fmt.Errorf("failed to read object contents: %v", err)
 		}
 	} else {
 		fileContents = file
@@ -126,11 +126,11 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 		fxs.logger.Debug2().LogActivity("No file check function registered", map[string]any{
 			"filetype": filetype,
 		})
-		return fmt.Errorf("no file check function registered for file type: %s", filetype)
+		return "", fmt.Errorf("no file check function registered for file type: %s", filetype)
 	}
 
 	// Call the file check function
-	isgood, context, batchInput, app, op, _ := fileChkFn(fileContents, filename)
+	isgood, batchctx, batchInput, app, op, _ := fileChkFn(fileContents, filename, batchctx)
 
 	if !isgood {
 		// Move the object to the "failed" bucket if it exists
@@ -140,26 +140,26 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 					"objectID": objectID,
 					"error":    err.Error(),
 				})
-				return fmt.Errorf("failed to move object to failed bucket: %v", err)
+				return "", fmt.Errorf("failed to move object to failed bucket: %v", err)
 			}
 		}
 		fxs.logger.Debug2().LogActivity("File check failed", map[string]any{
 			"filetype": filetype,
 			"filename": filename,
 		})
-		return fmt.Errorf("file check failed for file type: %s", filetype)
+		return "", fmt.Errorf("file check failed for file type: %s", filetype)
 	}
 
 	// Submit the batch using JobManager
-	batchID, err := fxs.jobManager.BatchSubmit(app, op, context, batchInput, false)
+	batchID, err := fxs.jobManager.BatchSubmit(app, op, batchctx, batchInput, false)
 	if err != nil {
 		fxs.logger.Debug2().LogActivity("Failed to submit batch", map[string]any{
 			"app":     app,
 			"op":      op,
-			"context": context,
+			"context": batchctx,
 			"error":   err.Error(),
 		})
-		return fmt.Errorf("failed to submit batch: %v", err)
+		return "", fmt.Errorf("failed to submit batch: %v", err)
 	}
 
 	// If file contents were given in the request, not an object ID, store it in the object store
@@ -170,7 +170,7 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 				"filename": filename,
 				"error":    err.Error(),
 			})
-			return fmt.Errorf("failed to store file contents: %v", err)
+			return "", fmt.Errorf("failed to store file contents: %v", err)
 		}
 	}
 
@@ -181,7 +181,7 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 			"batchID":  batchID,
 			"error":    err.Error(),
 		})
-		return fmt.Errorf("failed to record batch file: %v", err)
+		return "", fmt.Errorf("failed to record batch file: %v", err)
 	}
 
 	fxs.logger.Debug2().LogActivity("Successfully processed file", map[string]any{
@@ -189,7 +189,7 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string) err
 		"filename": filename,
 		"batchID":  batchID,
 	})
-	return nil
+	return batchID, nil
 }
 
 // Helper functions

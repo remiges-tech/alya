@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/remiges-tech/alya/jobs"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
@@ -18,6 +19,9 @@ type Transaction struct {
 }
 
 func (p *BankTransactionProcessor) DoBatchJob(initBlock jobs.InitBlock, context jobs.JSONstr, line int, input jobs.JSONstr) (status batchsqlc.StatusEnum, result jobs.JSONstr, messages []wscutils.ErrorMessage, blobRows map[string]string, err error) {
+	// Log received context
+	log.Printf("BatchProcessor (line %d) received context: %s", line, context.String())
+
 	var transaction Transaction
 	err = json.Unmarshal([]byte(input.String()), &transaction)
 	if err != nil {

@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/remiges-tech/alya/jobs"
 	"github.com/remiges-tech/logharbour/logharbour"
 )
 
@@ -181,7 +182,8 @@ func (i *Infiled) processFile(filePath, fileType string) error {
 	}
 
 	// Process the file using BulkfileinProcess
-	err = i.fxs.BulkfileinProcess(objectID, filepath.Base(filePath), fileType)
+	batchctx, _ := jobs.NewJSONstr("{}")
+	batchID, err := i.fxs.BulkfileinProcess(objectID, filepath.Base(filePath), fileType, batchctx)
 	if err != nil {
 		// If processing fails, move the object to the "failed" bucket
 		if moveErr := i.fxs.moveObjectToFailedBucket(objectID); moveErr != nil {
@@ -189,6 +191,13 @@ func (i *Infiled) processFile(filePath, fileType string) error {
 		}
 		return fmt.Errorf("error processing file %s: %w", filePath, err)
 	}
+
+	i.logger.Info().LogActivity("Successfully processed file", map[string]any{
+		"filePath": filePath,
+		"fileType": fileType,
+		"objectID": objectID,
+		"batchID":  batchID,
+	})
 
 	// Delete the file from the file system after successful processing
 	if err := os.Remove(filePath); err != nil {

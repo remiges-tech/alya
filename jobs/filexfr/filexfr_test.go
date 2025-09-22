@@ -29,7 +29,7 @@ func setupTestLogger(t *testing.T) *logharbour.Logger {
 }
 
 // mockFileChk is a mock file check function for testing
-func mockFileChk(fileContents string, fileName string) (bool, jobs.JSONstr, []jobs.BatchInput_t, string, string, string) {
+func mockFileChk(fileContents string, fileName string, batchctx jobs.JSONstr) (bool, jobs.JSONstr, []jobs.BatchInput_t, string, string, string) {
 	jsonstr, err := jobs.NewJSONstr("{}")
 	if err != nil {
 		return false, jobs.JSONstr{}, nil, "", "", ""
