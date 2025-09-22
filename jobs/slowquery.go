@@ -160,7 +160,13 @@ func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result 
 			expirySec = 100 * jm.config.BatchStatusCacheDurSec
 		}
 
-		updateStatusAndOutputFilesDataInRedis(jm.redisClient, reqIDUUID, batchStatus, outputfiles, resultData.String(), expirySec)
+		if err := updateStatusAndOutputFilesDataInRedis(jm.redisClient, reqIDUUID, batchStatus, outputfiles, resultData.String(), expirySec); err != nil {
+			jm.logger.Warn().LogActivity("Failed to update status and output files in Redis cache for slow query", map[string]any{
+				"reqId": reqIDUUID.String(),
+				"error": err.Error(),
+			})
+			// Continue with slow query completion despite Redis failure - Redis is just a cache
+		}
 
 		// Return the formatted result, messages, and nil for error
 		return status, result, messages, outputfiles, nil

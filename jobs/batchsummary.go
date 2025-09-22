@@ -140,10 +140,11 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	})
 	err = updateStatusInRedis(jm.redisClient, batchID, batchStatus, 100*jm.config.BatchStatusCacheDurSec)
 	if err != nil {
-		jm.logger.Error(err).LogActivity("Failed to update status in Redis", map[string]any{
+		jm.logger.Warn().LogActivity("Failed to update status in Redis cache for batch", map[string]any{
 			"batchId": batchID.String(),
+			"error": err.Error(),
 		})
-		return fmt.Errorf("failed to update status in redis: %v", err)
+		// Continue with batch completion despite Redis failure - Redis is just a cache
 	}
 
 	context, err := NewJSONstr(string(batch.Context))

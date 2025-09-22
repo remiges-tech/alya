@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -139,7 +138,11 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 		}
 		err = updateStatusInRedis(jm.redisClient, uuid.MustParse(batchID), status, expirySec)
 		if err != nil {
-			log.Printf("Error setting REDIS key %s: %v", redisKey, err)
+			jm.logger.Warn().LogActivity("Failed to update status in Redis cache", map[string]any{
+				"batchId": batchID,
+				"error": err.Error(),
+			})
+			// Continue despite Redis failure - Redis is just a cache
 		}
 	} else if err != nil {
 		return batchsqlc.StatusEnumWait, nil, nil, 0, 0, 0, err
@@ -304,7 +307,11 @@ func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, n
 	// Update status in Redis
 	err = updateStatusInRedis(jm.redisClient, batchUUID, batchsqlc.StatusEnumAborted, 100*jm.config.BatchStatusCacheDurSec)
 	if err != nil {
-		log.Printf("failed to update status in Redis: %v", err)
+		jm.logger.Warn().LogActivity("Failed to update status in Redis cache for aborted batch", map[string]any{
+			"batchId": batchUUID.String(),
+			"error": err.Error(),
+		})
+		// Continue despite Redis failure - Redis is just a cache
 	}
 	return batchsqlc.StatusEnumAborted, successCount, failedCount, abortedCount, nil
 }
