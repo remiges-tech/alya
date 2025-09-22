@@ -183,7 +183,7 @@ func (i *Infiled) processFile(filePath, fileType string) error {
 
 	// Process the file using BulkfileinProcess
 	batchctx, _ := jobs.NewJSONstr("{}")
-	batchID, err := i.fxs.BulkfileinProcess(objectID, filepath.Base(filePath), fileType, batchctx)
+	batchID, err := i.fxs.BulkfileinProcess(objectID, filepath.Base(filePath), fileType, batchctx, true)
 	if err != nil {
 		// If processing fails, move the object to the "failed" bucket
 		if moveErr := i.fxs.moveObjectToFailedBucket(objectID); moveErr != nil {

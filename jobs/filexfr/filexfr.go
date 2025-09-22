@@ -24,8 +24,17 @@ type FileChk func(fileContents string, fileName string, batchctx jobs.JSONstr) (
 
 // FileXfrConfig holds configuration for file transfer operations
 type FileXfrConfig struct {
+	// MaxObjectIDLength sets the maximum length for object IDs in the object store.
+	// Object IDs are derived from sanitized filenames and truncated to this length.
+	// Default: 500 characters. S3/MinIO limit is 1024 bytes.
 	MaxObjectIDLength int
+
+	// IncomingBucket is the bucket name for storing incoming files.
+	// Default: "incoming"
 	IncomingBucket    string
+
+	// FailedBucket is the bucket name for storing files that failed processing.
+	// Default: "failed"
 	FailedBucket      string
 }
 
@@ -40,19 +49,16 @@ type FileXfrServer struct {
 	// FileXfrServer will submit batch jobs using the jobManager
 	jobManager *jobs.JobManager
 
-	// objStore interfaces with the object storage system -- in this case, Minio
-	// It handles storing and retrieving file contents
+	// objStore interfaces with the object storage system
 	objStore objstore.ObjectStore
 
-	// mu is a mutex for thread-safe access to shared resources
-	// It prevents concurrent modifications to the fileChkMap
+	// mu protects concurrent access to fileChkMap
 	mu sync.RWMutex
 
 	// queries provides database operations for batch-related tables
 	queries batchsqlc.Querier
 
-	// config holds configuration settings for file transfer operations
-	// It includes settings like max object ID length and bucket name
+	// config holds file transfer configuration
 	config FileXfrConfig
 
 	// logger is the LogHarbour logger instance
@@ -62,7 +68,7 @@ type FileXfrServer struct {
 // NewFileXfrServer creates a new FileXfrServer with the given configuration
 func NewFileXfrServer(jobManager *jobs.JobManager, objStore objstore.ObjectStore, queries batchsqlc.Querier, config FileXfrConfig, logger *logharbour.Logger) *FileXfrServer {
 	if config.MaxObjectIDLength == 0 {
-		config.MaxObjectIDLength = 200 // Default value if not specified
+		config.MaxObjectIDLength = 500 // Default value if not specified
 	}
 	if config.IncomingBucket == "" {
 		config.IncomingBucket = "incoming" // Default incoming bucket name
@@ -80,9 +86,9 @@ func NewFileXfrServer(jobManager *jobs.JobManager, objStore objstore.ObjectStore
 	}
 }
 
-// RegisterFileChk allows applications to register a file checking function for a specific file type.
-// Each file type can only have one registered file checking function.
-// Attempting to register a second function for the same file type will result in an error.
+// RegisterFileChk registers a file checking function for a file type.
+// Each file type can have only one function.
+// Returns error if file type already registered.
 func (fxs *FileXfrServer) RegisterFileChk(fileType string, fileChkFn FileChk) error {
 	fxs.mu.Lock()
 	defer fxs.mu.Unlock()
@@ -98,14 +104,14 @@ func (fxs *FileXfrServer) RegisterFileChk(fileType string, fileChkFn FileChk) er
 	return nil
 }
 
-// BulkfileinProcess handles the processing of incoming batch files
-func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, batchctx jobs.JSONstr) (string, error) {
+// BulkfileinProcess handles the processing of incoming batch files.
+// The 'file' parameter can be either file contents or an object ID,
+// controlled by the 'isObjectID' boolean parameter.
+func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, batchctx jobs.JSONstr, isObjectID bool) (string, error) {
 	var fileContents string
 	var objectID string
 
-	// Check if the input is an object ID or file contents
-	if len(file) < fxs.config.MaxObjectIDLength {
-		// Assume it's an object ID
+	if isObjectID {
 		objectID = file
 		var err error
 		fileContents, err = fxs.getObjectContents(objectID)
@@ -120,7 +126,6 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, bat
 		fileContents = file
 	}
 
-	// Get the registered file check function for the given file type
 	fileChkFn, exists := fxs.fileChkMap[filetype]
 	if !exists {
 		fxs.logger.Debug2().LogActivity("No file check function registered", map[string]any{
@@ -129,11 +134,9 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, bat
 		return "", fmt.Errorf("no file check function registered for file type: %s", filetype)
 	}
 
-	// Call the file check function
 	isgood, batchctx, batchInput, app, op, _ := fileChkFn(fileContents, filename, batchctx)
 
 	if !isgood {
-		// Move the object to the "failed" bucket if it exists
 		if objectID != "" {
 			if err := fxs.moveObjectToFailedBucket(objectID); err != nil {
 				fxs.logger.Debug2().LogActivity("Failed to move object to failed bucket", map[string]any{
@@ -150,7 +153,6 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, bat
 		return "", fmt.Errorf("file check failed for file type: %s", filetype)
 	}
 
-	// Submit the batch using JobManager
 	batchID, err := fxs.jobManager.BatchSubmit(app, op, batchctx, batchInput, false)
 	if err != nil {
 		fxs.logger.Debug2().LogActivity("Failed to submit batch", map[string]any{
@@ -162,7 +164,6 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, bat
 		return "", fmt.Errorf("failed to submit batch: %v", err)
 	}
 
-	// If file contents were given in the request, not an object ID, store it in the object store
 	if objectID == "" {
 		objectID, err = fxs.storeFileContents(fileContents, filename)
 		if err != nil {
@@ -174,7 +175,6 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, bat
 		}
 	}
 
-	// Write a record in the batch-files table
 	if err := fxs.recordBatchFile(objectID, len(fileContents), batchID, isgood); err != nil {
 		fxs.logger.Debug2().LogActivity("Failed to record batch file", map[string]any{
 			"objectID": objectID,
@@ -191,8 +191,6 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, bat
 	})
 	return batchID, nil
 }
-
-// Helper functions
 
 // getObjectContents retrieves the contents of an object from the object store
 func (fxs *FileXfrServer) getObjectContents(objectID string) (string, error) {
@@ -242,13 +240,9 @@ func (fxs *FileXfrServer) moveObjectToFailedBucket(objectID string) error {
 func (fxs *FileXfrServer) storeFileContents(contents, filename string) (string, error) {
 	ctx := context.Background()
 
-	// Use the sanitized filename as the object ID
-	objectID := fxs.generateObjectID(filename) // Ensure this generates just the filename
-
-	// Create a reader from the file contents
+	objectID := fxs.generateObjectID(filename)
 	reader := strings.NewReader(contents)
 
-	// Store the object in the incoming bucket
 	err := fxs.objStore.Put(ctx, fxs.config.IncomingBucket, objectID, reader, int64(len(contents)), detectContentType(contents, filename))
 	if err != nil {
 		return "", fmt.Errorf("failed to store file contents: %w", err)
@@ -257,12 +251,16 @@ func (fxs *FileXfrServer) storeFileContents(contents, filename string) (string, 
 	return objectID, nil
 }
 
-// generateObjectID creates a unique object ID for storing in the object store
+// generateObjectID creates an object ID for storing in the object store.
+// The ID is derived from the sanitized filename and truncated to MaxObjectIDLength if needed.
+//
+// Note: Object IDs are not guaranteed to be unique - files with identical names
+// (after sanitization) will have the same object ID and may cause conflicts.
+// Users should ensure filenames are unique or include distinguishing elements
+// like timestamps in their filenames.
 func (fxs *FileXfrServer) generateObjectID(filename string) string {
-	// Sanitize the filename to remove problematic characters
 	sanitizedFilename := sanitizeFilename(filename)
 
-	// Truncate if necessary based on MaxObjectIDLength
 	if len(sanitizedFilename) > fxs.config.MaxObjectIDLength {
 		sanitizedFilename = sanitizedFilename[:fxs.config.MaxObjectIDLength]
 	}
@@ -272,25 +270,15 @@ func (fxs *FileXfrServer) generateObjectID(filename string) string {
 
 // sanitizeFilename removes or replaces characters that might be problematic in object storage
 func sanitizeFilename(filename string) string {
-	// Replace spaces and other potentially problematic characters
 	replacer := strings.NewReplacer(" ", "_", "/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_")
-	sanitized := replacer.Replace(filename)
-
-	// Truncate if the filename is too long (adjust the max length as needed)
-	maxLength := 100
-	if len(sanitized) > maxLength {
-		sanitized = sanitized[:maxLength]
-	}
-
-	return sanitized
+	return replacer.Replace(filename)
 }
 
 // recordBatchFile writes a record in the batch-files table
 func (fxs *FileXfrServer) recordBatchFile(objectID string, size int, batchID string, status bool) error {
 	ctx := context.Background()
 
-	// Generate a checksum for the file (you might want to implement a proper checksum function)
-	// Calculate MD5 checksum
+	// TODO: Calculate checksum from actual file contents instead of objectID
 	h := md5.New()
 	_, err := io.WriteString(h, objectID)
 	if err != nil {

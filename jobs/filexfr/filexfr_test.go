@@ -1,14 +1,16 @@
 package filexfr
 
 import (
+	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/remiges-tech/alya/jobs"
+	"github.com/remiges-tech/alya/jobs/objstore"
 	"github.com/remiges-tech/logharbour/logharbour"
+	"github.com/stretchr/testify/assert"
 )
 
 // testWriter is a custom writer that writes to both test log and os.Stdout
@@ -41,17 +43,105 @@ func TestNewFileTransferManager(t *testing.T) {
 	logger := setupTestLogger(t)
 	fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, FileXfrConfig{MaxObjectIDLength: 200}, logger)
 
-	if fxs == nil {
-		t.Fatal("NewFileXfrServer returned nil")
+	assert.NotNil(t, fxs, "NewFileXfrServer should not return nil")
+	assert.NotNil(t, fxs.jobManager, "JobManager should be set in FileXfrServer")
+	assert.Empty(t, fxs.fileChkMap, "fileChkMap should be empty on initialization")
+}
+
+
+func TestBulkfileinProcessIsObjectID(t *testing.T) {
+	// SETUP
+	logger := setupTestLogger(t)
+	batchctx, _ := jobs.NewJSONstr(`{"test": "context"}`)
+
+	// Track which file checker was called and with what content
+	var receivedContent string
+
+	// Helper function to create a spy FileChk that captures content and always fails
+	createSpyFileChk := func() FileChk {
+		return func(fileContents string, fileName string, batchctx jobs.JSONstr) (bool, jobs.JSONstr, []jobs.BatchInput_t, string, string, string) {
+			receivedContent = fileContents
+			return false, jobs.JSONstr{}, nil, "", "", ""
+		}
 	}
 
-	if fxs.jobManager == nil {
-		t.Error("JobManager not set in FileXfrServer")
-	}
+	t.Run("isObjectID_false_passes_content_directly", func(t *testing.T) {
+		// SETUP
+		fileContent := "test,data,123\ntest2,data2,456"
+		receivedContent = ""
+		spyFileChk := createSpyFileChk()
 
-	if len(fxs.fileChkMap) != 0 {
-		t.Error("fileChkMap should be empty on initialization")
-	}
+		mockObjStore := &objstore.ObjectStoreMock{}
+		fxs := NewFileXfrServer(nil, mockObjStore, nil, FileXfrConfig{MaxObjectIDLength: 200}, logger)
+		err := fxs.RegisterFileChk("test", spyFileChk)
+		assert.NoError(t, err)
+
+		// WHEN
+		_, err = fxs.BulkfileinProcess(fileContent, "test.csv", "test", batchctx, false)
+
+		// THEN
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "file check failed")
+		assert.NotContains(t, err.Error(), "failed to read object contents")
+		assert.Equal(t, fileContent, receivedContent)
+	})
+
+	t.Run("isObjectID_true_retrieves_from_object_store", func(t *testing.T) {
+		// SETUP
+		objectID := "test-object-id"
+		expectedContent := "content,from,store"
+		receivedContent = ""
+		spyFileChk := createSpyFileChk()
+
+		mockObjStore := &objstore.ObjectStoreMock{
+			GetFunc: func(ctx context.Context, bucket, objectID string) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader(expectedContent)), nil
+			},
+			PutFunc: func(ctx context.Context, bucket, objectID string, reader io.Reader, size int64, contentType string) error {
+				return nil
+			},
+			DeleteFunc: func(ctx context.Context, bucket, objectID string) error {
+				return nil
+			},
+		}
+
+		fxs := NewFileXfrServer(nil, mockObjStore, nil, FileXfrConfig{MaxObjectIDLength: 200}, logger)
+		err := fxs.RegisterFileChk("test", spyFileChk)
+		assert.NoError(t, err)
+
+		// WHEN
+		_, err = fxs.BulkfileinProcess(objectID, "test.csv", "test", batchctx, true)
+
+		// THEN
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "file check failed")
+		assert.Equal(t, expectedContent, receivedContent)
+	})
+
+	t.Run("isObjectID_true_handles_object_store_error", func(t *testing.T) {
+		// SETUP
+		objectID := "nonexistent-object"
+		receivedContent = ""
+		spyFileChk := createSpyFileChk()
+
+		mockObjStore := &objstore.ObjectStoreMock{
+			GetFunc: func(ctx context.Context, bucket, objectID string) (io.ReadCloser, error) {
+				return nil, assert.AnError
+			},
+		}
+
+		fxs := NewFileXfrServer(nil, mockObjStore, nil, FileXfrConfig{MaxObjectIDLength: 200}, logger)
+		err := fxs.RegisterFileChk("test", spyFileChk)
+		assert.NoError(t, err)
+
+		// WHEN
+		_, err = fxs.BulkfileinProcess(objectID, "test.csv", "test", batchctx, true)
+
+		// THEN
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read object contents")
+		assert.Empty(t, receivedContent)
+	})
 }
 
 func TestRegisterFileChk(t *testing.T) {
@@ -60,44 +150,20 @@ func TestRegisterFileChk(t *testing.T) {
 
 	// Test registering a new file check function
 	err := fxs.RegisterFileChk("csv", mockFileChk)
-	if err != nil {
-		t.Errorf("Failed to register file check function: %v", err)
-	}
-
-	// Verify that the function was registered
-	if len(fxs.fileChkMap) != 1 {
-		t.Errorf("Expected 1 registered file check function, got %d", len(fxs.fileChkMap))
-	}
-
-	if _, exists := fxs.fileChkMap["csv"]; !exists {
-		t.Error("File check function for 'csv' not found in fileChkMap")
-	}
+	assert.NoError(t, err, "Should successfully register file check function")
+	assert.Len(t, fxs.fileChkMap, 1, "Should have 1 registered file check function")
+	assert.Contains(t, fxs.fileChkMap, "csv", "Should contain registered 'csv' file check function")
 
 	// Test registering a duplicate file check function
 	err = fxs.RegisterFileChk("csv", mockFileChk)
-	if err == nil {
-		t.Error("Expected error when registering duplicate file check function, got nil")
-	}
-
-	// Verify that the number of registered functions hasn't changed
-	if len(fxs.fileChkMap) != 1 {
-		t.Errorf("Expected 1 registered file check function after duplicate registration attempt, got %d", len(fxs.fileChkMap))
-	}
+	assert.Error(t, err, "Should return error when registering duplicate file check function")
+	assert.Len(t, fxs.fileChkMap, 1, "Should still have only 1 registered function after duplicate attempt")
 
 	// Test registering a different file type
 	err = fxs.RegisterFileChk("json", mockFileChk)
-	if err != nil {
-		t.Errorf("Failed to register file check function for different file type: %v", err)
-	}
-
-	// Verify that the new function was registered
-	if len(fxs.fileChkMap) != 2 {
-		t.Errorf("Expected 2 registered file check functions, got %d", len(fxs.fileChkMap))
-	}
-
-	if _, exists := fxs.fileChkMap["json"]; !exists {
-		t.Error("File check function for 'json' not found in fileChkMap")
-	}
+	assert.NoError(t, err, "Should successfully register different file type")
+	assert.Len(t, fxs.fileChkMap, 2, "Should have 2 registered file check functions")
+	assert.Contains(t, fxs.fileChkMap, "json", "Should contain registered 'json' file check function")
 }
 
 func TestSanitizeFilename(t *testing.T) {
@@ -115,94 +181,64 @@ func TestSanitizeFilename(t *testing.T) {
 		{"file\"with\"quotes.xml", "file_with_quotes.xml"},
 		{"file<with>brackets.txt", "file_with_brackets.txt"},
 		{"file|with|pipes.csv", "file_with_pipes.csv"},
-		{"a very long filename that exceeds the maximum length of 100 characters and should be truncated.txt",
-			"a_very_long_filename_that_exceeds_the_maximum_length_of_100_characters_and_should_be_truncated.txt"},
+		{"a very long filename that exceeds the previous maximum length of 100 characters and is now preserved completely.txt",
+			"a_very_long_filename_that_exceeds_the_previous_maximum_length_of_100_characters_and_is_now_preserved_completely.txt"},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.input, func(t *testing.T) {
 			result := sanitizeFilename(tc.input)
-			if result != tc.expected {
-				t.Errorf("sanitizeFilename(%q) = %q; want %q", tc.input, result, tc.expected)
-			}
-			if len(result) > 100 {
-				t.Errorf("sanitizeFilename(%q) returned a string longer than 100 characters: %d", tc.input, len(result))
-			}
+			assert.Equal(t, tc.expected, result, "sanitizeFilename should replace special characters")
 		})
 	}
 }
 
 // TestGenerateObjectID verifies the behavior of the generateObjectID function.
-// The test creates a FileXfrServer instance with a specified maximum object ID length,
-// then generates and validates object IDs for each test case. It ensures that each
-// generated ID meets all the above criteria and that consecutive calls with the same
-// input filename produce different IDs due to the unique timestamp and UUID components.
+// The function returns the sanitized filename, truncated if it exceeds MaxObjectIDLength.
 func TestGenerateObjectID(t *testing.T) {
 	logger := setupTestLogger(t)
-	config := FileXfrConfig{MaxObjectIDLength: 200}
-	fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, config, logger)
 
-	validateObjectID := func(t *testing.T, objectID, filename string) {
-		t.Helper()
+	t.Run("Default configuration", func(t *testing.T) {
+		// Test with default MaxObjectIDLength (500)
+		fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, FileXfrConfig{}, logger)
 
-		parts := strings.Split(objectID, "_")
-		if len(parts) < 3 {
-			t.Errorf("Expected at least 3 parts in object ID, got %d: %s", len(parts), objectID)
-			return
+		testCases := []struct {
+			name     string
+			filename string
+			expected string
+		}{
+			{"Normal filename", "test.txt", "test.txt"},
+			{"Filename with spaces", "my file.pdf", "my_file.pdf"},
+			{"Filename with special characters", "report_2023!@#.xlsx", "report_2023!@#.xlsx"},
+			{"Long filename within default limit", "this_is_a_very_long_filename_that_exceeds_the_previous_100_character_limit_but_is_still_within_the_new_500_character_default_limit_for_object_ids.docx", "this_is_a_very_long_filename_that_exceeds_the_previous_100_character_limit_but_is_still_within_the_new_500_character_default_limit_for_object_ids.docx"},
+			{"Filename with non-ASCII characters", "कर्मचारी.txt", "कर्मचारी.txt"},
+			{"Empty filename", "", ""},
 		}
 
-		sanitizedFilename := sanitizeFilename(filename)
-		if !strings.HasPrefix(objectID, sanitizedFilename) {
-			t.Errorf("Object ID doesn't start with sanitized filename. Got: %s, Expected prefix: %s", objectID, sanitizedFilename)
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				objectID := fxs.generateObjectID(tc.filename)
+
+				assert.Equal(t, tc.expected, objectID, "Object ID should match expected sanitized filename")
+				assert.LessOrEqual(t, len(objectID), 500, "Object ID should not exceed default max length")
+
+				// Generate another ID with the same filename - should be identical since no randomization
+				anotherObjectID := fxs.generateObjectID(tc.filename)
+				assert.Equal(t, objectID, anotherObjectID, "Generated object IDs should be identical for same input")
+			})
 		}
+	})
 
-		// The timestamp should be the second-to-last part
-		timestamp := parts[len(parts)-2]
-		if _, err := time.Parse("20060102-150405", timestamp); err != nil {
-			t.Errorf("Invalid timestamp format in object ID: %s", timestamp)
-		}
+	t.Run("Custom short limit", func(t *testing.T) {
+		// Test with custom shorter limit to verify truncation still works
+		config := FileXfrConfig{MaxObjectIDLength: 50}
+		fxs := NewFileXfrServer(&jobs.JobManager{}, nil, nil, config, logger)
 
-		// The UUID should be the last part
-		uniqueID := parts[len(parts)-1]
-		if _, err := uuid.Parse(uniqueID); err != nil {
-			t.Errorf("Invalid UUID in object ID: %s", uniqueID)
-		}
+		longFilename := "this_is_a_very_long_filename_that_exceeds_the_custom_limit.docx"
+		expectedTruncated := "this_is_a_very_long_filename_that_exceeds_the_cust"
 
-		if len(objectID) > config.MaxObjectIDLength {
-			t.Errorf("Generated object ID is too long (max %d characters): %s", config.MaxObjectIDLength, objectID)
-		}
-	}
-
-	testCases := []struct {
-		name     string
-		filename string
-	}{
-		{"Normal filename", "test.txt"},
-		{"Filename with spaces", "my file.pdf"},
-		{"Filename with special characters", "report_2023!@#.xlsx"},
-		{"Very long filename", "this_is_a_very_long_filename_that_exceeds_the_usual_length_limits_for_filenames_in_most_systems.docx"},
-		{"Filename with non-ASCII characters", "कर्मचारी.txt"},
-		{"Empty filename", ""},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			objectID := fxs.generateObjectID(tc.filename)
-			validateObjectID(t, objectID, tc.filename)
-
-			// Generate another ID with the same filename
-			anotherObjectID := fxs.generateObjectID(tc.filename)
-
-			// Verify that the IDs are different
-			if objectID == anotherObjectID {
-				t.Errorf("Generated object IDs should be unique even for the same filename, but got duplicate: %s", objectID)
-			}
-
-			// Verify that both IDs start with the same sanitized filename
-			sanitizedFilename := sanitizeFilename(tc.filename)
-			if !strings.HasPrefix(objectID, sanitizedFilename) || !strings.HasPrefix(anotherObjectID, sanitizedFilename) {
-				t.Errorf("Both object IDs should start with the sanitized filename: %s", sanitizedFilename)
-			}
-		})
-	}
+		objectID := fxs.generateObjectID(longFilename)
+		assert.Equal(t, expectedTruncated, objectID, "Object ID should be truncated to custom limit")
+		assert.Equal(t, 50, len(objectID), "Object ID should be exactly 50 characters")
+	})
 }
