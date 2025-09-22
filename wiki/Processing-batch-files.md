@@ -80,16 +80,18 @@ The binary for `infiled` will be built by linking the `main()` function, all the
 ## `BulkfileinProcess()`
 
 This Go function will take
-* `file`: a string with the file contents, or an object ID. If it's less than, say 40 chars long, then it's an object ID. Else it's a big string holding the file contents.
-* `filename`: the (optional) file name, and
+* `file`: a string with the file contents, or an object ID
+* `filename`: the (optional) file name
 * `filetype`: an enum value for file type
+* `batchctx`: a JSONstr containing context information to pass through to the file checking function
+* `isObjectID`: a boolean that explicitly indicates whether `file` parameter contains an object ID (true) or file contents (false)
 
-and return `error`.
+and return `(string, error)` where the string is the batch ID for tracking.
 
 Internally, it'll be a big case statement keyed by file type, where it will call the `filechkXXX()` function for that type.
 
 ```
-if an object ID was given in the request, not the file contents, then
+if isObjectID is true then
     read the object contents into an in-memory string
 endif
 switch filetype do
@@ -120,6 +122,7 @@ There will be one `filechk()` function for each file type.
 The `filechk()` functions will take as input
 * a string with the file contents
 * a string with the name of the submitted file
+* a JSONstr with batch context information
 
 and will return
 * a boolean, `isgood`, to indicate whether the file may be submitted for batch processing or is entirely garbage.
@@ -136,6 +139,14 @@ The value of `isgood` will be `false` only if the file was totally garbage, *e.g
 
 This function will access Redis to check that there are no duplicates of either the file or any of the rows. It will access Rigel to find out how to connect to Redis. A duplicate row will be treated as a faulty row. A duplicate file will result in `isgood` being set to `false`.
 
+## Configuration
+
+The FileXfr system can be configured using `FileXfrConfig` which includes:
+
+* `MaxObjectIDLength`: Sets the maximum length for object IDs in the object store. Object IDs are derived from sanitized filenames and truncated to this length. Default: 500 characters. S3/MinIO limit is 1024 bytes.
+* `IncomingBucket`: The bucket name for storing incoming files. Default: "incoming"
+* `FailedBucket`: The bucket name for storing files that failed processing. Default: "failed"
+
 ## The `RegisterFilechk()` function
 
 This function will register a file-checking function against each file type. If the application needs to process batch files of 55 types, then 55 file-checking functions will be registered in the system by calling `RegisterFilechk()` 55 times. Later, `BulkfileinProcess()` will look up the correct file-checking function for each file type and call it.
@@ -147,15 +158,16 @@ The parameters for the file-checking functions have been discussed earlier. Thes
 // INPUT param:
 //     string: file contents
 //     string: file name
+//     JSONstr: batch context (for passing context information)
 // RETURN params:
-//     bool: isgood, 
-//     JSONstr: context, 
+//     bool: isgood,
+//     JSONstr: context,
 //     []BatchInput_t: batch_input
 //     string: app
-//     string: op 
+//     string: op
 //     string: error_file's object ID
 
-type FileChk func(string, string) (bool, JSONstr, []BatchInput_t, string, string, string)
+type FileChk func(string, string, JSONstr) (bool, JSONstr, []BatchInput_t, string, string, string)
 
 //create map to register
 var fileChkMap map[string]FileChk
