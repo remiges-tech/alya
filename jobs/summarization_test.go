@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"testing"
 	"time"
 
@@ -12,8 +13,16 @@ import (
 	"github.com/remiges-tech/alya/jobs/objstore"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc/mocks"
+	"github.com/remiges-tech/logharbour/logharbour"
 	"github.com/stretchr/testify/assert"
 )
+
+// mockInitializer is a simple initializer for testing
+type mockInitializer struct{}
+
+func (m *mockInitializer) Init(app string) (InitBlock, error) {
+	return nil, nil
+}
 
 // Define the test cases
 var summarizeBatchTests = []struct {
@@ -111,11 +120,21 @@ func TestSummarizeBatch(t *testing.T) {
 			// $ cd jobs/pg/batchsqlc
 			// $ moq -out mocks/querier_mock.go -pkg mocks . Querier
 			mockQuerier := &mocks.QuerierMock{}
+			mockQuerier.TryAdvisoryLockBatchFunc = func(ctx context.Context, batchIDStr string) (bool, error) {
+				return true, nil
+			}
 			mockQuerier.GetBatchByIDFunc = func(ctx context.Context, id uuid.UUID) (batchsqlc.Batch, error) {
 				return batchsqlc.Batch{
 					ID:     tt.batchID,
 					Status: batchsqlc.StatusEnumQueued,
+					App:    "testapp",
 				}, nil
+			}
+			mockQuerier.CountBatchRowsQueuedByBatchIDFunc = func(ctx context.Context, batch uuid.UUID) (int64, error) {
+				return 0, nil
+			}
+			mockQuerier.CountBatchRowsInProgByBatchIDFunc = func(ctx context.Context, batch uuid.UUID) (int64, error) {
+				return 0, nil
 			}
 			mockQuerier.CountBatchRowsByBatchIDAndStatusFunc = func(ctx context.Context, arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams) (int64, error) {
 				return int64(0), nil
@@ -150,16 +169,17 @@ func TestSummarizeBatch(t *testing.T) {
 			redisMock.ExpectSet(redisKey, string(tt.expectedStatus), time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100)*time.Second).SetVal("OK")
 			redisMock.ExpectTxPipelineExec()
 
-			jm := JobManager{
-				queries:     mockQuerier,
-				objStore:    mockObjStore,
-				redisClient: redisClient,
-				// Initialize Config with a non-zero BatchStatusCacheDurSec
-				config: JobManagerConfig{
-					BatchStatusCacheDurSec: ALYA_BATCHSTATUS_CACHEDUR_SEC,
-				},
-				// Initialize other required fields for the test
-			}
+			loggerCtx := &logharbour.LoggerContext{}
+			logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())
+
+			// Create JobManager using constructor to initialize maps
+			jm := NewJobManager(nil, redisClient, nil, logger, &JobManagerConfig{
+				BatchStatusCacheDurSec: ALYA_BATCHSTATUS_CACHEDUR_SEC,
+			})
+			jm.objStore = mockObjStore
+
+			// Register a dummy initializer for the test
+			jm.RegisterInitializer("testapp", &mockInitializer{})
 
 			err := jm.summarizeBatch(mockQuerier, tt.batchID)
 			assert.NoError(t, err)

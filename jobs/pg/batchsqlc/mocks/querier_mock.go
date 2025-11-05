@@ -26,6 +26,12 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //			CountBatchRowsByBatchIDAndStatusFunc: func(ctx context.Context, arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams) (int64, error) {
 //				panic("mock out the CountBatchRowsByBatchIDAndStatus method")
 //			},
+//			CountBatchRowsInProgByBatchIDFunc: func(ctx context.Context, batch uuid.UUID) (int64, error) {
+//				panic("mock out the CountBatchRowsInProgByBatchID method")
+//			},
+//			CountBatchRowsQueuedByBatchIDFunc: func(ctx context.Context, batch uuid.UUID) (int64, error) {
+//				panic("mock out the CountBatchRowsQueuedByBatchID method")
+//			},
 //			FetchBatchRowsForBatchDoneFunc: func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.FetchBatchRowsForBatchDoneRow, error) {
 //				panic("mock out the FetchBatchRowsForBatchDone method")
 //			},
@@ -67,6 +73,9 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //			},
 //			InsertIntoBatchesFunc: func(ctx context.Context, arg batchsqlc.InsertIntoBatchesParams) (uuid.UUID, error) {
 //				panic("mock out the InsertIntoBatches method")
+//			},
+//			TryAdvisoryLockBatchFunc: func(ctx context.Context, dollar_1 string) (bool, error) {
+//				panic("mock out the TryAdvisoryLockBatch method")
 //			},
 //			UpdateBatchCountersFunc: func(ctx context.Context, arg batchsqlc.UpdateBatchCountersParams) error {
 //				panic("mock out the UpdateBatchCounters method")
@@ -126,6 +135,12 @@ type QuerierMock struct {
 	// CountBatchRowsByBatchIDAndStatusFunc mocks the CountBatchRowsByBatchIDAndStatus method.
 	CountBatchRowsByBatchIDAndStatusFunc func(ctx context.Context, arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams) (int64, error)
 
+	// CountBatchRowsInProgByBatchIDFunc mocks the CountBatchRowsInProgByBatchID method.
+	CountBatchRowsInProgByBatchIDFunc func(ctx context.Context, batch uuid.UUID) (int64, error)
+
+	// CountBatchRowsQueuedByBatchIDFunc mocks the CountBatchRowsQueuedByBatchID method.
+	CountBatchRowsQueuedByBatchIDFunc func(ctx context.Context, batch uuid.UUID) (int64, error)
+
 	// FetchBatchRowsForBatchDoneFunc mocks the FetchBatchRowsForBatchDone method.
 	FetchBatchRowsForBatchDoneFunc func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.FetchBatchRowsForBatchDoneRow, error)
 
@@ -167,6 +182,9 @@ type QuerierMock struct {
 
 	// InsertIntoBatchesFunc mocks the InsertIntoBatches method.
 	InsertIntoBatchesFunc func(ctx context.Context, arg batchsqlc.InsertIntoBatchesParams) (uuid.UUID, error)
+
+	// TryAdvisoryLockBatchFunc mocks the TryAdvisoryLockBatch method.
+	TryAdvisoryLockBatchFunc func(ctx context.Context, dollar_1 string) (bool, error)
 
 	// UpdateBatchCountersFunc mocks the UpdateBatchCounters method.
 	UpdateBatchCountersFunc func(ctx context.Context, arg batchsqlc.UpdateBatchCountersParams) error
@@ -228,6 +246,20 @@ type QuerierMock struct {
 			Ctx context.Context
 			// Arg is the arg argument value.
 			Arg batchsqlc.CountBatchRowsByBatchIDAndStatusParams
+		}
+		// CountBatchRowsInProgByBatchID holds details about calls to the CountBatchRowsInProgByBatchID method.
+		CountBatchRowsInProgByBatchID []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Batch is the batch argument value.
+			Batch uuid.UUID
+		}
+		// CountBatchRowsQueuedByBatchID holds details about calls to the CountBatchRowsQueuedByBatchID method.
+		CountBatchRowsQueuedByBatchID []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Batch is the batch argument value.
+			Batch uuid.UUID
 		}
 		// FetchBatchRowsForBatchDone holds details about calls to the FetchBatchRowsForBatchDone method.
 		FetchBatchRowsForBatchDone []struct {
@@ -324,6 +356,13 @@ type QuerierMock struct {
 			Ctx context.Context
 			// Arg is the arg argument value.
 			Arg batchsqlc.InsertIntoBatchesParams
+		}
+		// TryAdvisoryLockBatch holds details about calls to the TryAdvisoryLockBatch method.
+		TryAdvisoryLockBatch []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Dollar_1 is the dollar_1 argument value.
+			Dollar_1 string
 		}
 		// UpdateBatchCounters holds details about calls to the UpdateBatchCounters method.
 		UpdateBatchCounters []struct {
@@ -433,6 +472,8 @@ type QuerierMock struct {
 	}
 	lockBulkInsertIntoBatchRows              sync.RWMutex
 	lockCountBatchRowsByBatchIDAndStatus     sync.RWMutex
+	lockCountBatchRowsInProgByBatchID        sync.RWMutex
+	lockCountBatchRowsQueuedByBatchID        sync.RWMutex
 	lockFetchBatchRowsForBatchDone           sync.RWMutex
 	lockFetchBlockOfRows                     sync.RWMutex
 	lockGetBatchByID                         sync.RWMutex
@@ -447,6 +488,7 @@ type QuerierMock struct {
 	lockInsertBatchFile                      sync.RWMutex
 	lockInsertIntoBatchRows                  sync.RWMutex
 	lockInsertIntoBatches                    sync.RWMutex
+	lockTryAdvisoryLockBatch                 sync.RWMutex
 	lockUpdateBatchCounters                  sync.RWMutex
 	lockUpdateBatchOutputFiles               sync.RWMutex
 	lockUpdateBatchResult                    sync.RWMutex
@@ -533,6 +575,78 @@ func (mock *QuerierMock) CountBatchRowsByBatchIDAndStatusCalls() []struct {
 	mock.lockCountBatchRowsByBatchIDAndStatus.RLock()
 	calls = mock.calls.CountBatchRowsByBatchIDAndStatus
 	mock.lockCountBatchRowsByBatchIDAndStatus.RUnlock()
+	return calls
+}
+
+// CountBatchRowsInProgByBatchID calls CountBatchRowsInProgByBatchIDFunc.
+func (mock *QuerierMock) CountBatchRowsInProgByBatchID(ctx context.Context, batch uuid.UUID) (int64, error) {
+	if mock.CountBatchRowsInProgByBatchIDFunc == nil {
+		panic("QuerierMock.CountBatchRowsInProgByBatchIDFunc: method is nil but Querier.CountBatchRowsInProgByBatchID was just called")
+	}
+	callInfo := struct {
+		Ctx   context.Context
+		Batch uuid.UUID
+	}{
+		Ctx:   ctx,
+		Batch: batch,
+	}
+	mock.lockCountBatchRowsInProgByBatchID.Lock()
+	mock.calls.CountBatchRowsInProgByBatchID = append(mock.calls.CountBatchRowsInProgByBatchID, callInfo)
+	mock.lockCountBatchRowsInProgByBatchID.Unlock()
+	return mock.CountBatchRowsInProgByBatchIDFunc(ctx, batch)
+}
+
+// CountBatchRowsInProgByBatchIDCalls gets all the calls that were made to CountBatchRowsInProgByBatchID.
+// Check the length with:
+//
+//	len(mockedQuerier.CountBatchRowsInProgByBatchIDCalls())
+func (mock *QuerierMock) CountBatchRowsInProgByBatchIDCalls() []struct {
+	Ctx   context.Context
+	Batch uuid.UUID
+} {
+	var calls []struct {
+		Ctx   context.Context
+		Batch uuid.UUID
+	}
+	mock.lockCountBatchRowsInProgByBatchID.RLock()
+	calls = mock.calls.CountBatchRowsInProgByBatchID
+	mock.lockCountBatchRowsInProgByBatchID.RUnlock()
+	return calls
+}
+
+// CountBatchRowsQueuedByBatchID calls CountBatchRowsQueuedByBatchIDFunc.
+func (mock *QuerierMock) CountBatchRowsQueuedByBatchID(ctx context.Context, batch uuid.UUID) (int64, error) {
+	if mock.CountBatchRowsQueuedByBatchIDFunc == nil {
+		panic("QuerierMock.CountBatchRowsQueuedByBatchIDFunc: method is nil but Querier.CountBatchRowsQueuedByBatchID was just called")
+	}
+	callInfo := struct {
+		Ctx   context.Context
+		Batch uuid.UUID
+	}{
+		Ctx:   ctx,
+		Batch: batch,
+	}
+	mock.lockCountBatchRowsQueuedByBatchID.Lock()
+	mock.calls.CountBatchRowsQueuedByBatchID = append(mock.calls.CountBatchRowsQueuedByBatchID, callInfo)
+	mock.lockCountBatchRowsQueuedByBatchID.Unlock()
+	return mock.CountBatchRowsQueuedByBatchIDFunc(ctx, batch)
+}
+
+// CountBatchRowsQueuedByBatchIDCalls gets all the calls that were made to CountBatchRowsQueuedByBatchID.
+// Check the length with:
+//
+//	len(mockedQuerier.CountBatchRowsQueuedByBatchIDCalls())
+func (mock *QuerierMock) CountBatchRowsQueuedByBatchIDCalls() []struct {
+	Ctx   context.Context
+	Batch uuid.UUID
+} {
+	var calls []struct {
+		Ctx   context.Context
+		Batch uuid.UUID
+	}
+	mock.lockCountBatchRowsQueuedByBatchID.RLock()
+	calls = mock.calls.CountBatchRowsQueuedByBatchID
+	mock.lockCountBatchRowsQueuedByBatchID.RUnlock()
 	return calls
 }
 
@@ -1033,6 +1147,42 @@ func (mock *QuerierMock) InsertIntoBatchesCalls() []struct {
 	mock.lockInsertIntoBatches.RLock()
 	calls = mock.calls.InsertIntoBatches
 	mock.lockInsertIntoBatches.RUnlock()
+	return calls
+}
+
+// TryAdvisoryLockBatch calls TryAdvisoryLockBatchFunc.
+func (mock *QuerierMock) TryAdvisoryLockBatch(ctx context.Context, dollar_1 string) (bool, error) {
+	if mock.TryAdvisoryLockBatchFunc == nil {
+		panic("QuerierMock.TryAdvisoryLockBatchFunc: method is nil but Querier.TryAdvisoryLockBatch was just called")
+	}
+	callInfo := struct {
+		Ctx      context.Context
+		Dollar_1 string
+	}{
+		Ctx:      ctx,
+		Dollar_1: dollar_1,
+	}
+	mock.lockTryAdvisoryLockBatch.Lock()
+	mock.calls.TryAdvisoryLockBatch = append(mock.calls.TryAdvisoryLockBatch, callInfo)
+	mock.lockTryAdvisoryLockBatch.Unlock()
+	return mock.TryAdvisoryLockBatchFunc(ctx, dollar_1)
+}
+
+// TryAdvisoryLockBatchCalls gets all the calls that were made to TryAdvisoryLockBatch.
+// Check the length with:
+//
+//	len(mockedQuerier.TryAdvisoryLockBatchCalls())
+func (mock *QuerierMock) TryAdvisoryLockBatchCalls() []struct {
+	Ctx      context.Context
+	Dollar_1 string
+} {
+	var calls []struct {
+		Ctx      context.Context
+		Dollar_1 string
+	}
+	mock.lockTryAdvisoryLockBatch.RLock()
+	calls = mock.calls.TryAdvisoryLockBatch
+	mock.lockTryAdvisoryLockBatch.RUnlock()
 	return calls
 }
 
