@@ -30,13 +30,13 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 
 	if !locked {
 		// Another worker is summarizing this batch
-		jm.logger.Debug0().LogActivity("Batch summarization in progress by another worker, skipping", map[string]any{
+		jm.logger.Info().LogActivity("Batch summarization in progress by another worker, skipping", map[string]any{
 			"batchId": batchID.String(),
 		})
 		return nil // Exit immediately, no blocking
 	}
 
-	jm.logger.Debug0().LogActivity("Acquired advisory lock for batch summarization", map[string]any{
+	jm.logger.Info().LogActivity("Acquired advisory lock for batch summarization", map[string]any{
 		"batchId": batchID.String(),
 	})
 
@@ -61,28 +61,67 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 		return nil
 	}
 
-	// fetch count of records where status = queued or inprogress
-	jm.logger.Debug0().LogActivity("Checking for pending batch rows", map[string]any{
+	// Check queued count first, then inprog only if queued=0.
+	// Most checks occur during concurrent processing (queued > 0). Checking queued first
+	// allows immediate skip without querying inprog count.
+	//
+	// Race condition fix: When queued=0 and inprog>0, transaction isolation may show stale
+	// snapshot. Row completion commits might not be visible yet. Retry with fresh transaction
+	// to get updated snapshot.
+	//
+	// Better solution: Use Redis atomic counter (HINCRBY) to track completion. Only the worker
+	// completing the last row attempts summarization. Eliminates redundant attempts and race.
+	// Alternative: PostgreSQL NOTIFY/LISTEN for event-driven summarization.
+
+	jm.logger.Info().LogActivity("Checking for queued batch rows", map[string]any{
 		"batchId": batchID.String(),
 	})
-	count, err := q.CountBatchRowsByBatchIDAndStatus(ctx, batchsqlc.CountBatchRowsByBatchIDAndStatusParams{
-		Batch:    batchID,
-		Status:   batchsqlc.StatusEnumQueued,
-		Status_2: batchsqlc.StatusEnumInprog,
-	})
+
+	queuedCount, err := q.CountBatchRowsQueuedByBatchID(ctx, batchID)
 	if err != nil {
-		jm.logger.Error(err).LogActivity("Failed to count batch rows by status", map[string]any{
+		jm.logger.Error(err).LogActivity("Failed to count queued batch rows", map[string]any{
 			"batchId": batchID.String(),
 		})
-		return fmt.Errorf("failed to count batch rows by batch ID and status: %v", err)
+		return fmt.Errorf("failed to count queued batch rows: %v", err)
 	}
 
-	if count > 0 {
-		jm.logger.Info().LogActivity("Batch has pending rows, skipping summarization", map[string]any{
-			"batchId": batchID.String(),
-			"pendingCount": count,
+	if queuedCount > 0 {
+		// Batch incomplete, no race possible on queued rows
+		jm.logger.Info().LogActivity("Batch has queued rows, skipping summarization", map[string]any{
+			"batchId":      batchID.String(),
+			"queuedCount":  queuedCount,
+			"willRetry":    false,
 		})
 		return nil
+	}
+
+	// All rows fetched, check if any still processing
+	jm.logger.Info().LogActivity("No queued rows, checking inprog rows", map[string]any{
+		"batchId": batchID.String(),
+	})
+
+	inprogCount, err := q.CountBatchRowsInProgByBatchID(ctx, batchID)
+	if err != nil {
+		jm.logger.Error(err).LogActivity("Failed to count inprog batch rows", map[string]any{
+			"batchId": batchID.String(),
+		})
+		return fmt.Errorf("failed to count inprog batch rows: %v", err)
+	}
+
+	jm.logger.Info().LogActivity("Pending row count result", map[string]any{
+		"batchId":      batchID.String(),
+		"queuedCount":  queuedCount,
+		"inprogCount":  inprogCount,
+		"willSummarize": inprogCount == 0,
+	})
+
+	if inprogCount > 0 {
+		// Rows processing or stale snapshot - retry with fresh transaction
+		jm.logger.Info().LogActivity("Batch has inprog rows", map[string]any{
+			"batchId":     batchID.String(),
+			"inprogCount": inprogCount,
+		})
+		return ErrBatchHasPendingRows
 	}
 
 	// Fetch all batchrows records for the batch, sorted by "line"
@@ -140,10 +179,13 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	}
 
 	// Update the batches record with summarized information
-	jm.logger.Info().LogActivity("Updating batch summary", map[string]any{
+	jm.logger.Info().LogActivity("Updating batch summary in database", map[string]any{
 		"batchId": batchID.String(),
 		"status": batchStatus,
 		"outputFileCount": len(objStoreFiles),
+		"nSuccess": nsuccess,
+		"nFailed": nfailed,
+		"nAborted": naborted,
 	})
 	err = updateBatchSummary(q, ctx, batchID, batchStatus, objStoreFiles, nsuccess, nfailed, naborted)
 	if err != nil {
@@ -152,6 +194,11 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 		})
 		return fmt.Errorf("failed to update batch summary: %v", err)
 	}
+
+	jm.logger.Info().LogActivity("Batch summary database update completed successfully", map[string]any{
+		"batchId": batchID.String(),
+		"status": batchStatus,
+	})
 
 	// Update status in redis
 	jm.logger.Debug0().LogActivity("Updating batch status in Redis cache", map[string]any{

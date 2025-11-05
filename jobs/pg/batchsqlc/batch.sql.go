@@ -57,6 +57,32 @@ func (q *Queries) CountBatchRowsByBatchIDAndStatus(ctx context.Context, arg Coun
 	return count, err
 }
 
+const countBatchRowsInProgByBatchID = `-- name: CountBatchRowsInProgByBatchID :one
+SELECT COUNT(*)
+FROM batchrows
+WHERE batch = $1 AND status = 'inprog'
+`
+
+func (q *Queries) CountBatchRowsInProgByBatchID(ctx context.Context, batch uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countBatchRowsInProgByBatchID, batch)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countBatchRowsQueuedByBatchID = `-- name: CountBatchRowsQueuedByBatchID :one
+SELECT COUNT(*)
+FROM batchrows
+WHERE batch = $1 AND status = 'queued'
+`
+
+func (q *Queries) CountBatchRowsQueuedByBatchID(ctx context.Context, batch uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countBatchRowsQueuedByBatchID, batch)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const fetchBatchRowsForBatchDone = `-- name: FetchBatchRowsForBatchDone :many
 SELECT line, status, res, messages
 FROM batchrows
