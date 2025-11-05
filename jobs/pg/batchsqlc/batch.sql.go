@@ -394,7 +394,6 @@ SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneb
 FROM batchrows
 WHERE batch = $1 AND status IN ('success', 'failed')
 ORDER BY line
-FOR UPDATE
 `
 
 type GetProcessedBatchRowsByBatchIDSortedRow struct {
@@ -533,6 +532,23 @@ func (q *Queries) InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesPa
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const tryAdvisoryLockBatch = `-- name: TryAdvisoryLockBatch :one
+SELECT pg_try_advisory_xact_lock(
+  ('x' || substr(md5($1::text), 1, 16))::bit(64)::bigint
+) as locked
+`
+
+// Attempts to acquire a transaction-scoped advisory lock for a batch.
+// Returns true if lock was acquired, false if another session holds it.
+// The lock is automatically released when the transaction commits or rolls back.
+// Uses the first 8 bytes of the batch UUID as the lock ID.
+func (q *Queries) TryAdvisoryLockBatch(ctx context.Context, dollar_1 string) (bool, error) {
+	row := q.db.QueryRow(ctx, tryAdvisoryLockBatch, dollar_1)
+	var locked bool
+	err := row.Scan(&locked)
+	return locked, err
 }
 
 const updateBatchCounters = `-- name: UpdateBatchCounters :exec
@@ -775,8 +791,8 @@ func (q *Queries) UpdateBatchRowsStatus(ctx context.Context, arg UpdateBatchRows
 }
 
 const updateBatchRowsStatusBulk = `-- name: UpdateBatchRowsStatusBulk :exec
-UPDATE batchrows 
-SET status = $1 
+UPDATE batchrows
+SET status = $1
 WHERE rowid = ANY($2::bigint[])
 `
 

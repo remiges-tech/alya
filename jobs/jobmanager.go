@@ -615,16 +615,6 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		return true // Return true because we did process rows
 	}
 
-	// create a new transaction for the summarizeCompletedBatches
-	jm.logger.Debug0().LogActivity("Starting transaction for batch summarization", nil)
-	tx, err = jm.db.Begin(ctx)
-	if err != nil {
-		jm.logger.Error(err).LogActivity("Error starting transaction for summarization", nil)
-		return true // Return true because we did process rows
-	}
-
-	txQueries = batchsqlc.New(tx)
-
 	// Create a map to store unique batch IDs
 	batchSet := make(map[uuid.UUID]bool)
 	for _, row := range blockOfRows {
@@ -632,42 +622,19 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	}
 
 	// Check for completed batches and summarize them
-	jm.logger.Debug0().LogActivity("Checking for completed batches", map[string]any{
+	// Each batch now gets its own individual transaction
+	jm.logger.Debug0().LogActivity("Summarizing completed batches with individual transactions", map[string]any{
 		"batchCount": len(batchSet),
 	})
-	if err := jm.summarizeCompletedBatches(txQueries, batchSet); err != nil {
+	if err := jm.summarizeCompletedBatches(ctx, batchSet); err != nil {
+		// Check if error was due to context cancellation
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			jm.logger.Debug0().LogActivity("Batch summarization cancelled due to context", nil)
+			return true // Return true because we did process rows
+		}
 		jm.logger.Error(err).LogActivity("Error summarizing completed batches", nil)
-		tx.Rollback(ctx)
 		return true // Return true because we did process rows
 	}
-
-	// CANCELLATION POINT 6: Before committing summary transaction
-	// Ensures summary changes aren't committed if shutdown was requested
-	// Maintains database consistency during shutdown
-	// Last chance to roll back before making summarization changes permanent
-	if ctx.Err() != nil {
-		tx.Rollback(ctx)
-		return true // Return true because we did process rows
-	}
-
-	jm.logger.Debug0().LogActivity("Committing transaction for batch summarization", map[string]any{
-		"transactionDurationMs": time.Since(txStartTime).Milliseconds(),
-	})
-	commitStartTime := time.Now()
-	err = tx.Commit(ctx)
-	if err != nil {
-		jm.logger.Error(err).LogActivity("Error committing summarization transaction", map[string]any{
-			"commitElapsedMs": time.Since(commitStartTime).Milliseconds(),
-			"transactionDurationMs": time.Since(txStartTime).Milliseconds(),
-		})
-		return false
-	}
-	jm.logger.Debug0().LogActivity("Transaction committed successfully", map[string]any{
-		"commitElapsedMs": time.Since(commitStartTime).Milliseconds(),
-		"transactionDurationMs": time.Since(txStartTime).Milliseconds(),
-	})
-	// Set tx to nil to prevent rollback in defer
-	tx = nil
 
 	// Close and clean up initblocks
 	jm.closeInitBlocks()
@@ -1108,20 +1075,57 @@ func (jm *JobManager) updateBatchJobResult(txQueries batchsqlc.Querier, row batc
 	return nil
 }
 
-func (jm *JobManager) summarizeCompletedBatches(q *batchsqlc.Queries, batchSet map[uuid.UUID]bool) error {
+func (jm *JobManager) summarizeCompletedBatches(ctx context.Context, batchSet map[uuid.UUID]bool) error {
 	jm.logger.Debug0().LogActivity("Summarizing completed batches", map[string]any{
 		"batchCount": len(batchSet),
 	})
+
 	for batchID := range batchSet {
-		jm.logger.Debug0().LogActivity("Summarizing batch", map[string]any{
+		// CANCELLATION POINT 6: Before each batch summary transaction
+		// Allows graceful shutdown between batch summaries without starting new work
+		// Each batch is independent, so partial completion is acceptable
+		if ctx.Err() != nil {
+			jm.logger.Debug0().LogActivity("Context cancelled, stopping batch summarization", map[string]any{
+				"remainingBatches": "partial",
+			})
+			return ctx.Err()
+		}
+
+		// Each batch gets its own transaction
+		tx, err := jm.db.Begin(ctx)
+		if err != nil {
+			jm.logger.Error(err).LogActivity("Failed to start transaction for batch", map[string]any{
+				"batchId": batchID.String(),
+			})
+			continue // Skip this batch, try others
+		}
+
+		txQueries := batchsqlc.New(tx)
+
+		jm.logger.Debug0().LogActivity("Summarizing batch in individual transaction", map[string]any{
 			"batchId": batchID.String(),
 		})
-		if err := jm.summarizeBatch(q, batchID); err != nil {
+
+		err = jm.summarizeBatch(txQueries, batchID)
+		if err != nil {
 			jm.logger.Error(err).LogActivity("Error summarizing batch", map[string]any{
+				"batchId": batchID.String(),
+			})
+			tx.Rollback(ctx)
+			continue // Skip this batch, try others
+		}
+
+		err = tx.Commit(ctx)
+		if err != nil {
+			jm.logger.Error(err).LogActivity("Failed to commit batch summary", map[string]any{
 				"batchId": batchID.String(),
 			})
 			continue
 		}
+
+		jm.logger.Info().LogActivity("Batch summarized successfully in individual transaction", map[string]any{
+			"batchId": batchID.String(),
+		})
 	}
 
 	return nil

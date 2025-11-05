@@ -19,6 +19,27 @@ import (
 func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) error {
 	ctx := context.Background()
 
+	// Try to acquire advisory lock (non-blocking)
+	locked, err := q.TryAdvisoryLockBatch(ctx, batchID.String())
+	if err != nil {
+		jm.logger.Error(err).LogActivity("Failed to try advisory lock", map[string]any{
+			"batchId": batchID.String(),
+		})
+		return fmt.Errorf("failed to try advisory lock: %v", err)
+	}
+
+	if !locked {
+		// Another worker is summarizing this batch
+		jm.logger.Debug0().LogActivity("Batch summarization in progress by another worker, skipping", map[string]any{
+			"batchId": batchID.String(),
+		})
+		return nil // Exit immediately, no blocking
+	}
+
+	jm.logger.Debug0().LogActivity("Acquired advisory lock for batch summarization", map[string]any{
+		"batchId": batchID.String(),
+	})
+
 	// Fetch the batch record
 	jm.logger.Debug0().LogActivity("Fetching batch record for summarization", map[string]any{
 		"batchId": batchID.String(),

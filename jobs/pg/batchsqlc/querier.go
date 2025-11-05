@@ -27,6 +27,11 @@ type Querier interface {
 	InsertBatchFile(ctx context.Context, arg InsertBatchFileParams) error
 	InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRowsParams) error
 	InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error)
+	// Attempts to acquire a transaction-scoped advisory lock for a batch.
+	// Returns true if lock was acquired, false if another session holds it.
+	// The lock is automatically released when the transaction commits or rolls back.
+	// Uses the first 8 bytes of the batch UUID as the lock ID.
+	TryAdvisoryLockBatch(ctx context.Context, dollar_1 string) (bool, error)
 	UpdateBatchCounters(ctx context.Context, arg UpdateBatchCountersParams) error
 	UpdateBatchOutputFiles(ctx context.Context, arg UpdateBatchOutputFilesParams) error
 	UpdateBatchResult(ctx context.Context, arg UpdateBatchResultParams) error

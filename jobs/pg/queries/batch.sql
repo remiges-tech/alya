@@ -89,8 +89,7 @@ FOR UPDATE;
 SELECT rowid, line, input, status, reqat, doneat, res, blobrows, messages, doneby
 FROM batchrows
 WHERE batch = $1 AND status IN ('success', 'failed')
-ORDER BY line
-FOR UPDATE;
+ORDER BY line;
 
 -- name: CountBatchRowsByBatchIDAndStatus :one
 SELECT COUNT(*)
@@ -186,10 +185,19 @@ UPDATE batches
 SET status = @status 
 WHERE id = ANY(@batch_ids::uuid[]) AND status = 'queued';
 
--- name: UpdateBatchRowsStatusBulk :exec  
+-- name: UpdateBatchRowsStatusBulk :exec
 -- Bulk update batchrow statuses for multiple rows at once.
 -- This significantly improves performance when processing multiple rows
 -- by reducing database round trips from N queries to 1 query.
-UPDATE batchrows 
-SET status = @status 
+UPDATE batchrows
+SET status = @status
 WHERE rowid = ANY(@row_ids::bigint[]);
+
+-- name: TryAdvisoryLockBatch :one
+-- Attempts to acquire a transaction-scoped advisory lock for a batch.
+-- Returns true if lock was acquired, false if another session holds it.
+-- The lock is automatically released when the transaction commits or rolls back.
+-- Uses the first 8 bytes of the batch UUID as the lock ID.
+SELECT pg_try_advisory_xact_lock(
+  ('x' || substr(md5($1::text), 1, 16))::bit(64)::bigint
+) as locked;
