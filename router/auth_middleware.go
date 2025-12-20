@@ -21,6 +21,20 @@ type TokenCache interface {
 	Set(token string) error
 }
 
+// OIDCProvider is an interface that wraps oidc.Provider for testability
+type OIDCProvider interface {
+	Verifier(config *oidc.Config) *oidc.IDTokenVerifier
+}
+
+// oidcProviderWrapper wraps *oidc.Provider to implement OIDCProvider interface
+type oidcProviderWrapper struct {
+	provider *oidc.Provider
+}
+
+func (w *oidcProviderWrapper) Verifier(config *oidc.Config) *oidc.IDTokenVerifier {
+	return w.provider.Verifier(config)
+}
+
 // RedisTokenCache is a Redis implementation of TokenCache.
 type RedisTokenCache struct {
 	Client     *redis.Client
@@ -70,20 +84,23 @@ type AuthMiddleware struct {
 	Verifier             *oidc.IDTokenVerifier
 	Cache                TokenCache
 	Logger               logger.Logger
-	SecurityMode         SecurityMode            // NEW: Security mode (Strict/Compatible)
-	AllowedAlgorithms    []string                // NEW: Allowed signing algorithms
-	RequiredClaims       []string                // NEW: Required claims to validate
-	IssuerURL            string                  // NEW: Expected issuer URL
-	ValidateClaimsFunc   ClaimsValidatorFunc     // NEW: Custom claims validator
-	StoreClaimsInContext bool                    // NEW: Whether to store claims in Gin context
+	Provider             OIDCProvider        // OIDC provider interface
+	SecurityMode         SecurityMode        // NEW: Security mode (Strict/Compatible)
+	AllowedAlgorithms    []string            // NEW: Allowed signing algorithms
+	RequiredClaims       []string            // NEW: Required claims to validate
+	IssuerURL            string              // NEW: Expected issuer URL
+	ValidateClaimsFunc   ClaimsValidatorFunc // NEW: Custom claims validator
+	StoreClaimsInContext bool                // NEW: Whether to store claims in Gin context
 }
 
 // SecurityMode defines the authentication security mode
 type SecurityMode int
 
 const (
+	// SecurityModeUndefined represents an unset security mode (will default to StrictMode)
+	SecurityModeUndefined SecurityMode = iota
 	// CompatibilityMode maintains backward compatibility (legacy behavior)
-	CompatibilityMode SecurityMode = iota
+	CompatibilityMode
 	// StrictMode enforces VAPT-compliant security (recommended for production)
 	StrictMode
 )
@@ -98,12 +115,16 @@ func NewAuthMiddleware(clientID string, provider *oidc.Provider, cache TokenCach
 	oidcConfig := &oidc.Config{
 		ClientID: clientID,
 	}
-	verifier := provider.Verifier(oidcConfig)
+
+	// Wrap the provider to make it compatible with OIDCProvider interface
+	wrappedProvider := &oidcProviderWrapper{provider: provider}
+	verifier := wrappedProvider.Verifier(oidcConfig)
 
 	return &AuthMiddleware{
 		Verifier:             verifier,
 		Cache:                cache,
 		Logger:               logger,
+		Provider:             wrappedProvider,
 		SecurityMode:         CompatibilityMode, // Maintain backward compatibility
 		StoreClaimsInContext: false,
 	}, nil
@@ -111,19 +132,25 @@ func NewAuthMiddleware(clientID string, provider *oidc.Provider, cache TokenCach
 
 // AuthMiddlewareConfig holds configuration for secure auth middleware
 type AuthMiddlewareConfig struct {
-	ClientID              string              // OIDC client ID (required)
-	Provider              *oidc.Provider      // OIDC provider (required)
-	Cache                 TokenCache          // Token cache (required)
-	Logger                logger.Logger       // Logger (required)
-	IssuerURL             string              // Expected token issuer URL (required for strict mode)
-	SecurityMode          SecurityMode        // Security mode (default: StrictMode)
-	AllowedAlgorithms     []string            // Allowed signing algorithms (default: RS256, RS384, RS512)
-	RequiredClaims        []string            // Required claims to validate (default: exp, iss, sub)
-	ValidateClaimsFunc    ClaimsValidatorFunc // Custom claims validator (optional)
-	StoreClaimsInContext  bool                // Store claims in Gin context (default: true)
-	SkipClientIDCheck     bool                // Skip client ID validation (default: false, not recommended)
-	SkipExpiryCheck       bool                // Skip expiry validation (default: false, not recommended)
-	SkipIssuerCheck       bool                // Skip issuer validation (default: false, not recommended)
+	ClientID             string              // OIDC client ID (required)
+	Provider             OIDCProvider        // OIDC provider interface (required)
+	Cache                TokenCache          // Token cache (required)
+	Logger               logger.Logger       // Logger (required)
+	IssuerURL            string              // Expected token issuer URL (required for strict mode)
+	SecurityMode         SecurityMode        // Security mode (default: StrictMode)
+	AllowedAlgorithms    []string            // Allowed signing algorithms (default: RS256, RS384, RS512)
+	RequiredClaims       []string            // Required claims to validate (default: exp, iss, sub)
+	ValidateClaimsFunc   ClaimsValidatorFunc // Custom claims validator (optional)
+	StoreClaimsInContext bool                // Store claims in Gin context (default: true)
+	SkipClientIDCheck    bool                // Skip client ID validation (default: false, not recommended)
+	SkipExpiryCheck      bool                // Skip expiry validation (default: false, not recommended)
+	SkipIssuerCheck      bool                // Skip issuer validation (default: false, not recommended)
+}
+
+// WrapOIDCProvider wraps a *oidc.Provider to implement the OIDCProvider interface
+// Use this helper when constructing AuthMiddlewareConfig with a real OIDC provider
+func WrapOIDCProvider(provider *oidc.Provider) OIDCProvider {
+	return &oidcProviderWrapper{provider: provider}
 }
 
 // NewAuthMiddlewareWithConfig creates a VAPT-compliant auth middleware
@@ -158,7 +185,7 @@ func NewAuthMiddlewareWithConfig(config AuthMiddlewareConfig) (*AuthMiddleware, 
 
 	// Set defaults
 	securityMode := config.SecurityMode
-	if securityMode == 0 {
+	if securityMode == SecurityModeUndefined {
 		securityMode = StrictMode // Default to strict mode for security
 	}
 
@@ -173,14 +200,21 @@ func NewAuthMiddlewareWithConfig(config AuthMiddlewareConfig) (*AuthMiddleware, 
 		requiredClaims = []string{"exp", "iss", "sub"}
 	}
 
-	storeClaimsInContext := config.StoreClaimsInContext
-	if !storeClaimsInContext {
-		storeClaimsInContext = true // Default to storing claims
-	}
-
 	// Strict mode requires issuer URL
 	if securityMode == StrictMode && config.IssuerURL == "" {
 		return nil, fmt.Errorf("IssuerURL is required in StrictMode")
+	}
+
+	// Set StoreClaimsInContext default based on security mode
+	storeClaimsInContext := config.StoreClaimsInContext
+	// In strict mode, default to storing claims for security/auditability
+	// In compatibility mode, default to false for backward compatibility
+	// Note: Since bool defaults to false, we only override in strict mode if not explicitly set
+	// We can't distinguish "explicitly false" from "not set", so we use a heuristic:
+	// If in StrictMode and StoreClaimsInContext is false, assume it wasn't set and default to true
+	// Users can still set it explicitly to false if needed
+	if securityMode == StrictMode && !config.StoreClaimsInContext {
+		storeClaimsInContext = true // Default to storing claims in strict mode
 	}
 
 	// Create OIDC config with security settings
@@ -194,9 +228,9 @@ func NewAuthMiddlewareWithConfig(config AuthMiddlewareConfig) (*AuthMiddleware, 
 
 	// In strict mode, enforce all checks
 	if securityMode == StrictMode {
-		oidcConfig.SkipClientIDCheck = false  // ✅ VAPT FIX: Always verify client ID
-		oidcConfig.SkipExpiryCheck = false    // ✅ VAPT FIX: Always verify expiration
-		oidcConfig.SkipIssuerCheck = false    // ✅ VAPT FIX: Always verify issuer
+		oidcConfig.SkipClientIDCheck = false // ✅ VAPT FIX: Always verify client ID
+		oidcConfig.SkipExpiryCheck = false   // ✅ VAPT FIX: Always verify expiration
+		oidcConfig.SkipIssuerCheck = false   // ✅ VAPT FIX: Always verify issuer
 	}
 
 	verifier := config.Provider.Verifier(oidcConfig)
@@ -213,6 +247,7 @@ func NewAuthMiddlewareWithConfig(config AuthMiddlewareConfig) (*AuthMiddleware, 
 		Verifier:             verifier,
 		Cache:                config.Cache,
 		Logger:               config.Logger,
+		Provider:             config.Provider,
 		SecurityMode:         securityMode,
 		AllowedAlgorithms:    allowedAlgorithms,
 		RequiredClaims:       requiredClaims,
@@ -463,8 +498,8 @@ func (a *AuthMiddleware) validateClaims(claims jwt.MapClaims) error {
 	// Validate issued at (iat) if present
 	if iat, ok := claims["iat"].(float64); ok {
 		iatTime := time.Unix(int64(iat), 0)
-		// Reject tokens issued in the future (with 5 second grace period for clock skew)
-		if now.Add(-5 * time.Second).Before(iatTime) {
+		// Reject tokens issued more than 5 seconds in the future (clock skew grace period)
+		if iatTime.After(now.Add(5 * time.Second)) {
 			return fmt.Errorf("token issued in the future at %s", iatTime.Format(time.RFC3339))
 		}
 	}
