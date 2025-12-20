@@ -336,7 +336,7 @@ func (a *AuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 				}
 				errCode, ok := scenarioToErrCode[TokenVerificationFailed]
 				if !ok {
-					errCode = "DEFAULT_ERROR_CODE"
+					errCode = defaultErrCode
 				}
 				c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(msgID, errCode))
 				return
@@ -354,7 +354,7 @@ func (a *AuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 			}
 			errCode, ok := scenarioToErrCode[TokenCacheFailed]
 			if !ok {
-				errCode = "DEFAULT_ERROR_CODE"
+				errCode = defaultErrCode
 			}
 			c.AbortWithStatusJSON(http.StatusInternalServerError, wscutils.NewErrorResponse(msgID, errCode))
 			return
@@ -369,7 +369,7 @@ func (a *AuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 				}
 				errCode, ok := scenarioToErrCode[TokenVerificationFailed]
 				if !ok {
-					errCode = "DEFAULT_ERROR_CODE"
+					errCode = defaultErrCode
 				}
 				c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(msgID, errCode))
 				return
@@ -384,7 +384,7 @@ func (a *AuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 				}
 				errCode, ok := scenarioToErrCode[TokenCacheFailed]
 				if !ok {
-					errCode = "DEFAULT_ERROR_CODE"
+					errCode = defaultErrCode
 				}
 				c.AbortWithStatusJSON(http.StatusInternalServerError, wscutils.NewErrorResponse(msgID, errCode))
 				return
