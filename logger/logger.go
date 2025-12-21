@@ -29,6 +29,10 @@ func (sl *StdLogger) Log(message string) {
 	sl.logger.Println(message)
 }
 
+func (sl *StdLogger) LogDebug(message string) {
+	sl.logger.Println(message)
+}
+
 // FileLogger logs messages to a file.
 type FileLogger struct {
 	FilePath string

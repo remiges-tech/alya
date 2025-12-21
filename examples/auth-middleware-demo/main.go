@@ -7,209 +7,126 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/joho/godotenv"
 	"github.com/remiges-tech/alya/logger"
 	"github.com/remiges-tech/alya/router"
 )
 
 func main() {
-	// ========================================
-	// STEP 1: Configure Error Codes
-	// ========================================
-	// This MUST be done BEFORE creating the middleware
-	setupAuthErrorCodes()
+	_ = godotenv.Load()
 
-	// ========================================
-	// STEP 2: Initialize Dependencies
-	// ========================================
-	l := logger.New(logger.Config{})
+	// ============================================================================
+	// Step 1: Configure Error Codes (REQUIRED)
+	// ============================================================================
+	// SECURITY: Standardized error codes prevent information leakage and enable
+	// consistent error handling. Each auth failure scenario gets a specific
+	// msgid and errcode for monitoring and client handling.
 
-	// Get configuration from environment
-	oidcProviderURL := getEnv("OIDC_PROVIDER_URL", "https://keycloak.example.com/realms/myrealm")
-	clientID := getEnv("CLIENT_ID", "your-client-id")
+	router.SetDefaultMsgID(9999)
+	router.SetDefaultErrCode("AUTH_ERROR")
+
+	// TokenMissing: No Authorization header present
+	router.RegisterAuthMsgID(router.TokenMissing, 1001)
+	router.RegisterAuthErrCode(router.TokenMissing, "AUTH_TOKEN_MISSING")
+
+	// TokenVerificationFailed: Invalid signature, expired, wrong audience, etc.
+	router.RegisterAuthMsgID(router.TokenVerificationFailed, 1002)
+	router.RegisterAuthErrCode(router.TokenVerificationFailed, "AUTH_TOKEN_INVALID")
+
+	// TokenCacheFailed: Redis connection or caching errors
+	router.RegisterAuthMsgID(router.TokenCacheFailed, 1003)
+	router.RegisterAuthErrCode(router.TokenCacheFailed, "AUTH_CACHE_ERROR")
+
+	// ============================================================================
+	// Step 2: Setup Dependencies
+	// ============================================================================
+
+	l := logger.NewLogger(os.Stdout)
+	oidcURL := getEnv("OIDC_PROVIDER_URL", "http://localhost:8080/realms/demo")
+	clientID := getEnv("CLIENT_ID", "auth-demo-client")
 	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
 
-	// Create OIDC provider
-	ctx := context.Background()
-	provider, err := oidc.NewProvider(ctx, oidcProviderURL)
+	// OIDC Provider: Fetches public keys and validates tokens
+	// Works with Keycloak, Auth0, Okta, or any OIDC-compliant provider
+	provider, err := oidc.NewProvider(context.Background(), oidcURL)
 	if err != nil {
 		log.Fatalf("Failed to create OIDC provider: %v", err)
 	}
 
-	// Create token cache
+	// PERFORMANCE: Redis caching reduces OIDC provider calls by caching validated tokens
+	// Format: NewRedisTokenCache(addr, password, db, maxRetries)
 	cache := router.NewRedisTokenCache(redisAddr, "", 0, 0)
 
-	// ========================================
-	// STEP 3: Create Auth Middleware
-	// ========================================
-	authMW, err := router.NewAuthMiddlewareWithConfig(router.AuthMiddlewareConfig{
-		ClientID:     clientID,
-		Provider:     router.WrapOIDCProvider(provider),
-		Cache:        cache,
-		Logger:       l,
-		IssuerURL:    oidcProviderURL,
-		SecurityMode: router.StrictMode, // VAPT-compliant security
+	// ============================================================================
+	// Step 3: Create VAPT-Compliant Auth Middleware
+	// ============================================================================
+	// SECURITY: StrictMode enables VAPT compliance with:
+	// - Algorithm whitelisting (RS256, RS384, RS512 only)
+	// - Comprehensive claims validation (exp, iss, nbf, iat, sub, aud)
+	// - Clock skew protection (5 second grace period)
+	// - Issuer and audience verification
+	//
+	// Use CompatibilityMode only for legacy systems that can't provide all claims.
 
-		// Optional: Custom validation for business logic
-		ValidateClaimsFunc: validateBusinessRules,
+	authMW, err := router.NewAuthMiddlewareWithConfig(router.AuthMiddlewareConfig{
+		ClientID:     clientID,                          // Expected audience in JWT
+		Provider:     router.WrapOIDCProvider(provider), // OIDC provider for key verification
+		Cache:        cache,                             // Redis cache (optional, can be nil)
+		Logger:       l,                                 // Logger instance
+		IssuerURL:    oidcURL,                           // Expected issuer in JWT
+		SecurityMode: router.StrictMode,                 // VAPT-compliant validation (recommended)
 	})
 	if err != nil {
 		log.Fatalf("Failed to create auth middleware: %v", err)
 	}
 
-	// ========================================
-	// STEP 4: Setup Router
-	// ========================================
-	r := setupRouter(authMW)
+	// ============================================================================
+	// Step 4: Setup Routes
+	// ============================================================================
 
-	// ========================================
-	// STEP 5: Start Server
-	// ========================================
-	port := getEnv("PORT", "8080")
+	r := gin.Default()
+
+	// Public route - no authentication required
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
+	// Protected routes - authentication required
+	// All routes under /api will validate JWT tokens
+	api := r.Group("/api")
+	api.Use(authMW.MiddlewareFunc()) // Apply auth middleware to all routes in this group
+	{
+		// Example: Access JWT claims extracted by middleware
+		// Available claims: user_id (sub), email, jwt_claims (all claims)
+		api.GET("/user", func(c *gin.Context) {
+			userID, _ := c.Get("user_id")    // Subject claim (sub)
+			email, _ := c.Get("email")       // Email claim
+			claims, _ := c.Get("jwt_claims") // All JWT claims as map[string]any
+
+			c.JSON(200, gin.H{
+				"user_id": userID,
+				"email":   email,
+				"claims":  claims,
+			})
+		})
+
+		// Example: Simple protected endpoint
+		api.GET("/data", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"message": "This is protected data",
+				"data":    []string{"item1", "item2", "item3"},
+			})
+		})
+	}
+
+	// Start server
+	port := getEnv("PORT", "8083")
 	log.Printf("Server starting on :%s", port)
-	log.Printf("OIDC Provider: %s", oidcProviderURL)
-	log.Printf("Redis Cache: %s", redisAddr)
-	log.Printf("Security Mode: StrictMode (VAPT-compliant)")
-
+	log.Printf("OIDC Provider: %s", oidcURL)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
-
-// setupAuthErrorCodes configures standardized error codes for auth failures
-func setupAuthErrorCodes() {
-	// Set default fallback values
-	router.SetDefaultMsgID(9999)
-	router.SetDefaultErrCode("AUTH_ERROR")
-
-	// Register specific error scenarios with meaningful codes
-	router.RegisterAuthMsgID(router.TokenMissing, 1001)
-	router.RegisterAuthErrCode(router.TokenMissing, "AUTH_TOKEN_MISSING")
-
-	router.RegisterAuthMsgID(router.TokenVerificationFailed, 1002)
-	router.RegisterAuthErrCode(router.TokenVerificationFailed, "AUTH_TOKEN_INVALID")
-
-	router.RegisterAuthMsgID(router.TokenCacheFailed, 1003)
-	router.RegisterAuthErrCode(router.TokenCacheFailed, "AUTH_CACHE_ERROR")
-
-	log.Println("✓ Auth error codes configured")
-}
-
-// validateBusinessRules is a custom claims validator for business-specific logic
-func validateBusinessRules(claims jwt.MapClaims) error {
-	// Example: You can add custom validation here
-	// Uncomment to require specific role:
-	/*
-		role, ok := claims["role"].(string)
-		if !ok || role != "admin" {
-			return fmt.Errorf("admin role required")
-		}
-	*/
-
-	return nil // Allow all valid tokens
-}
-
-// setupRouter configures Gin routes with auth middleware
-func setupRouter(authMW *router.AuthMiddleware) *gin.Engine {
-	r := gin.Default()
-
-	// ========================================
-	// Public Routes (No Authentication)
-	// ========================================
-	r.GET("/health", healthCheck)
-	r.GET("/", homepage)
-
-	// ========================================
-	// Protected Routes (Authentication Required)
-	// ========================================
-	api := r.Group("/api")
-	api.Use(authMW.MiddlewareFunc()) // Apply auth middleware
-	{
-		api.GET("/user", getUserInfo)
-		api.GET("/users", listUsers)
-		api.POST("/users", createUser)
-	}
-
-	return r
-}
-
-// ========================================
-// Route Handlers
-// ========================================
-
-func healthCheck(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"status": "ok",
-		"service": "auth-middleware-demo",
-	})
-}
-
-func homepage(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"message": "Auth Middleware Demo API",
-		"endpoints": gin.H{
-			"health":  "/health",
-			"api":     "/api/*",
-		},
-		"authentication": "Bearer token required for /api/* routes",
-	})
-}
-
-func getUserInfo(c *gin.Context) {
-	// Extract validated claims from context
-	claims, exists := c.Get("jwt_claims")
-	if !exists {
-		c.JSON(500, gin.H{"error": "Claims not found in context"})
-		return
-	}
-
-	// Extract convenient user info
-	userID, _ := c.Get("user_id")
-	email, _ := c.Get("email")
-	username, _ := c.Get("username")
-
-	c.JSON(200, gin.H{
-		"user_id":  userID,
-		"email":    email,
-		"username": username,
-		"claims":   claims,
-	})
-}
-
-func listUsers(c *gin.Context) {
-	// This is a protected endpoint
-	c.JSON(200, gin.H{
-		"users": []gin.H{
-			{"id": 1, "name": "Alice"},
-			{"id": 2, "name": "Bob"},
-		},
-	})
-}
-
-func createUser(c *gin.Context) {
-	// This is a protected endpoint
-	var req struct {
-		Name  string `json:"name" binding:"required"`
-		Email string `json:"email" binding:"required,email"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(201, gin.H{
-		"message": "User created",
-		"user": gin.H{
-			"name":  req.Name,
-			"email": req.Email,
-		},
-	})
-}
-
-// ========================================
-// Helpers
-// ========================================
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
