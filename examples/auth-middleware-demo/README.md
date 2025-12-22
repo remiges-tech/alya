@@ -1,17 +1,6 @@
 # Auth Middleware Demo
 
-Production-ready authentication middleware demo showcasing VAPT-compliant JWT validation with Keycloak 26.
-
-## What is VAPT Compliance?
-
-VAPT (Vulnerability Assessment and Penetration Testing) compliance ensures your authentication system follows security best practices:
-
-- **Algorithm Whitelisting**: Only RS256, RS384, RS512 allowed (prevents "none" algorithm attacks)
-- **Comprehensive Claims Validation**: Validates exp, iss, nbf, iat, sub, aud
-- **Clock Skew Protection**: 5-second grace period for time-based claims
-- **Issuer Verification**: Strict issuer URL matching
-- **Audience Validation**: Ensures tokens are for your application
-- **Token Caching**: Redis caching to reduce OIDC provider calls
+JWT authentication with Keycloak using Alya's auth middleware.
 
 ## Quick Start
 
@@ -24,32 +13,12 @@ go run main.go        # Server runs on http://localhost:8083
 
 Import `postman-collection.json` into Postman and run the requests in order:
 
-1. **Get Token** - Authenticates and saves token automatically
-2. **Health Check (Public)** - Tests public endpoint
-3. **Missing Token Error** - Validates `AUTH_TOKEN_MISSING` error (msgid: 1001)
-4. **Invalid Token Error** - Validates `AUTH_TOKEN_INVALID` error (msgid: 1002)
-5. **Get User Info (Protected)** - Returns JWT claims using saved token
-6. **Get Protected Data** - Tests protected endpoint with saved token
-
-All requests include automated test scripts that validate responses.
-
-## Key Features Demonstrated
-
-✅ **Error Code Standardization** - Custom error codes and message IDs
-✅ **VAPT Compliance** - Production-grade token validation
-✅ **Claims Extraction** - Access user_id, email, and custom claims
-✅ **Redis Caching** - Token caching for performance
-✅ **OIDC Integration** - Works with any OIDC provider (Keycloak, Auth0, Okta)
-
-## Available Claims in Context
-
-After successful authentication, these are available via `c.Get()`:
-
-```go
-user_id     string          // Subject (sub) claim
-email       string          // Email claim
-jwt_claims  map[string]any  // All JWT claims
-```
+1. **Get Token** - Authenticates and saves token
+2. **Health Check** - Public endpoint
+3. **Missing Token Error** - Returns AUTH_TOKEN_MISSING (msgid: 1001)
+4. **Invalid Token Error** - Returns AUTH_TOKEN_INVALID (msgid: 1002)
+5. **Get User Info** - Protected, returns JWT claims
+6. **Get Protected Data** - Protected endpoint
 
 ## Credentials
 
@@ -58,59 +27,31 @@ jwt_claims  map[string]any  // All JWT claims
 
 ## Routes
 
-- `GET /health` - Public health check
-- `GET /api/user` - Protected, returns JWT claims
-- `GET /api/data` - Protected, returns sample data
+| Route | Auth | Description |
+|-------|------|-------------|
+| GET /health | No | Health check |
+| GET /api/user | Yes | Returns JWT claims |
+| GET /api/data | Yes | Returns sample data |
+
+## Claims in Context
+
+After authentication, handlers can access:
+
+```go
+userID, _ := c.Get("user_id")     // Subject claim
+email, _ := c.Get("email")        // Email claim
+claims, _ := c.Get("jwt_claims")  // All claims
+```
 
 ## Troubleshooting
 
-### Error: "expected audience X got []"
-Your OIDC provider isn't including the `aud` claim. In Keycloak:
-1. Client Settings → Client Scopes → Dedicated scope
-2. Add Mapper → Audience → Included Client Audience
+**"expected audience X got []"**: Add audience mapper in Keycloak client settings.
 
-### Error: "token missing required claim: sub"
-Add a subject mapper in your OIDC provider configuration. See `keycloak-realm.json` for reference.
+**"token missing required claim: sub"**: Add subject mapper in OIDC provider.
 
-### Error: "Failed to create OIDC provider"
-Ensure Keycloak is running and accessible at the configured URL. Check `docker-compose ps`.
+**"Failed to create OIDC provider"**: Check Keycloak is running (`docker-compose ps`).
 
-### Error: "AUTH_CACHE_ERROR"
-Redis connection failed. Verify Redis is running: `docker-compose ps redis`
-
-## Architecture
-
-```
-Request → Auth Middleware → Token Validation → Claims Extraction → Handler
-                ↓
-          Redis Cache (optional)
-                ↓
-          OIDC Provider (Keycloak)
-```
-
-## Customization
-
-**Use Different OIDC Provider:**
-```go
-oidcURL := "https://your-provider.com/realms/your-realm"
-clientID := "your-client-id"
-```
-
-**Add Custom Claim Validators:**
-```go
-authMW, err := router.NewAuthMiddlewareWithConfig(router.AuthMiddlewareConfig{
-    // ... other config
-    ClaimValidators: []router.ClaimValidator{
-        func(claims map[string]interface{}) error {
-            role, ok := claims["role"].(string)
-            if !ok || role != "admin" {
-                return errors.New("admin role required")
-            }
-            return nil
-        },
-    },
-})
-```
+**"AUTH_CACHE_ERROR"**: Check Redis is running (`docker-compose ps redis`).
 
 ## Stop
 
