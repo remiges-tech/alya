@@ -85,32 +85,17 @@ type AuthMiddleware struct {
 	Cache                TokenCache
 	Logger               logger.Logger
 	Provider             OIDCProvider        // OIDC provider interface
-	SecurityMode         SecurityMode        // NEW: Security mode (Strict/Compatible)
-	AllowedAlgorithms    []string            // NEW: Allowed signing algorithms
-	RequiredClaims       []string            // NEW: Required claims to validate
-	IssuerURL            string              // NEW: Expected issuer URL
-	ValidateClaimsFunc   ClaimsValidatorFunc // NEW: Custom claims validator
-	StoreClaimsInContext bool                // NEW: Whether to store claims in Gin context
+	AllowedAlgorithms    []string            // Allowed signing algorithms
+	RequiredClaims       []string            // Required claims to validate
+	IssuerURL            string              // Expected issuer URL
+	ValidateClaimsFunc   ClaimsValidatorFunc // Custom claims validator
+	StoreClaimsInContext bool                // Whether to store claims in Gin context
 }
-
-// SecurityMode defines the authentication security mode
-type SecurityMode int
-
-const (
-	// SecurityModeUndefined represents an unset security mode (will default to StrictMode)
-	SecurityModeUndefined SecurityMode = iota
-	// CompatibilityMode maintains backward compatibility (legacy behavior)
-	CompatibilityMode
-	// StrictMode enforces VAPT-compliant security (recommended for production)
-	StrictMode
-)
 
 // ClaimsValidatorFunc is a function type for custom claims validation
 type ClaimsValidatorFunc func(claims jwt.MapClaims) error
 
-// NewAuthMiddleware creates an auth middleware with default settings (backward compatible)
-//
-// Deprecated: Use NewAuthMiddlewareWithConfig for VAPT-compliant security
+// NewAuthMiddleware creates an auth middleware with default settings
 func NewAuthMiddleware(clientID string, provider *oidc.Provider, cache TokenCache, logger logger.Logger) (*AuthMiddleware, error) {
 	oidcConfig := &oidc.Config{
 		ClientID: clientID,
@@ -125,19 +110,19 @@ func NewAuthMiddleware(clientID string, provider *oidc.Provider, cache TokenCach
 		Cache:                cache,
 		Logger:               logger,
 		Provider:             wrappedProvider,
-		SecurityMode:         CompatibilityMode, // Maintain backward compatibility
-		StoreClaimsInContext: false,
+		AllowedAlgorithms:    []string{"RS256", "RS384", "RS512"},
+		RequiredClaims:       []string{"exp", "iss", "sub"},
+		StoreClaimsInContext: true,
 	}, nil
 }
 
-// AuthMiddlewareConfig holds configuration for secure auth middleware
+// AuthMiddlewareConfig holds configuration for Auth middleware
 type AuthMiddlewareConfig struct {
 	ClientID             string              // OIDC client ID (required)
 	Provider             OIDCProvider        // OIDC provider interface (required)
-	Cache                TokenCache          // Token cache (required)
-	Logger               logger.Logger       // Logger (required)
-	IssuerURL            string              // Expected token issuer URL (required for strict mode)
-	SecurityMode         SecurityMode        // Security mode (default: StrictMode)
+	Cache                TokenCache          // Token cache (required for performance)
+	Logger               logger.Logger       // Logger (optional)
+	IssuerURL            string              // Expected token issuer URL (required)
 	AllowedAlgorithms    []string            // Allowed signing algorithms (default: RS256, RS384, RS512)
 	RequiredClaims       []string            // Required claims to validate (default: exp, iss, sub)
 	ValidateClaimsFunc   ClaimsValidatorFunc // Custom claims validator (optional)
@@ -153,23 +138,24 @@ func WrapOIDCProvider(provider *oidc.Provider) OIDCProvider {
 	return &oidcProviderWrapper{provider: provider}
 }
 
-// NewAuthMiddlewareWithConfig creates a VAPT-compliant auth middleware
+// NewAuthMiddlewareWithConfig creates a Auth middleware
 //
-// This is the recommended method for production use as it enforces:
+// This method enforces production-grade security:
 // - Explicit algorithm whitelisting (prevents algorithm confusion attacks)
 // - Comprehensive claims validation (prevents privilege escalation)
+// - Token caching for performance
 // - Strict security checks (fail-closed behavior)
 //
 // Example:
 //
 //	authMW, err := router.NewAuthMiddlewareWithConfig(router.AuthMiddlewareConfig{
 //	    ClientID:  "my-client",
-//	    Provider:  oidcProvider,
+//	    Provider:  router.WrapOIDCProvider(oidcProvider),
 //	    Cache:     tokenCache,
 //	    Logger:    logger,
 //	    IssuerURL: "https://keycloak.example.com/realms/myrealm",
-//	    // SecurityMode defaults to StrictMode
 //	    // AllowedAlgorithms defaults to ["RS256", "RS384", "RS512"]
+//	    // StoreClaimsInContext defaults to true
 //	})
 func NewAuthMiddlewareWithConfig(config AuthMiddlewareConfig) (*AuthMiddleware, error) {
 	// Validate required fields
@@ -182,63 +168,52 @@ func NewAuthMiddlewareWithConfig(config AuthMiddlewareConfig) (*AuthMiddleware, 
 	if config.Cache == nil {
 		return nil, fmt.Errorf("Cache is required")
 	}
-
-	// Set defaults
-	securityMode := config.SecurityMode
-	if securityMode == SecurityModeUndefined {
-		securityMode = StrictMode // Default to strict mode for security
+	if config.IssuerURL == "" {
+		return nil, fmt.Errorf("IssuerURL is required")
 	}
 
+	// Set defaults for allowed algorithms
 	allowedAlgorithms := config.AllowedAlgorithms
 	if len(allowedAlgorithms) == 0 {
-		// VAPT FIX: Default to secure RSA algorithms only
+		// Default to secure RSA algorithms only
 		allowedAlgorithms = []string{"RS256", "RS384", "RS512"}
 	}
 
+	// Set defaults for required claims
 	requiredClaims := config.RequiredClaims
 	if len(requiredClaims) == 0 {
 		requiredClaims = []string{"exp", "iss", "sub"}
 	}
 
-	// Strict mode requires issuer URL
-	if securityMode == StrictMode && config.IssuerURL == "" {
-		return nil, fmt.Errorf("IssuerURL is required in StrictMode")
-	}
-
-	// Set StoreClaimsInContext default based on security mode
-	storeClaimsInContext := config.StoreClaimsInContext
-	// In strict mode, default to storing claims for security/auditability
-	// In compatibility mode, default to false for backward compatibility
-	// Note: Since bool defaults to false, we only override in strict mode if not explicitly set
-	// We can't distinguish "explicitly false" from "not set", so we use a heuristic:
-	// If in StrictMode and StoreClaimsInContext is false, assume it wasn't set and default to true
-	// Users can still set it explicitly to false if needed
-	if securityMode == StrictMode && !config.StoreClaimsInContext {
-		storeClaimsInContext = true // Default to storing claims in strict mode
-	}
+	// Always store claims in context for auditability and access control
+	// This is required for VAPT compliance
+	storeClaimsInContext := true
 
 	// Create OIDC config with security settings
 	oidcConfig := &oidc.Config{
 		ClientID:             config.ClientID,
-		SupportedSigningAlgs: allowedAlgorithms, // ✅ VAPT FIX: Explicit algorithm whitelist
-		SkipClientIDCheck:    config.SkipClientIDCheck,
-		SkipExpiryCheck:      config.SkipExpiryCheck,
-		SkipIssuerCheck:      config.SkipIssuerCheck,
+		SupportedSigningAlgs: allowedAlgorithms,
+		SkipClientIDCheck:    false, // Always verify client ID
+		SkipExpiryCheck:      false, // Always verify expiration
+		SkipIssuerCheck:      false, // Always verify issuer
 	}
 
-	// In strict mode, enforce all checks
-	if securityMode == StrictMode {
-		oidcConfig.SkipClientIDCheck = false // ✅ VAPT FIX: Always verify client ID
-		oidcConfig.SkipExpiryCheck = false   // ✅ VAPT FIX: Always verify expiration
-		oidcConfig.SkipIssuerCheck = false   // ✅ VAPT FIX: Always verify issuer
+	// Allow overrides only if explicitly set (not recommended for production)
+	if config.SkipClientIDCheck {
+		oidcConfig.SkipClientIDCheck = true
+	}
+	if config.SkipExpiryCheck {
+		oidcConfig.SkipExpiryCheck = true
+	}
+	if config.SkipIssuerCheck {
+		oidcConfig.SkipIssuerCheck = true
 	}
 
 	verifier := config.Provider.Verifier(oidcConfig)
 
 	if config.Logger != nil {
 		config.Logger.Log(fmt.Sprintf(
-			"Auth middleware initialized in %s mode with algorithms: %v",
-			map[SecurityMode]string{CompatibilityMode: "Compatibility", StrictMode: "Strict"}[securityMode],
+			" Auth middleware initialized with algorithms: %v",
 			allowedAlgorithms,
 		))
 	}
@@ -248,7 +223,6 @@ func NewAuthMiddlewareWithConfig(config AuthMiddlewareConfig) (*AuthMiddleware, 
 		Cache:                config.Cache,
 		Logger:               config.Logger,
 		Provider:             config.Provider,
-		SecurityMode:         securityMode,
 		AllowedAlgorithms:    allowedAlgorithms,
 		RequiredClaims:       requiredClaims,
 		IssuerURL:            config.IssuerURL,
@@ -307,14 +281,14 @@ func SetDefaultErrCode(errCode string) {
 	defaultErrCode = errCode
 }
 
-// MiddlewareFunc returns a gin.HandlerFunc (middleware) that checks for a valid token.
+// MiddlewareFunc returns a gin.HandlerFunc (middleware) that performs  token validation
 func (a *AuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawIDToken, err := ExtractToken(c.Request.Header.Get("Authorization"))
 		if err != nil {
 			msgID, ok := scenarioToMsgID[TokenMissing]
 			if !ok {
-				msgID = defaultMsgID // Fallback to a default message ID if not registered
+				msgID = defaultMsgID
 			}
 			errCode, ok := scenarioToErrCode[TokenMissing]
 			if !ok {
@@ -324,108 +298,93 @@ func (a *AuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 			return
 		}
 
-		// In strict mode, perform enhanced validation
-		if a.SecurityMode == StrictMode {
-			if err := a.verifyTokenStrict(c, rawIDToken); err != nil {
-				if a.Logger != nil {
-					a.Logger.LogDebug(fmt.Sprintf("Strict mode token verification failed: %v", err))
-				}
-				msgID, ok := scenarioToMsgID[TokenVerificationFailed]
-				if !ok {
-					msgID = defaultMsgID
-				}
-				errCode, ok := scenarioToErrCode[TokenVerificationFailed]
-				if !ok {
-					errCode = defaultErrCode
-				}
-				c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(msgID, errCode))
-				return
+		// Perform VAPT-compliant validation with caching
+		if err := a.verifyToken(c, rawIDToken); err != nil {
+			if a.Logger != nil {
+				a.Logger.LogDebug(fmt.Sprintf("Token verification failed: %v", err))
 			}
-			c.Next()
-			return
-		}
-
-		// Compatibility mode: Original behavior
-		isCached, err := a.Cache.Get(rawIDToken)
-		if err != nil {
-			msgID, ok := scenarioToMsgID[TokenCacheFailed]
+			msgID, ok := scenarioToMsgID[TokenVerificationFailed]
 			if !ok {
 				msgID = defaultMsgID
 			}
-			errCode, ok := scenarioToErrCode[TokenCacheFailed]
+			errCode, ok := scenarioToErrCode[TokenVerificationFailed]
 			if !ok {
 				errCode = defaultErrCode
 			}
-			c.AbortWithStatusJSON(http.StatusInternalServerError, wscutils.NewErrorResponse(msgID, errCode))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(msgID, errCode))
 			return
-		}
-
-		if !isCached {
-			_, err := a.Verifier.Verify(context.Background(), rawIDToken)
-			if err != nil {
-				msgID, ok := scenarioToMsgID[TokenVerificationFailed]
-				if !ok {
-					msgID = defaultMsgID
-				}
-				errCode, ok := scenarioToErrCode[TokenVerificationFailed]
-				if !ok {
-					errCode = defaultErrCode
-				}
-				c.AbortWithStatusJSON(http.StatusUnauthorized, wscutils.NewErrorResponse(msgID, errCode))
-				return
-			}
-
-			err = a.Cache.Set(rawIDToken)
-			if err != nil {
-				// Assuming there's a scenario for cache set failure, or reuse TokenCacheFailed
-				msgID, ok := scenarioToMsgID[TokenCacheFailed]
-				if !ok {
-					msgID = defaultMsgID
-				}
-				errCode, ok := scenarioToErrCode[TokenCacheFailed]
-				if !ok {
-					errCode = defaultErrCode
-				}
-				c.AbortWithStatusJSON(http.StatusInternalServerError, wscutils.NewErrorResponse(msgID, errCode))
-				return
-			}
 		}
 
 		c.Next()
 	}
 }
 
-// verifyTokenStrict performs VAPT-compliant token verification (Strict Mode)
+// verifyToken performs VAPT-compliant token verification with caching
 //
 // This method provides comprehensive security validation including:
+// - Token caching to reduce OIDC provider calls
 // - Algorithm whitelisting
 // - Claims validation (exp, iss, nbf, iat, required claims)
 // - Custom claims validation
 // - Context storage of verified claims
-func (a *AuthMiddleware) verifyTokenStrict(c *gin.Context, tokenString string) error {
-	// Verify token with OIDC provider
-	idToken, err := a.Verifier.Verify(c.Request.Context(), tokenString)
+func (a *AuthMiddleware) verifyToken(c *gin.Context, tokenString string) error {
+	// Check cache first to reduce OIDC provider calls
+	isCached, err := a.Cache.Get(tokenString)
 	if err != nil {
-		return fmt.Errorf("OIDC verification failed: %w", err)
+		if a.Logger != nil {
+			a.Logger.LogDebug(fmt.Sprintf("Cache check failed: %v", err))
+		}
+		// Continue with verification even if cache fails
+		isCached = false
 	}
 
-	// Extract all claims
 	var claims jwt.MapClaims
-	if err := idToken.Claims(&claims); err != nil {
-		return fmt.Errorf("failed to extract claims: %w", err)
+
+	if !isCached {
+		// Token not in cache - perform full OIDC verification
+		idToken, err := a.Verifier.Verify(c.Request.Context(), tokenString)
+		if err != nil {
+			return fmt.Errorf("OIDC verification failed: %w", err)
+		}
+
+		// Extract all claims
+		if err := idToken.Claims(&claims); err != nil {
+			return fmt.Errorf("failed to extract claims: %w", err)
+		}
+
+		// Cache the verified token to reduce future OIDC calls
+		if err := a.Cache.Set(tokenString); err != nil {
+			if a.Logger != nil {
+				a.Logger.LogDebug(fmt.Sprintf("Failed to cache token: %v", err))
+			}
+			// Continue even if caching fails
+		}
+	} else {
+		// Token is cached - skip OIDC verification, but still extract claims for validation
+		// We need to parse the token to extract claims (without signature verification)
+		parser := jwt.Parser{}
+		token, _, err := parser.ParseUnverified(tokenString, jwt.MapClaims{})
+		if err != nil {
+			return fmt.Errorf("failed to parse cached token: %w", err)
+		}
+		var ok bool
+		claims, ok = token.Claims.(jwt.MapClaims)
+		if !ok {
+			return fmt.Errorf("failed to extract claims from cached token")
+		}
 	}
 
-	// ✅ VAPT FIX: Validate algorithm (explicit check even after OIDC verification)
+	//  Validate algorithm (always check, even for cached tokens)
 	if err := a.validateAlgorithm(tokenString); err != nil {
 		return err
 	}
 
-	// ✅ VAPT FIX: Comprehensive claims validation
+	//  Comprehensive claims validation (always check, even for cached tokens)
 	if err := a.validateClaims(claims); err != nil {
 		return err
 	}
 
-	// ✅ VAPT FIX: Custom claims validation if provided
+	// Custom claims validation if provided
 	if a.ValidateClaimsFunc != nil {
 		if err := a.ValidateClaimsFunc(claims); err != nil {
 			return fmt.Errorf("custom claims validation failed: %w", err)

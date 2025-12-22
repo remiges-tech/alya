@@ -123,26 +123,26 @@ func TestExtractToken(t *testing.T) {
 }
 
 func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
-	t.Run("StrictMode_RequiresIssuerURL", func(t *testing.T) {
+	t.Run("RequiresIssuerURL", func(t *testing.T) {
 		mockProvider := &MockProvider{}
 		mockCache := &MockTokenCache{}
 		mockLogger := &MockLogger{}
 
-		// Test that strict mode requires issuer URL
+		// Test that issuer URL is required
 		_, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			ClientID:     "test-client",
-			Provider:     mockProvider,
-			Cache:        mockCache,
-			Logger:       mockLogger,
-			SecurityMode: StrictMode,
+			ClientID: "test-client",
+			Provider: mockProvider,
+			Cache:    mockCache,
+			Logger:   mockLogger,
+
 			// IssuerURL missing - should fail
 		})
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "IssuerURL is required in StrictMode")
+		assert.Contains(t, err.Error(), "IssuerURL is required")
 	})
 
-	t.Run("StrictMode_DefaultSecureAlgorithms", func(t *testing.T) {
+	t.Run("DefaultSecureAlgorithms", func(t *testing.T) {
 		mockProvider := &MockProvider{}
 		mockCache := &MockTokenCache{}
 		mockLogger := &MockLogger{}
@@ -152,12 +152,12 @@ func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
 		mockLogger.On("Log", mock.AnythingOfType("string"))
 
 		auth, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			ClientID:     "test-client",
-			Provider:     mockProvider,
-			Cache:        mockCache,
-			Logger:       mockLogger,
-			SecurityMode: StrictMode,
-			IssuerURL:    "https://keycloak.example.com/realms/test",
+			ClientID: "test-client",
+			Provider: mockProvider,
+			Cache:    mockCache,
+			Logger:   mockLogger,
+
+			IssuerURL: "https://keycloak.example.com/realms/test",
 		})
 
 		require.NoError(t, err)
@@ -166,41 +166,17 @@ func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
 		assert.True(t, auth.StoreClaimsInContext)
 	})
 
-	t.Run("CompatibilityMode_BackwardCompatible", func(t *testing.T) {
-		mockProvider := &MockProvider{}
-		mockCache := &MockTokenCache{}
-		mockLogger := &MockLogger{}
-		mockVerifier := &oidc.IDTokenVerifier{}
-
-		mockProvider.On("Verifier", mock.AnythingOfType("*oidc.Config")).Return(mockVerifier)
-		mockLogger.On("Log", mock.AnythingOfType("string"))
-
-		auth, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			ClientID:             "test-client",
-			Provider:             mockProvider,
-			Cache:                mockCache,
-			Logger:               mockLogger,
-			SecurityMode:         CompatibilityMode,
-			IssuerURL:            "", // Not required in compatibility mode
-			StoreClaimsInContext: false,
-		})
-
-		require.NoError(t, err)
-		assert.Equal(t, CompatibilityMode, auth.SecurityMode)
-		assert.False(t, auth.StoreClaimsInContext)
-	})
-
 	t.Run("RequiredFields_MissingClientID", func(t *testing.T) {
 		mockProvider := &MockProvider{}
 		mockCache := &MockTokenCache{}
 		mockLogger := &MockLogger{}
 
 		_, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			Provider:     mockProvider,
-			Cache:        mockCache,
-			Logger:       mockLogger,
-			SecurityMode: StrictMode,
-			IssuerURL:    "https://keycloak.example.com/realms/test",
+			Provider: mockProvider,
+			Cache:    mockCache,
+			Logger:   mockLogger,
+
+			IssuerURL: "https://keycloak.example.com/realms/test",
 		})
 
 		assert.Error(t, err)
@@ -212,11 +188,11 @@ func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
 		mockLogger := &MockLogger{}
 
 		_, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			ClientID:     "test-client",
-			Cache:        mockCache,
-			Logger:       mockLogger,
-			SecurityMode: StrictMode,
-			IssuerURL:    "https://keycloak.example.com/realms/test",
+			ClientID: "test-client",
+			Cache:    mockCache,
+			Logger:   mockLogger,
+
+			IssuerURL: "https://keycloak.example.com/realms/test",
 		})
 
 		assert.Error(t, err)
@@ -228,11 +204,11 @@ func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
 		mockLogger := &MockLogger{}
 
 		_, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			ClientID:     "test-client",
-			Provider:     mockProvider,
-			Logger:       mockLogger,
-			SecurityMode: StrictMode,
-			IssuerURL:    "https://keycloak.example.com/realms/test",
+			ClientID: "test-client",
+			Provider: mockProvider,
+			Logger:   mockLogger,
+
+			IssuerURL: "https://keycloak.example.com/realms/test",
 		})
 
 		assert.Error(t, err)
@@ -254,7 +230,6 @@ func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
 			Provider:          mockProvider,
 			Cache:             mockCache,
 			Logger:            mockLogger,
-			SecurityMode:      StrictMode,
 			IssuerURL:         "https://keycloak.example.com/realms/test",
 			AllowedAlgorithms: customAlgorithms,
 		})
@@ -278,7 +253,6 @@ func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
 			Provider:       mockProvider,
 			Cache:          mockCache,
 			Logger:         mockLogger,
-			SecurityMode:   StrictMode,
 			IssuerURL:      "https://keycloak.example.com/realms/test",
 			RequiredClaims: customClaims,
 		})
@@ -287,7 +261,7 @@ func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
 		assert.Equal(t, customClaims, auth.RequiredClaims)
 	})
 
-	t.Run("StrictMode_EnforcesAllSecurityChecks", func(t *testing.T) {
+	t.Run("EnforcesAllSecurityChecks", func(t *testing.T) {
 		mockProvider := &MockProvider{}
 		mockCache := &MockTokenCache{}
 		mockLogger := &MockLogger{}
@@ -300,12 +274,12 @@ func TestNewAuthMiddlewareWithConfig_VAPTCompliance(t *testing.T) {
 		mockLogger.On("Log", mock.AnythingOfType("string"))
 
 		_, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			ClientID:     "test-client",
-			Provider:     mockProvider,
-			Cache:        mockCache,
-			Logger:       mockLogger,
-			SecurityMode: StrictMode,
-			IssuerURL:    "https://keycloak.example.com/realms/test",
+			ClientID: "test-client",
+			Provider: mockProvider,
+			Cache:    mockCache,
+			Logger:   mockLogger,
+
+			IssuerURL: "https://keycloak.example.com/realms/test",
 		})
 
 		require.NoError(t, err)
@@ -333,7 +307,6 @@ func TestValidateAlgorithm(t *testing.T) {
 		Provider:          mockProvider,
 		Cache:             mockCache,
 		Logger:            mockLogger,
-		SecurityMode:      StrictMode,
 		IssuerURL:         "https://keycloak.example.com/realms/test",
 		AllowedAlgorithms: []string{"RS256"},
 	})
@@ -369,12 +342,12 @@ func TestValidateClaims_VAPTCompliance(t *testing.T) {
 	mockLogger.On("Log", mock.AnythingOfType("string"))
 
 	auth, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-		ClientID:     "test-client",
-		Provider:     mockProvider,
-		Cache:        mockCache,
-		Logger:       mockLogger,
-		SecurityMode: StrictMode,
-		IssuerURL:    "https://keycloak.example.com/realms/test",
+		ClientID: "test-client",
+		Provider: mockProvider,
+		Cache:    mockCache,
+		Logger:   mockLogger,
+
+		IssuerURL: "https://keycloak.example.com/realms/test",
 	})
 	require.NoError(t, err)
 
@@ -455,7 +428,7 @@ func TestValidateClaims_VAPTCompliance(t *testing.T) {
 	})
 }
 
-func TestMiddlewareFunc_StrictMode(t *testing.T) {
+func TestMiddlewareFunc(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	mockProvider := &MockProvider{}
@@ -468,12 +441,12 @@ func TestMiddlewareFunc_StrictMode(t *testing.T) {
 	mockLogger.On("LogDebug", mock.AnythingOfType("string"))
 
 	auth, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-		ClientID:     "test-client",
-		Provider:     mockProvider,
-		Cache:        mockCache,
-		Logger:       mockLogger,
-		SecurityMode: StrictMode,
-		IssuerURL:    "https://keycloak.example.com/realms/test",
+		ClientID: "test-client",
+		Provider: mockProvider,
+		Cache:    mockCache,
+		Logger:   mockLogger,
+
+		IssuerURL: "https://keycloak.example.com/realms/test",
 	})
 	require.NoError(t, err)
 
@@ -501,10 +474,14 @@ func TestMiddlewareFunc_StrictMode(t *testing.T) {
 		c.Request = httptest.NewRequest("GET", "/test", nil)
 		c.Request.Header.Set("Authorization", "Bearer invalid-token")
 
+		// Mock cache to return not cached
+		mockCache.On("Get", "invalid-token").Return(false, nil).Once()
+
 		auth.MiddlewareFunc()(c)
 
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 		assert.True(t, c.IsAborted())
+		mockCache.AssertExpectations(t)
 	})
 }
 
@@ -530,7 +507,6 @@ func TestCustomClaimsValidation(t *testing.T) {
 		Provider:           mockProvider,
 		Cache:              mockCache,
 		Logger:             mockLogger,
-		SecurityMode:       StrictMode,
 		IssuerURL:          "https://keycloak.example.com/realms/test",
 		ValidateClaimsFunc: customValidator,
 	})
@@ -568,72 +544,10 @@ func TestCustomClaimsValidation(t *testing.T) {
 	})
 }
 
-func TestMiddlewareFunc_CompatibilityMode(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	mockProvider := &MockProvider{}
-	mockCache := &MockTokenCache{}
-	mockLogger := &MockLogger{}
-	mockVerifier := &oidc.IDTokenVerifier{}
-
-	mockProvider.On("Verifier", mock.AnythingOfType("*oidc.Config")).Return(mockVerifier)
-	mockLogger.On("Log", mock.AnythingOfType("string")).Maybe()
-
-	// Create auth middleware in compatibility mode
-	auth, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-		ClientID:             "test-client",
-		Provider:             mockProvider,
-		Cache:                mockCache,
-		Logger:               mockLogger,
-		SecurityMode:         CompatibilityMode,
-		StoreClaimsInContext: false,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, CompatibilityMode, auth.SecurityMode)
-
-	// Set up error scenarios
-	RegisterAuthMsgID(TokenCacheFailed, 1003)
-	RegisterAuthErrCode(TokenCacheFailed, "CACHE_ERROR")
-	RegisterAuthMsgID(TokenVerificationFailed, 1002)
-	RegisterAuthErrCode(TokenVerificationFailed, "TOKEN_INVALID")
-
-	t.Run("CompatibilityMode_UsesCache", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest("GET", "/test", nil)
-		c.Request.Header.Set("Authorization", "Bearer test-token")
-
-		// Mock cache to return token exists
-		mockCache.On("Get", "test-token").Return(true, nil).Once()
-
-		auth.MiddlewareFunc()(c)
-
-		// In compatibility mode with cached token, should succeed without verification
-		assert.False(t, c.IsAborted())
-		mockCache.AssertExpectations(t)
-	})
-
-	t.Run("CompatibilityMode_CacheMiss_VerifiesToken", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest("GET", "/test", nil)
-		c.Request.Header.Set("Authorization", "Bearer new-token")
-
-		// Mock cache miss, then verification fails
-		mockCache.On("Get", "new-token").Return(false, nil).Once()
-
-		auth.MiddlewareFunc()(c)
-
-		// Should attempt verification when not in cache
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-		mockCache.AssertExpectations(t)
-	})
-}
-
 func TestMiddlewareFunc_ContextClaimsStorage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("StrictMode_StoresClaimsInContext", func(t *testing.T) {
+	t.Run("StoresClaimsInContext", func(t *testing.T) {
 		mockProvider := &MockProvider{}
 		mockCache := &MockTokenCache{}
 		mockLogger := &MockLogger{}
@@ -648,7 +562,6 @@ func TestMiddlewareFunc_ContextClaimsStorage(t *testing.T) {
 			Provider:             mockProvider,
 			Cache:                mockCache,
 			Logger:               mockLogger,
-			SecurityMode:         StrictMode,
 			IssuerURL:            "https://keycloak.example.com/realms/test",
 			StoreClaimsInContext: true,
 		})
@@ -657,28 +570,6 @@ func TestMiddlewareFunc_ContextClaimsStorage(t *testing.T) {
 		// Test that claims would be stored (we can't fully test this without a real OIDC token)
 		// But we can verify the configuration
 		assert.True(t, auth.StoreClaimsInContext)
-	})
-
-	t.Run("CompatibilityMode_DoesNotStoreClaimsByDefault", func(t *testing.T) {
-		mockProvider := &MockProvider{}
-		mockCache := &MockTokenCache{}
-		mockLogger := &MockLogger{}
-		mockVerifier := &oidc.IDTokenVerifier{}
-
-		mockProvider.On("Verifier", mock.AnythingOfType("*oidc.Config")).Return(mockVerifier)
-		mockLogger.On("Log", mock.AnythingOfType("string")).Maybe()
-
-		auth, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			ClientID:             "test-client",
-			Provider:             mockProvider,
-			Cache:                mockCache,
-			Logger:               mockLogger,
-			SecurityMode:         CompatibilityMode,
-			StoreClaimsInContext: false,
-		})
-		require.NoError(t, err)
-
-		assert.False(t, auth.StoreClaimsInContext)
 	})
 }
 
@@ -692,12 +583,12 @@ func TestValidateClaims_EdgeCases(t *testing.T) {
 	mockLogger.On("Log", mock.AnythingOfType("string"))
 
 	auth, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-		ClientID:     "test-client",
-		Provider:     mockProvider,
-		Cache:        mockCache,
-		Logger:       mockLogger,
-		SecurityMode: StrictMode,
-		IssuerURL:    "https://keycloak.example.com/realms/test",
+		ClientID: "test-client",
+		Provider: mockProvider,
+		Cache:    mockCache,
+		Logger:   mockLogger,
+
+		IssuerURL: "https://keycloak.example.com/realms/test",
 	})
 	require.NoError(t, err)
 
@@ -764,30 +655,6 @@ func TestValidateClaims_EdgeCases(t *testing.T) {
 	})
 }
 
-func TestSecurityModeDefaults(t *testing.T) {
-	mockProvider := &MockProvider{}
-	mockCache := &MockTokenCache{}
-	mockLogger := &MockLogger{}
-	mockVerifier := &oidc.IDTokenVerifier{}
-
-	mockProvider.On("Verifier", mock.AnythingOfType("*oidc.Config")).Return(mockVerifier)
-	mockLogger.On("Log", mock.AnythingOfType("string"))
-
-	t.Run("DefaultsToStrictMode", func(t *testing.T) {
-		auth, err := NewAuthMiddlewareWithConfig(AuthMiddlewareConfig{
-			ClientID:  "test-client",
-			Provider:  mockProvider,
-			Cache:     mockCache,
-			Logger:    mockLogger,
-			IssuerURL: "https://keycloak.example.com/realms/test",
-			// SecurityMode not specified - should default to StrictMode
-		})
-
-		require.NoError(t, err)
-		assert.Equal(t, StrictMode, auth.SecurityMode)
-	})
-}
-
 func TestAlgorithmValidation_MultipleAlgorithms(t *testing.T) {
 	privateKey, err := createTestRSAKey()
 	require.NoError(t, err)
@@ -805,7 +672,6 @@ func TestAlgorithmValidation_MultipleAlgorithms(t *testing.T) {
 		Provider:          mockProvider,
 		Cache:             mockCache,
 		Logger:            mockLogger,
-		SecurityMode:      StrictMode,
 		IssuerURL:         "https://keycloak.example.com/realms/test",
 		AllowedAlgorithms: []string{"RS256", "RS384", "RS512"},
 	})

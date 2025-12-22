@@ -11,18 +11,7 @@ VAPT (Vulnerability Assessment and Penetration Testing) compliance ensures your 
 - **Clock Skew Protection**: 5-second grace period for time-based claims
 - **Issuer Verification**: Strict issuer URL matching
 - **Audience Validation**: Ensures tokens are for your application
-
-## Security Modes
-
-| Feature | CompatibilityMode | StrictMode (VAPT) |
-|---------|-------------------|-------------------|
-| Algorithm Validation | Basic | Whitelisted (RS256/384/512 only) |
-| Claims Validation | exp, iss only | exp, iss, nbf, iat, sub, aud |
-| Clock Skew | Default | 5 seconds |
-| Custom Validators | Supported | Supported |
-| **Use When** | Legacy systems | New/security-critical apps |
-
-**Recommendation**: Always use `StrictMode` for new applications.
+- **Token Caching**: Redis caching to reduce OIDC provider calls
 
 ## Quick Start
 
@@ -47,7 +36,7 @@ All requests include automated test scripts that validate responses.
 ## Key Features Demonstrated
 
 ✅ **Error Code Standardization** - Custom error codes and message IDs
-✅ **VAPT Strict Mode** - Production-grade token validation
+✅ **VAPT Compliance** - Production-grade token validation
 ✅ **Claims Extraction** - Access user_id, email, and custom claims
 ✅ **Redis Caching** - Token caching for performance
 ✅ **OIDC Integration** - Works with any OIDC provider (Keycloak, Auth0, Okta)

@@ -60,21 +60,19 @@ func main() {
 	// ============================================================================
 	// Step 3: Create VAPT-Compliant Auth Middleware
 	// ============================================================================
-	// SECURITY: StrictMode enables VAPT compliance with:
+	// SECURITY: The middleware enforces VAPT compliance with:
 	// - Algorithm whitelisting (RS256, RS384, RS512 only)
 	// - Comprehensive claims validation (exp, iss, nbf, iat, sub, aud)
 	// - Clock skew protection (5 second grace period)
 	// - Issuer and audience verification
-	//
-	// Use CompatibilityMode only for legacy systems that can't provide all claims.
+	// - Token caching to reduce OIDC provider calls
 
 	authMW, err := router.NewAuthMiddlewareWithConfig(router.AuthMiddlewareConfig{
-		ClientID:     clientID,                          // Expected audience in JWT
-		Provider:     router.WrapOIDCProvider(provider), // OIDC provider for key verification
-		Cache:        cache,                             // Redis cache (optional, can be nil)
-		Logger:       l,                                 // Logger instance
-		IssuerURL:    oidcURL,                           // Expected issuer in JWT
-		SecurityMode: router.StrictMode,                 // VAPT-compliant validation (recommended)
+		ClientID:  clientID,                          // Expected audience in JWT
+		Provider:  router.WrapOIDCProvider(provider), // OIDC provider for key verification
+		Cache:     cache,                             // Redis cache for performance
+		Logger:    l,                                 // Logger instance
+		IssuerURL: oidcURL,                           // Expected issuer in JWT
 	})
 	if err != nil {
 		log.Fatalf("Failed to create auth middleware: %v", err)
