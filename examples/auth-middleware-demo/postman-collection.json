@@ -1,0 +1,251 @@
+{
+	"info": {
+		"name": "Auth Middleware Demo",
+		"description": "Simple VAPT-compliant auth middleware testing with Keycloak",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "BASE_URL",
+			"value": "http://localhost:8083"
+		},
+		{
+			"key": "KEYCLOAK_URL",
+			"value": "http://localhost:8080"
+		},
+		{
+			"key": "ACCESS_TOKEN",
+			"value": ""
+		}
+	],
+	"item": [
+		{
+			"name": "1. Get Token",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 200) {",
+							"    const jsonData = pm.response.json();",
+							"    pm.collectionVariables.set('ACCESS_TOKEN', jsonData.access_token);",
+							"    pm.test('Token obtained successfully', function () {",
+							"        pm.expect(jsonData.access_token).to.not.be.undefined;",
+							"    });",
+							"} else {",
+							"    pm.test('Failed to get token', function () {",
+							"        pm.expect.fail('Token request failed');",
+							"    });",
+							"}"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "client_id",
+							"value": "auth-demo-client"
+						},
+						{
+							"key": "client_secret",
+							"value": "demo-client-secret-12345"
+						},
+						{
+							"key": "username",
+							"value": "testuser"
+						},
+						{
+							"key": "password",
+							"value": "testpass123"
+						},
+						{
+							"key": "grant_type",
+							"value": "password"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{KEYCLOAK_URL}}/realms/demo/protocol/openid-connect/token",
+					"host": ["{{KEYCLOAK_URL}}"],
+					"path": ["realms", "demo", "protocol", "openid-connect", "token"]
+				},
+				"description": "Get JWT token from Keycloak for testuser"
+			}
+		},
+		{
+			"name": "2. Health Check (Public)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"pm.test('Health is ok', function () {",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData.status).to.eql('ok');",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{BASE_URL}}/health",
+					"host": ["{{BASE_URL}}"],
+					"path": ["health"]
+				},
+				"description": "Public endpoint - no authentication required"
+			}
+		},
+		{
+			"name": "3. Missing Token Error",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 401', function () {",
+							"    pm.response.to.have.status(401);",
+							"});",
+							"pm.test('Should return AUTH_TOKEN_MISSING error', function () {",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData.messages[0].errcode).to.eql('AUTH_TOKEN_MISSING');",
+							"    pm.expect(jsonData.messages[0].msgid).to.eql(1001);",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{BASE_URL}}/api/user",
+					"host": ["{{BASE_URL}}"],
+					"path": ["api", "user"]
+				},
+				"description": "Test missing token error (msgid: 1001, errcode: AUTH_TOKEN_MISSING)"
+			}
+		},
+		{
+			"name": "4. Invalid Token Error",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 401', function () {",
+							"    pm.response.to.have.status(401);",
+							"});",
+							"pm.test('Should return AUTH_TOKEN_INVALID error', function () {",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData.messages[0].errcode).to.eql('AUTH_TOKEN_INVALID');",
+							"    pm.expect(jsonData.messages[0].msgid).to.eql(1002);",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer invalid-token-12345"
+					}
+				],
+				"url": {
+					"raw": "{{BASE_URL}}/api/user",
+					"host": ["{{BASE_URL}}"],
+					"path": ["api", "user"]
+				},
+				"description": "Test invalid token error (msgid: 1002, errcode: AUTH_TOKEN_INVALID)"
+			}
+		},
+		{
+			"name": "5. Get User Info (Protected)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"pm.test('Should return user info from JWT claims', function () {",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData.email).to.not.be.undefined;",
+							"    pm.expect(jsonData.user_id).to.not.be.undefined;",
+							"    pm.expect(jsonData.claims).to.not.be.undefined;",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{ACCESS_TOKEN}}"
+					}
+				],
+				"url": {
+					"raw": "{{BASE_URL}}/api/user",
+					"host": ["{{BASE_URL}}"],
+					"path": ["api", "user"]
+				},
+				"description": "Get user info from JWT claims (requires valid token from step 1)"
+			}
+		},
+		{
+			"name": "6. Get Protected Data",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"pm.test('Should return protected data', function () {",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData.message).to.exist;",
+							"    pm.expect(jsonData.data).to.be.an('array');",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{ACCESS_TOKEN}}"
+					}
+				],
+				"url": {
+					"raw": "{{BASE_URL}}/api/data",
+					"host": ["{{BASE_URL}}"],
+					"path": ["api", "data"]
+				},
+				"description": "Access protected data endpoint (requires valid token from step 1)"
+			}
+		}
+	]
+}
