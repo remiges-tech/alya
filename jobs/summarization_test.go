@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log"
 	"testing"
@@ -160,14 +159,10 @@ func TestSummarizeBatch(t *testing.T) {
 			}
 
 			redisClient, redisMock := redismock.NewClientMock()
-			redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", tt.batchID.String())
+			redisKey := BatchStatusKey(tt.batchID.String())
 
-			// Set up Redis mock expectations
-			redisMock.ExpectWatch(redisKey)
-			redisMock.ExpectGet(redisKey).SetVal("previous_status") // Simulate a different current status
-			redisMock.ExpectTxPipeline()
+			// Set up Redis mock expectations - simplified to plain SET (no Watch/TxPipeline)
 			redisMock.ExpectSet(redisKey, string(tt.expectedStatus), time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100)*time.Second).SetVal("OK")
-			redisMock.ExpectTxPipelineExec()
 
 			loggerCtx := &logharbour.LoggerContext{}
 			logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())

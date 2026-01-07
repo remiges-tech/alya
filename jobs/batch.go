@@ -120,7 +120,7 @@ func (jm *JobManager) BatchSubmit(app, op string, batchctx JSONstr, batchInput [
 func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, batchOutput []BatchOutput_t, outputFiles map[string]string, nsuccess, nfailed, naborted int, err error) {
 	var batch batchsqlc.Batch
 	// Check REDIS for the batch status
-	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
+	redisKey := BatchStatusKey(batchID)
 	statusVal, err := jm.redisClient.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		// Key does not exist in REDIS, check the database
@@ -459,7 +459,7 @@ func (jm *JobManager) WaitOff(batchID string) (string, int, error) {
 }
 
 func GetBatchStatusRedisKey(batchID string) string {
-	return fmt.Sprintf("batch:%s:status", batchID)
+	return BatchStatusKey(batchID)
 }
 
 func mapStatusEnum(status batchsqlc.StatusEnum) BatchStatus_t {

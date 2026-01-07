@@ -124,9 +124,9 @@ func getBatchStatus(status batchsqlc.StatusEnum) BatchStatus_t {
 func (jm *JobManager) SlowQueryDone(reqID string) (status BatchStatus_t, result JSONstr, messages []wscutils.ErrorMessage, outputfiles map[string]string, err error) {
 
 	// Check REDIS for the status
-	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
-	redisResultKey := fmt.Sprintf("ALYA_BATCHRESULT_%s", reqID)
-	redisOutputFilesKey := fmt.Sprintf("ALYA_BATCHOUTFILES_%s", reqID)
+	redisKey := BatchStatusKey(reqID)
+	redisResultKey := BatchResultKey(reqID)
+	redisOutputFilesKey := BatchOutputFilesKey(reqID)
 
 	reqIDUUID, err := uuid.Parse(reqID)
 	if err != nil {
@@ -276,7 +276,7 @@ func (jm *JobManager) SlowQueryAbort(reqID string) (err error) {
 	}
 
 	// Set the Redis batch status record to aborted with an expiry time
-	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", reqID)
+	redisKey := BatchStatusKey(reqID)
 	expiry := time.Duration(jm.config.BatchStatusCacheDurSec*100) * time.Second
 	err = jm.redisClient.Set(context.Background(), redisKey, string(batchsqlc.StatusEnumAborted), expiry).Err()
 	if err != nil {

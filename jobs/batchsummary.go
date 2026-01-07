@@ -440,88 +440,40 @@ func updateBatchSummary(q batchsqlc.Querier, ctx context.Context, batchID uuid.U
 	return nil
 }
 
-// updateStatusInRedis updates the batch status in Redis using a transaction because multiple jobmanager
-// instances could be executed parallely and without atomic update there could be incorrect update.
-//
-// Explanation of the transaction:
-//  1. The `Watch` function is called with the batch specific key to monitor.
-//     If the key's value changes after this point and before the transaction block executes, the transaction will be aborted.
-//  2. Inside the transaction block, we first fetch the current status of the batch from Redis. If fetching fails or if the key does not exist (`redis.Nil`), an error is returned.
-//  3. If the current status in Redis matches the new status, there is no need to update, and we exit.
-//  4. If the status is different, we proceed to update the status within a pipeline. Pipelining commands means they are queued up and executed at once
-//
-// This is equivalent to the following Redis commands:
-// 127.0.0.1:6379> WATCH ALYA_BATCHSTATUS_batchID // Monitor the key for changes
-// 127.0.0.1:6379> GET ALYA_BATCHSTATUS_batchID
-// 127.0.0.1:6379> MULTI // Start a transaction
-// 127.0.0.1:6379> SET ALYA_BATCHSTATUS_batchID 110
-// 127.0.0.1:6379> EXEC // Execute the transaction
+// updateStatusInRedis updates the batch status in Redis.
+// Redis SET is atomic, so no transaction is needed for single-key updates.
 func updateStatusInRedis(redisClient *redis.Client, batchID uuid.UUID, status batchsqlc.StatusEnum, expirySec int) error {
-	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
-
+	redisKey := BatchStatusKey(batchID.String())
 	expiry := time.Duration(expirySec) * time.Second
 
-	err := redisClient.Watch(context.Background(), func(tx *redis.Tx) error {
-		// Check the current status of the batch in Redis
-		currentStatus, err := tx.Get(context.Background(), redisKey).Result()
-		if err != nil && err != redis.Nil {
-			return err
-		}
-
-		// If the current status is already the same as the new status, no need to update
-		if currentStatus == string(status) {
-			return nil
-		}
-
-		// Update the batch status in Redis within the transaction
-		_, err = tx.TxPipelined(context.Background(), func(pipe redis.Pipeliner) error {
-			pipe.Set(context.Background(), redisKey, string(status), expiry)
-			return nil
-		})
-		return err
-	}, redisKey)
-
+	err := redisClient.Set(context.Background(), redisKey, string(status), expiry).Err()
 	if err != nil {
-		return fmt.Errorf("failed to update status in Redis: %v", err)
+		return fmt.Errorf("failed to update status in Redis: %w", err)
 	}
 	return nil
 }
 
+// updateStatusAndOutputFilesDataInRedis updates batch status, result, and output files in Redis.
+// Uses TxPipeline (MULTI/EXEC) for atomic multi-key update. All keys use hash tags for
+// Redis Cluster compatibility (same slot).
 func updateStatusAndOutputFilesDataInRedis(redisClient *redis.Client, batchID uuid.UUID, status batchsqlc.StatusEnum, outputFiles map[string]string, result string, expirySec int) error {
-	redisKey := fmt.Sprintf("ALYA_BATCHSTATUS_%s", batchID)
-	redisResultKey := fmt.Sprintf("ALYA_BATCHRESULT_%s", batchID)
-	redisOutputFilesKey := fmt.Sprintf("ALYA_BATCHOUTFILES_%s", batchID)
+	redisKey := BatchStatusKey(batchID.String())
+	redisResultKey := BatchResultKey(batchID.String())
+	redisOutputFilesKey := BatchOutputFilesKey(batchID.String())
 	expiry := time.Duration(expirySec) * time.Second
 
-	err := redisClient.Watch(context.Background(), func(tx *redis.Tx) error {
-		// Check the current status of the batch in Redis
-		currentStatus, err := tx.Get(context.Background(), redisKey).Result()
-		if err != nil && err != redis.Nil {
-			return err
-		}
-
-		// If the current status is already the same as the new status, no need to update
-		if currentStatus == string(status) {
-			return nil
-		}
-		// Convert outputFiles to JSON
-		outputFilesJSON, err := json.Marshal(outputFiles)
-		if err != nil {
-			return fmt.Errorf("failed to marshal output files: %v", err)
-		}
-
-		// Update the batch status ,outputfiles and result in Redis within the transaction
-		_, err = tx.TxPipelined(context.Background(), func(pipe redis.Pipeliner) error {
-			pipe.Set(context.Background(), redisKey, string(status), expiry)
-			pipe.Set(context.Background(), redisResultKey, result, expiry)
-			pipe.Set(context.Background(), redisOutputFilesKey, outputFilesJSON, expiry)
-			return nil
-		})
-		return err
-	}, redisKey)
-
+	outputFilesJSON, err := json.Marshal(outputFiles)
 	if err != nil {
-		return fmt.Errorf("failed to update status,outputfiles and result in Redis: %v", err)
+		return fmt.Errorf("failed to marshal output files: %w", err)
+	}
+
+	pipe := redisClient.TxPipeline()
+	pipe.Set(context.Background(), redisKey, string(status), expiry)
+	pipe.Set(context.Background(), redisResultKey, result, expiry)
+	pipe.Set(context.Background(), redisOutputFilesKey, outputFilesJSON, expiry)
+	_, err = pipe.Exec(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to update status, outputfiles and result in Redis: %w", err)
 	}
 	return nil
 }

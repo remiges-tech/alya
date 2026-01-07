@@ -17,6 +17,16 @@ services:
     ports:
       - "6379:6379"
 
+  redis-cluster:
+    image: grokzen/redis-cluster:7.0.10
+    container_name: alyabatch-redis-cluster
+    environment:
+      IP: "0.0.0.0"
+    ports:
+      - "7000:7000"
+      - "7001:7001"
+      - "7002:7002"
+
   minio:
     image: minio/minio
     ports:
