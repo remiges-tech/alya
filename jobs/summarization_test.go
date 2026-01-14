@@ -159,10 +159,13 @@ func TestSummarizeBatch(t *testing.T) {
 			}
 
 			redisClient, redisMock := redismock.NewClientMock()
-			redisKey := BatchStatusKey(tt.batchID.String())
+			statusKey := BatchStatusKey(tt.batchID.String())
+			summaryKey := BatchSummaryKey(tt.batchID.String())
 
-			// Set up Redis mock expectations - simplified to plain SET (no Watch/TxPipeline)
-			redisMock.ExpectSet(redisKey, string(tt.expectedStatus), time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100)*time.Second).SetVal("OK")
+			// Set up Redis mock expectations - status key and summary key
+			redisMock.ExpectSet(statusKey, string(tt.expectedStatus), time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100)*time.Second).SetVal("OK")
+			// Summary key contains dynamic UUID from object store, use Regexp to match
+			redisMock.Regexp().ExpectSet(summaryKey, `.*`, time.Duration(ALYA_BATCHSTATUS_CACHEDUR_SEC*100)*time.Second).SetVal("OK")
 
 			loggerCtx := &logharbour.LoggerContext{}
 			logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())

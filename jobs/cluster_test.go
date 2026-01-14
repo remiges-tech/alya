@@ -51,9 +51,10 @@ func TestRedisClusterMultiKeyTransaction(t *testing.T) {
 	statusKey := BatchStatusKey(batchID)
 	resultKey := BatchResultKey(batchID)
 	outputFilesKey := BatchOutputFilesKey(batchID)
+	summaryKey := BatchSummaryKey(batchID)
 
 	// Clean up before test
-	client.Del(ctx, statusKey, resultKey, outputFilesKey)
+	client.Del(ctx, statusKey, resultKey, outputFilesKey, summaryKey)
 
 	t.Run("multi_key_set_in_pipeline", func(t *testing.T) {
 		// This simulates what updateStatusAndOutputFilesDataInRedis does
@@ -90,14 +91,18 @@ func TestRedisClusterMultiKeyTransaction(t *testing.T) {
 		outputFilesSlot, err := client.ClusterKeySlot(ctx, outputFilesKey).Result()
 		require.NoError(t, err)
 
+		summarySlot, err := client.ClusterKeySlot(ctx, summaryKey).Result()
+		require.NoError(t, err)
+
 		assert.Equal(t, statusSlot, resultSlot, "STATUS and RESULT keys should be on same slot")
 		assert.Equal(t, statusSlot, outputFilesSlot, "STATUS and OUTFILES keys should be on same slot")
+		assert.Equal(t, statusSlot, summarySlot, "STATUS and SUMMARY keys should be on same slot")
 
 		t.Logf("All keys for batch %s are on slot %d", batchID, statusSlot)
 	})
 
 	// Clean up
-	client.Del(ctx, statusKey, resultKey, outputFilesKey)
+	client.Del(ctx, statusKey, resultKey, outputFilesKey, summaryKey)
 }
 
 // TestRedisClusterKeySlotVerification uses CLUSTER KEYSLOT to verify
@@ -127,6 +132,7 @@ func TestRedisClusterKeySlotVerification(t *testing.T) {
 			statusKey := BatchStatusKey(batchID)
 			resultKey := BatchResultKey(batchID)
 			outputFilesKey := BatchOutputFilesKey(batchID)
+			summaryKey := BatchSummaryKey(batchID)
 
 			statusSlot, err := client.ClusterKeySlot(ctx, statusKey).Result()
 			require.NoError(t, err)
@@ -137,10 +143,15 @@ func TestRedisClusterKeySlotVerification(t *testing.T) {
 			outputFilesSlot, err := client.ClusterKeySlot(ctx, outputFilesKey).Result()
 			require.NoError(t, err)
 
+			summarySlot, err := client.ClusterKeySlot(ctx, summaryKey).Result()
+			require.NoError(t, err)
+
 			assert.Equal(t, statusSlot, resultSlot,
 				"STATUS and RESULT should be on same slot for batchID=%s", batchID)
 			assert.Equal(t, statusSlot, outputFilesSlot,
 				"STATUS and OUTFILES should be on same slot for batchID=%s", batchID)
+			assert.Equal(t, statusSlot, summarySlot,
+				"STATUS and SUMMARY should be on same slot for batchID=%s", batchID)
 
 			t.Logf("batchID=%s -> slot %d", batchID, statusSlot)
 		})

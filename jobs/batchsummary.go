@@ -202,17 +202,28 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 
 	// Update status in redis
 	jm.logger.Debug0().LogActivity("Updating batch status in Redis cache", map[string]any{
-		"batchId": batchID.String(),
-		"status": batchStatus,
-		"cacheDuration": 100*jm.config.BatchStatusCacheDurSec,
+		"batchId":       batchID.String(),
+		"status":        batchStatus,
+		"cacheDuration": 100 * jm.config.BatchStatusCacheDurSec,
 	})
 	err = updateStatusInRedis(jm.redisClient, batchID, batchStatus, 100*jm.config.BatchStatusCacheDurSec)
 	if err != nil {
 		jm.logger.Warn().LogActivity("Failed to update status in Redis cache for batch", map[string]any{
 			"batchId": batchID.String(),
-			"error": err.Error(),
+			"error":   err.Error(),
 		})
 		// Continue with batch completion despite Redis failure - Redis is just a cache
+	}
+
+	// Cache the batch summary for BatchStatus API
+	err = updateBatchSummaryInRedis(jm.redisClient, batchID, batchStatus, objStoreFiles,
+		int(nsuccess), int(nfailed), int(naborted), 100*jm.config.BatchStatusCacheDurSec)
+	if err != nil {
+		jm.logger.Warn().LogActivity("Failed to cache batch summary in Redis", map[string]any{
+			"batchId": batchID.String(),
+			"error":   err.Error(),
+		})
+		// Continue despite Redis failure - Redis is just a cache
 	}
 
 	context, err := NewJSONstr(string(batch.Context))
@@ -449,6 +460,35 @@ func updateStatusInRedis(redisClient *redis.Client, batchID uuid.UUID, status ba
 	err := redisClient.Set(context.Background(), redisKey, string(status), expiry).Err()
 	if err != nil {
 		return fmt.Errorf("failed to update status in Redis: %w", err)
+	}
+	return nil
+}
+
+// updateBatchSummaryInRedis caches the batch summary (status, outputfiles, counters) in Redis.
+// Uses a single key with JSON blob for atomic read/write.
+func updateBatchSummaryInRedis(redisClient *redis.Client, batchID uuid.UUID,
+	status batchsqlc.StatusEnum, outputFiles map[string]string,
+	nsuccess, nfailed, naborted int, expirySec int) error {
+
+	summary := BatchSummary_t{
+		Status:      string(status),
+		OutputFiles: outputFiles,
+		NSuccess:    nsuccess,
+		NFailed:     nfailed,
+		NAborted:    naborted,
+	}
+
+	summaryJSON, err := json.Marshal(summary)
+	if err != nil {
+		return fmt.Errorf("failed to marshal batch summary: %w", err)
+	}
+
+	redisKey := BatchSummaryKey(batchID.String())
+	expiry := time.Duration(expirySec) * time.Second
+
+	err = redisClient.Set(context.Background(), redisKey, summaryJSON, expiry).Err()
+	if err != nil {
+		return fmt.Errorf("failed to update batch summary in Redis: %w", err)
 	}
 	return nil
 }

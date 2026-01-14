@@ -28,6 +28,15 @@ type BatchOutput_t struct {
 	Messages JSONstr
 }
 
+// BatchSummary_t holds batch summary data for Redis caching.
+type BatchSummary_t struct {
+	Status      string            `json:"status"`
+	OutputFiles map[string]string `json:"outputFiles"`
+	NSuccess    int               `json:"nsuccess"`
+	NFailed     int               `json:"nfailed"`
+	NAborted    int               `json:"naborted"`
+}
+
 // RegisterProcessorBatch allows applications to register a processing function for a specific batch operation type.
 // The processing function implements the BatchProcessor interface.
 // Each (app, op) combination can only have one registered processor.
@@ -198,6 +207,80 @@ func (jm *JobManager) BatchDone(batchID string) (status batchsqlc.StatusEnum, ba
 	}
 
 	return status, batchOutput, outputFiles, nsuccess, nfailed, naborted, nil
+}
+
+// BatchStatus returns the batch summary without per-row results.
+// Unlike BatchDone, this function never queries the batchrows table.
+// Returns cached summary from Redis if available, otherwise queries batches table only.
+func (jm *JobManager) BatchStatus(batchID string) (
+	status batchsqlc.StatusEnum,
+	outputFiles map[string]string,
+	nsuccess, nfailed, naborted int,
+	err error,
+) {
+	ctx := context.Background()
+	batchUUID, err := uuid.Parse(batchID)
+	if err != nil {
+		return "", nil, 0, 0, 0, fmt.Errorf("invalid batch ID: %w", err)
+	}
+
+	// Check Redis for cached summary
+	redisKey := BatchSummaryKey(batchID)
+	summaryJSON, err := jm.redisClient.Get(ctx, redisKey).Result()
+	if err == nil {
+		// Cache hit - parse and return
+		var summary BatchSummary_t
+		if err := json.Unmarshal([]byte(summaryJSON), &summary); err != nil {
+			return "", nil, 0, 0, 0, fmt.Errorf("failed to unmarshal cached summary: %w", err)
+		}
+		return batchsqlc.StatusEnum(summary.Status), summary.OutputFiles,
+			summary.NSuccess, summary.NFailed, summary.NAborted, nil
+	}
+	if err != redis.Nil {
+		// Redis error (not just cache miss)
+		jm.logger.Warn().LogActivity("Redis error checking batch summary cache", map[string]any{
+			"batchId": batchID,
+			"error":   err.Error(),
+		})
+		// Continue to DB query despite Redis error
+	}
+
+	// Cache miss - query batches table only
+	batch, err := jm.queries.GetBatchByID(ctx, batchUUID)
+	if err != nil {
+		return "", nil, 0, 0, 0, fmt.Errorf("failed to get batch: %w", err)
+	}
+
+	status = batch.Status
+	nsuccess = int(batch.Nsuccess.Int32)
+	nfailed = int(batch.Nfailed.Int32)
+	naborted = int(batch.Naborted.Int32)
+
+	// Parse output files
+	outputFiles = make(map[string]string)
+	if batch.Outputfiles != nil {
+		if err := json.Unmarshal(batch.Outputfiles, &outputFiles); err != nil {
+			return status, nil, nsuccess, nfailed, naborted,
+				fmt.Errorf("failed to unmarshal output files: %w", err)
+		}
+	}
+
+	// Cache the summary in Redis
+	expirySec := jm.config.BatchStatusCacheDurSec
+	if status == batchsqlc.StatusEnumSuccess || status == batchsqlc.StatusEnumFailed || status == batchsqlc.StatusEnumAborted {
+		// Final status - cache for longer
+		expirySec = 100 * jm.config.BatchStatusCacheDurSec
+	}
+	if err := updateBatchSummaryInRedis(jm.redisClient, batchUUID, status, outputFiles,
+		nsuccess, nfailed, naborted, expirySec); err != nil {
+		jm.logger.Warn().LogActivity("Failed to cache batch summary in Redis", map[string]any{
+			"batchId": batchID,
+			"error":   err.Error(),
+		})
+		// Continue despite Redis failure - Redis is just a cache
+	}
+
+	return status, outputFiles, nsuccess, nfailed, naborted, nil
 }
 
 func (jm *JobManager) BatchAbort(batchID string) (status batchsqlc.StatusEnum, nsuccess, nfailed, naborted int, err error) {

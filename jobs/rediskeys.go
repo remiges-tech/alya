@@ -19,3 +19,9 @@ func BatchResultKey(batchID string) string {
 func BatchOutputFilesKey(batchID string) string {
 	return fmt.Sprintf("ALYA_{%s}_OUTFILES", batchID)
 }
+
+// BatchSummaryKey returns the Redis key for batch summary (status + outputfiles + counters).
+// Uses hash tag {batchID} for Redis Cluster slot co-location.
+func BatchSummaryKey(batchID string) string {
+	return fmt.Sprintf("ALYA_{%s}_SUMMARY", batchID)
+}
