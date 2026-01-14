@@ -81,19 +81,23 @@ import (
 
 // RequestInfo contains all the information about a request to be logged
 type RequestInfo struct {
-	Method       string        `json:"method"`               // HTTP method (e.g., "GET", "POST")
-	Path         string        `json:"path"`                 // Request path (e.g., "/users/123")
-	ClientIP     string        `json:"client_ip"`            // Client's IP address
-	StatusCode   int           `json:"status_code"`          // HTTP status code of the response (e.g., 200, 404)
-	StartTime    time.Time     `json:"start_time"`           // Time when request processing started (UTC)
-	Duration     time.Duration `json:"duration"`             // Total duration of request processing
-	RequestSize  int64         `json:"request_size"`         // Size of the request body in bytes
-	ResponseSize int64         `json:"response_size"`        // Size of the response body in bytes
-	Query        string        `json:"query,omitempty"`      // Raw query string (e.g., "id=1&name=test")
-	UserAgent    string        `json:"user_agent,omitempty"` // User-Agent header from the request
-	Referer      string        `json:"referer,omitempty"`    // Referer header from the request
-	TraceID      string        `json:"trace_id,omitempty"`   // Trace ID for distributed tracing
-	SpanID       string        `json:"span_id,omitempty"`    // Span ID for distributed tracing
+	Method             string        `json:"method"`                       // HTTP method (e.g., "GET", "POST")
+	Path               string        `json:"path"`                         // Request path (e.g., "/users/123")
+	ClientIP           string        `json:"client_ip"`                    // Client's IP address
+	StatusCode         int           `json:"status_code"`                  // HTTP status code of the response (e.g., 200, 404)
+	StartTime          time.Time     `json:"start_time"`                   // Time when request processing started (UTC)
+	Duration           time.Duration `json:"duration"`                     // Total duration of request processing
+	RequestSize        int64         `json:"request_size"`                 // Size of the request body in bytes
+	ResponseSize       int64         `json:"response_size"`                // Size of the response body in bytes
+	Query              string        `json:"query,omitempty"`              // Raw query string (e.g., "id=1&name=test")
+	UserAgent          string        `json:"user_agent,omitempty"`         // User-Agent header from the request
+	Referer            string        `json:"referer,omitempty"`            // Referer header from the request
+	TraceID            string        `json:"trace_id,omitempty"`           // Trace ID for distributed tracing
+	SpanID             string        `json:"span_id,omitempty"`            // Span ID for distributed tracing
+	TimedOut           bool          `json:"timed_out,omitempty"`          // True if request exceeded timeout
+	ClientDisconnected bool          `json:"client_disconnected,omitempty"` // True if client closed connection
+	PanicRecovered     bool          `json:"panic_recovered,omitempty"`    // True if handler panicked
+	PanicValue         string        `json:"panic_value,omitempty"`        // Panic message if handler panicked
 }
 
 // RequestLogger defines the interface that a logger must implement to be used with LogRequest middleware
@@ -131,21 +135,45 @@ func LogRequest(logger RequestLogger) gin.HandlerFunc {
 		// Calculate duration
 		duration := time.Since(startTime)
 
+		// Check for timeout/disconnect/panic context keys set by TimeoutMiddleware.
+		// TimeoutMiddleware sets these keys to communicate events to this logging middleware:
+		//   - CtxKeyTimedOut: request exceeded configured timeout
+		//   - CtxKeyClientDisconnected: client closed connection before response
+		//   - CtxKeyPanicRecovered, CtxKeyPanicValue: handler panicked
+		var timedOut, clientDisconnected, panicRecovered bool
+		var panicValue string
+		if v, exists := c.Get(CtxKeyTimedOut); exists {
+			timedOut, _ = v.(bool)
+		}
+		if v, exists := c.Get(CtxKeyClientDisconnected); exists {
+			clientDisconnected, _ = v.(bool)
+		}
+		if v, exists := c.Get(CtxKeyPanicRecovered); exists {
+			panicRecovered, _ = v.(bool)
+		}
+		if v, exists := c.Get(CtxKeyPanicValue); exists {
+			panicValue, _ = v.(string)
+		}
+
 		// Create request info
 		info := RequestInfo{
-			Method:       c.Request.Method,
-			Path:         c.Request.URL.Path,
-			ClientIP:     c.ClientIP(),
-			StatusCode:   c.Writer.Status(),
-			StartTime:    startTime.UTC(), // Convert to UTC
-			Duration:     duration,
-			RequestSize:  requestSize,
-			ResponseSize: int64(c.Writer.Size()),
-			Query:        c.Request.URL.RawQuery,
-			UserAgent:    c.Request.UserAgent(),
-			Referer:      c.Request.Referer(),
-			TraceID:      traceID,
-			SpanID:       spanID,
+			Method:             c.Request.Method,
+			Path:               c.Request.URL.Path,
+			ClientIP:           c.ClientIP(),
+			StatusCode:         c.Writer.Status(),
+			StartTime:          startTime.UTC(), // Convert to UTC
+			Duration:           duration,
+			RequestSize:        requestSize,
+			ResponseSize:       int64(c.Writer.Size()),
+			Query:              c.Request.URL.RawQuery,
+			UserAgent:          c.Request.UserAgent(),
+			Referer:            c.Request.Referer(),
+			TraceID:            traceID,
+			SpanID:             spanID,
+			TimedOut:           timedOut,
+			ClientDisconnected: clientDisconnected,
+			PanicRecovered:     panicRecovered,
+			PanicValue:         panicValue,
 		}
 
 		// Log request details using the provided logger
@@ -197,6 +225,18 @@ func (a *LogHarbourAdapter) Log(info RequestInfo) {
 
 	if info.SpanID != "" {
 		activityData["span_id"] = info.SpanID
+	}
+
+	// Add timeout, client disconnect, and panic info if present
+	if info.TimedOut {
+		activityData["timed_out"] = true
+	}
+	if info.ClientDisconnected {
+		activityData["client_disconnected"] = true
+	}
+	if info.PanicRecovered {
+		activityData["panic_recovered"] = true
+		activityData["panic_value"] = info.PanicValue
 	}
 
 	// Log the activity with the collected data
