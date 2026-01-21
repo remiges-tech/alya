@@ -134,7 +134,7 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, bat
 		return "", fmt.Errorf("no file check function registered for file type: %s", filetype)
 	}
 
-	isgood, batchctx, batchInput, app, op, _ := fileChkFn(fileContents, filename, batchctx)
+	isgood, batchctx, batchInput, app, op, errMsg := fileChkFn(fileContents, filename, batchctx)
 
 	if !isgood {
 		if objectID != "" {
@@ -150,7 +150,7 @@ func (fxs *FileXfrServer) BulkfileinProcess(file, filename, filetype string, bat
 			"filetype": filetype,
 			"filename": filename,
 		})
-		return "", fmt.Errorf("file check failed for file type: %s", filetype)
+		return "", fmt.Errorf("file check failed for type %s: %s", filetype, errMsg)
 	}
 
 	batchID, err := fxs.jobManager.BatchSubmit(app, op, batchctx, batchInput, false)
