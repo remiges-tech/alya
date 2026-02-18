@@ -28,7 +28,8 @@ var (
 	ErrInitializerNotFound  = errors.New("initializer not found for this app")
 	ErrInitializerFailed    = errors.New("initializer failed for this app")
 	ErrInvalidProcessorType = errors.New("invalid processor type for this app and operation")
-	ErrBatchHasPendingRows  = errors.New("batch has pending rows")
+	ErrBatchHasPendingRows    = errors.New("batch has pending rows")
+	ErrBatchLockNotAcquired  = errors.New("batch lock held by another worker")
 )
 
 // ConfigurationError represents an error related to system configuration or setup
@@ -1094,8 +1095,8 @@ func (jm *JobManager) summarizeCompletedBatches(ctx context.Context, batchSet ma
 		"batchCount": len(batchSet),
 	})
 
-	const maxRetries = 3
-	const retryDelayMs = 2
+	const maxRetries = 5
+	const retryDelayMs = 50
 
 	for batchID := range batchSet {
 		var lastErr error
@@ -1147,6 +1148,31 @@ func (jm *JobManager) summarizeCompletedBatches(ctx context.Context, batchSet ma
 				lastErr = nil
 				break // Success - done with this batch
 
+			} else if errors.Is(err, ErrBatchLockNotAcquired) {
+				// Lock held by another worker - rollback and retry
+				tx.Rollback(ctx)
+				lastErr = err
+
+				if attempt < maxRetries {
+					jm.logger.Info().LogActivity("Batch lock held by another worker, will retry", map[string]any{
+						"batchId":     batchID.String(),
+						"attempt":     attempt,
+						"nextAttempt": attempt + 1,
+						"delayMs":     retryDelayMs,
+					})
+
+					time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
+					continue
+				}
+
+				jm.logger.Warn().LogActivity("Batch lock held by another worker after max retries", map[string]any{
+					"batchId":       batchID.String(),
+					"maxRetries":    maxRetries,
+					"retryDelayMs":  retryDelayMs,
+					"totalWindowMs": maxRetries * retryDelayMs,
+				})
+				break
+
 			} else if errors.Is(err, ErrBatchHasPendingRows) {
 				// Pending rows detected - rollback and potentially retry
 				tx.Rollback(ctx)
@@ -1185,7 +1211,7 @@ func (jm *JobManager) summarizeCompletedBatches(ctx context.Context, batchSet ma
 		}
 
 		// Log final outcome for this batch
-		if lastErr != nil && !errors.Is(lastErr, ErrBatchHasPendingRows) {
+		if lastErr != nil && !errors.Is(lastErr, ErrBatchHasPendingRows) && !errors.Is(lastErr, ErrBatchLockNotAcquired) {
 			jm.logger.Error(lastErr).LogActivity("Failed to summarize batch after retries", map[string]any{
 				"batchId": batchID.String(),
 			})

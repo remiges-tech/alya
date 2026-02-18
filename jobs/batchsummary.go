@@ -29,11 +29,10 @@ func (jm *JobManager) summarizeBatch(q batchsqlc.Querier, batchID uuid.UUID) err
 	}
 
 	if !locked {
-		// Another worker is summarizing this batch
 		jm.logger.Info().LogActivity("Batch summarization in progress by another worker, skipping", map[string]any{
 			"batchId": batchID.String(),
 		})
-		return nil // Exit immediately, no blocking
+		return ErrBatchLockNotAcquired
 	}
 
 	jm.logger.Info().LogActivity("Acquired advisory lock for batch summarization", map[string]any{

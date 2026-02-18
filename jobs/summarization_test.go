@@ -112,6 +112,30 @@ var summarizeBatchTests = []struct {
 	},
 }
 
+// TestSummarizeBatch_LockNotAcquired verifies that when another worker holds the
+// advisory lock, summarizeBatch returns ErrBatchLockNotAcquired so the caller can
+// distinguish "batch summarized" from "skipped because lock held elsewhere."
+func TestSummarizeBatch_LockNotAcquired(t *testing.T) {
+	batchID := uuid.New()
+
+	mockQuerier := &mocks.QuerierMock{}
+	mockQuerier.TryAdvisoryLockBatchFunc = func(ctx context.Context, batchIDStr string) (bool, error) {
+		return false, nil // another worker holds the lock
+	}
+
+	loggerCtx := &logharbour.LoggerContext{}
+	logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())
+
+	jm := NewJobManager(nil, nil, nil, logger, nil)
+
+	err := jm.summarizeBatch(mockQuerier, batchID)
+
+	assert.ErrorIs(t, err, ErrBatchLockNotAcquired)
+
+	assert.Equal(t, 0, len(mockQuerier.UpdateBatchSummaryCalls()))
+	assert.Equal(t, 0, len(mockQuerier.GetBatchByIDCalls()))
+}
+
 func TestSummarizeBatch(t *testing.T) {
 	for _, tt := range summarizeBatchTests {
 		t.Run(tt.name, func(t *testing.T) {
