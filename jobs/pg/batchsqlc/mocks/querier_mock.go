@@ -65,6 +65,9 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //			GetProcessedBatchRowsByBatchIDSortedFunc: func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.GetProcessedBatchRowsByBatchIDSortedRow, error) {
 //				panic("mock out the GetProcessedBatchRowsByBatchIDSorted method")
 //			},
+//			GetUnsummarizedBatchesFunc: func(ctx context.Context) ([]uuid.UUID, error) {
+//				panic("mock out the GetUnsummarizedBatches method")
+//			},
 //			InsertBatchFileFunc: func(ctx context.Context, arg batchsqlc.InsertBatchFileParams) error {
 //				panic("mock out the InsertBatchFile method")
 //			},
@@ -176,6 +179,9 @@ type QuerierMock struct {
 
 	// GetProcessedBatchRowsByBatchIDSortedFunc mocks the GetProcessedBatchRowsByBatchIDSorted method.
 	GetProcessedBatchRowsByBatchIDSortedFunc func(ctx context.Context, batch uuid.UUID) ([]batchsqlc.GetProcessedBatchRowsByBatchIDSortedRow, error)
+
+	// GetUnsummarizedBatchesFunc mocks the GetUnsummarizedBatches method.
+	GetUnsummarizedBatchesFunc func(ctx context.Context) ([]uuid.UUID, error)
 
 	// InsertBatchFileFunc mocks the InsertBatchFile method.
 	InsertBatchFileFunc func(ctx context.Context, arg batchsqlc.InsertBatchFileParams) error
@@ -342,6 +348,11 @@ type QuerierMock struct {
 			// Batch is the batch argument value.
 			Batch uuid.UUID
 		}
+		// GetUnsummarizedBatches holds details about calls to the GetUnsummarizedBatches method.
+		GetUnsummarizedBatches []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
 		// InsertBatchFile holds details about calls to the InsertBatchFile method.
 		InsertBatchFile []struct {
 			// Ctx is the ctx argument value.
@@ -498,6 +509,7 @@ type QuerierMock struct {
 	lockGetCompletedBatches                  sync.RWMutex
 	lockGetPendingBatchRows                  sync.RWMutex
 	lockGetProcessedBatchRowsByBatchIDSorted sync.RWMutex
+	lockGetUnsummarizedBatches               sync.RWMutex
 	lockInsertBatchFile                      sync.RWMutex
 	lockInsertIntoBatchRows                  sync.RWMutex
 	lockInsertIntoBatches                    sync.RWMutex
@@ -1053,6 +1065,38 @@ func (mock *QuerierMock) GetProcessedBatchRowsByBatchIDSortedCalls() []struct {
 	mock.lockGetProcessedBatchRowsByBatchIDSorted.RLock()
 	calls = mock.calls.GetProcessedBatchRowsByBatchIDSorted
 	mock.lockGetProcessedBatchRowsByBatchIDSorted.RUnlock()
+	return calls
+}
+
+// GetUnsummarizedBatches calls GetUnsummarizedBatchesFunc.
+func (mock *QuerierMock) GetUnsummarizedBatches(ctx context.Context) ([]uuid.UUID, error) {
+	if mock.GetUnsummarizedBatchesFunc == nil {
+		panic("QuerierMock.GetUnsummarizedBatchesFunc: method is nil but Querier.GetUnsummarizedBatches was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockGetUnsummarizedBatches.Lock()
+	mock.calls.GetUnsummarizedBatches = append(mock.calls.GetUnsummarizedBatches, callInfo)
+	mock.lockGetUnsummarizedBatches.Unlock()
+	return mock.GetUnsummarizedBatchesFunc(ctx)
+}
+
+// GetUnsummarizedBatchesCalls gets all the calls that were made to GetUnsummarizedBatches.
+// Check the length with:
+//
+//	len(mockedQuerier.GetUnsummarizedBatchesCalls())
+func (mock *QuerierMock) GetUnsummarizedBatchesCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockGetUnsummarizedBatches.RLock()
+	calls = mock.calls.GetUnsummarizedBatches
+	mock.lockGetUnsummarizedBatches.RUnlock()
 	return calls
 }
 

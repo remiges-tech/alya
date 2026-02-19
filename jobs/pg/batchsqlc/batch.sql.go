@@ -466,6 +466,40 @@ func (q *Queries) GetProcessedBatchRowsByBatchIDSorted(ctx context.Context, batc
 	return items, nil
 }
 
+const getUnsummarizedBatches = `-- name: GetUnsummarizedBatches :many
+SELECT b.id FROM batches b
+WHERE b.status = 'inprog'
+  AND b.doneat IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM batchrows br
+    WHERE br.batch = b.id
+    AND br.status IN ('queued', 'inprog')
+  )
+`
+
+// Finds batches stuck in 'inprog' with doneat=NULL where all rows have reached
+// terminal status (no queued or inprog rows remain). These batches need
+// summarization that was missed due to race conditions or failed retries.
+func (q *Queries) GetUnsummarizedBatches(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getUnsummarizedBatches)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertBatchFile = `-- name: InsertBatchFile :exec
 INSERT INTO batch_files (
     batch_id,

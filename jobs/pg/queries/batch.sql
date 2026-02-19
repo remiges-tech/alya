@@ -219,3 +219,16 @@ UPDATE batchrows
 SET status = 'queued'
 WHERE rowid = ANY($1::bigint[]) AND status = 'inprog';
 
+-- name: GetUnsummarizedBatches :many
+-- Finds batches stuck in 'inprog' with doneat=NULL where all rows have reached
+-- terminal status (no queued or inprog rows remain). These batches need
+-- summarization that was missed due to race conditions or failed retries.
+SELECT b.id FROM batches b
+WHERE b.status = 'inprog'
+  AND b.doneat IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM batchrows br
+    WHERE br.batch = b.id
+    AND br.status IN ('queued', 'inprog')
+  );
+

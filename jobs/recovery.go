@@ -3,9 +3,11 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/remiges-tech/alya/jobs/pg/batchsqlc"
 )
 
@@ -283,6 +285,54 @@ func (jm *JobManager) runPeriodicRecovery(ctx context.Context) {
 				jm.logger.Info().LogActivity("Periodic recovery completed", map[string]any{
 					"count": recovered,
 				})
+			}
+		}
+	}
+}
+
+const (
+	sweepMinInterval = 5 * time.Minute
+	sweepMaxInterval = 10 * time.Minute
+)
+
+// sweepUnsummarizedBatches finds batches stuck in 'inprog' with all rows in
+// terminal status and feeds them into summarizeCompletedBatches. This catches
+// batches that were missed due to race conditions or exhausted retries during
+// normal summarization.
+func (jm *JobManager) sweepUnsummarizedBatches(ctx context.Context) error {
+	batchIDs, err := jm.queries.GetUnsummarizedBatches(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to query unsummarized batches: %w", err)
+	}
+
+	if len(batchIDs) == 0 {
+		return nil
+	}
+
+	jm.logger.Info().LogActivity("Sweep found unsummarized batches", map[string]any{
+		"count": len(batchIDs),
+	})
+
+	batchSet := make(map[uuid.UUID]bool, len(batchIDs))
+	for _, id := range batchIDs {
+		batchSet[id] = true
+	}
+
+	return jm.summarizeCompletedBatches(ctx, batchSet)
+}
+
+// runPeriodicSweep runs the sweep loop in a background goroutine.
+// It queries for stuck batches at random intervals between sweepMinInterval
+// and sweepMaxInterval.
+func (jm *JobManager) runPeriodicSweep(ctx context.Context) {
+	for {
+		interval := sweepMinInterval + time.Duration(rand.Int63n(int64(sweepMaxInterval-sweepMinInterval)))
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+			if err := jm.sweepUnsummarizedBatches(ctx); err != nil {
+				jm.logger.Error(err).LogActivity("Periodic sweep failed", nil)
 			}
 		}
 	}

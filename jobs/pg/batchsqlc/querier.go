@@ -26,6 +26,10 @@ type Querier interface {
 	GetCompletedBatches(ctx context.Context) ([]uuid.UUID, error)
 	GetPendingBatchRows(ctx context.Context, batch uuid.UUID) ([]GetPendingBatchRowsRow, error)
 	GetProcessedBatchRowsByBatchIDSorted(ctx context.Context, batch uuid.UUID) ([]GetProcessedBatchRowsByBatchIDSortedRow, error)
+	// Finds batches stuck in 'inprog' with doneat=NULL where all rows have reached
+	// terminal status (no queued or inprog rows remain). These batches need
+	// summarization that was missed due to race conditions or failed retries.
+	GetUnsummarizedBatches(ctx context.Context) ([]uuid.UUID, error)
 	InsertBatchFile(ctx context.Context, arg InsertBatchFileParams) error
 	InsertIntoBatchRows(ctx context.Context, arg InsertIntoBatchRowsParams) error
 	InsertIntoBatches(ctx context.Context, arg InsertIntoBatchesParams) (uuid.UUID, error)

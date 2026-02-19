@@ -273,6 +273,7 @@ func (jm *JobManager) Run() {
 
 	go jm.runHeartbeat()
 	go jm.runPeriodicRecovery(ctx)
+	go jm.runPeriodicSweep(ctx)
 
 	// Circuit breaker pattern at the supervisor layer:
 	// This is the ONLY layer where we make health decisions about the entire system.
@@ -335,6 +336,7 @@ func (jm *JobManager) Run() {
 func (jm *JobManager) RunWithContext(ctx context.Context) {
 	go jm.runHeartbeat()
 	go jm.runPeriodicRecovery(ctx)
+	go jm.runPeriodicSweep(ctx)
 
 	// Circuit breaker pattern: same as Run() but respects context cancellation
 	consecutivePanics := 0
