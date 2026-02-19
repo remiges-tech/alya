@@ -25,3 +25,23 @@ func BatchOutputFilesKey(batchID string) string {
 func BatchSummaryKey(batchID string) string {
 	return fmt.Sprintf("ALYA_{%s}_SUMMARY", batchID)
 }
+
+// WorkerRegistryKey returns the Redis key for the global worker registry SET.
+// All workers register their instance IDs in this SET so recovery can discover
+// them without using SCAN (which doesn't work across Redis Cluster nodes).
+func WorkerRegistryKey() string {
+	return "ALYA_WORKER_REGISTRY"
+}
+
+// WorkerHeartbeatKey returns the Redis key for a worker's heartbeat.
+// Uses hash tag {instanceID} for Redis Cluster slot co-location.
+func WorkerHeartbeatKey(instanceID string) string {
+	return fmt.Sprintf("ALYA_{%s}_HEARTBEAT", instanceID)
+}
+
+// WorkerRowsKey returns the Redis key for a worker's active rows SET.
+// Uses hash tag {instanceID} for Redis Cluster slot co-location.
+func WorkerRowsKey(instanceID string) string {
+	return fmt.Sprintf("ALYA_{%s}_ROWS", instanceID)
+}
+

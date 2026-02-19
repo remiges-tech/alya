@@ -74,6 +74,9 @@ var _ batchsqlc.Querier = &QuerierMock{}
 //			InsertIntoBatchesFunc: func(ctx context.Context, arg batchsqlc.InsertIntoBatchesParams) (uuid.UUID, error) {
 //				panic("mock out the InsertIntoBatches method")
 //			},
+//			ResetRowsToQueuedFunc: func(ctx context.Context, dollar_1 []int64) error {
+//				panic("mock out the ResetRowsToQueued method")
+//			},
 //			TryAdvisoryLockBatchFunc: func(ctx context.Context, dollar_1 string) (bool, error) {
 //				panic("mock out the TryAdvisoryLockBatch method")
 //			},
@@ -182,6 +185,9 @@ type QuerierMock struct {
 
 	// InsertIntoBatchesFunc mocks the InsertIntoBatches method.
 	InsertIntoBatchesFunc func(ctx context.Context, arg batchsqlc.InsertIntoBatchesParams) (uuid.UUID, error)
+
+	// ResetRowsToQueuedFunc mocks the ResetRowsToQueued method.
+	ResetRowsToQueuedFunc func(ctx context.Context, dollar_1 []int64) error
 
 	// TryAdvisoryLockBatchFunc mocks the TryAdvisoryLockBatch method.
 	TryAdvisoryLockBatchFunc func(ctx context.Context, dollar_1 string) (bool, error)
@@ -357,6 +363,13 @@ type QuerierMock struct {
 			// Arg is the arg argument value.
 			Arg batchsqlc.InsertIntoBatchesParams
 		}
+		// ResetRowsToQueued holds details about calls to the ResetRowsToQueued method.
+		ResetRowsToQueued []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Dollar_1 is the dollar_1 argument value.
+			Dollar_1 []int64
+		}
 		// TryAdvisoryLockBatch holds details about calls to the TryAdvisoryLockBatch method.
 		TryAdvisoryLockBatch []struct {
 			// Ctx is the ctx argument value.
@@ -488,6 +501,7 @@ type QuerierMock struct {
 	lockInsertBatchFile                      sync.RWMutex
 	lockInsertIntoBatchRows                  sync.RWMutex
 	lockInsertIntoBatches                    sync.RWMutex
+	lockResetRowsToQueued                    sync.RWMutex
 	lockTryAdvisoryLockBatch                 sync.RWMutex
 	lockUpdateBatchCounters                  sync.RWMutex
 	lockUpdateBatchOutputFiles               sync.RWMutex
@@ -1147,6 +1161,42 @@ func (mock *QuerierMock) InsertIntoBatchesCalls() []struct {
 	mock.lockInsertIntoBatches.RLock()
 	calls = mock.calls.InsertIntoBatches
 	mock.lockInsertIntoBatches.RUnlock()
+	return calls
+}
+
+// ResetRowsToQueued calls ResetRowsToQueuedFunc.
+func (mock *QuerierMock) ResetRowsToQueued(ctx context.Context, dollar_1 []int64) error {
+	if mock.ResetRowsToQueuedFunc == nil {
+		panic("QuerierMock.ResetRowsToQueuedFunc: method is nil but Querier.ResetRowsToQueued was just called")
+	}
+	callInfo := struct {
+		Ctx      context.Context
+		Dollar_1 []int64
+	}{
+		Ctx:      ctx,
+		Dollar_1: dollar_1,
+	}
+	mock.lockResetRowsToQueued.Lock()
+	mock.calls.ResetRowsToQueued = append(mock.calls.ResetRowsToQueued, callInfo)
+	mock.lockResetRowsToQueued.Unlock()
+	return mock.ResetRowsToQueuedFunc(ctx, dollar_1)
+}
+
+// ResetRowsToQueuedCalls gets all the calls that were made to ResetRowsToQueued.
+// Check the length with:
+//
+//	len(mockedQuerier.ResetRowsToQueuedCalls())
+func (mock *QuerierMock) ResetRowsToQueuedCalls() []struct {
+	Ctx      context.Context
+	Dollar_1 []int64
+} {
+	var calls []struct {
+		Ctx      context.Context
+		Dollar_1 []int64
+	}
+	mock.lockResetRowsToQueued.RLock()
+	calls = mock.calls.ResetRowsToQueued
+	mock.lockResetRowsToQueued.RUnlock()
 	return calls
 }
 

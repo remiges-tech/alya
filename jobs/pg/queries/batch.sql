@@ -211,3 +211,11 @@ WHERE rowid = ANY(@row_ids::bigint[]);
 SELECT pg_try_advisory_xact_lock(
   ('x' || substr(md5($1::text), 1, 16))::bit(64)::bigint
 ) as locked;
+
+-- name: ResetRowsToQueued :exec
+-- Resets rows with status 'inprog' to 'queued' for recovery of abandoned rows.
+-- Only resets rows that are currently in 'inprog' status to avoid race conditions.
+UPDATE batchrows
+SET status = 'queued'
+WHERE rowid = ANY($1::bigint[]) AND status = 'inprog';
+

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -104,6 +105,17 @@ type JobManager struct {
 	logger                  *logharbour.Logger
 	config                  JobManagerConfig
 	mu                      sync.RWMutex // Protects initblocks and initfuncs maps
+	instanceID              string       // Unique identifier for this JobManager instance
+}
+
+// generateInstanceID creates a unique identifier for a JobManager instance.
+// Format: hostname-PID-timestamp (nanoseconds).
+func generateInstanceID() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+	return fmt.Sprintf("%s-%d-%d", hostname, os.Getpid(), time.Now().UnixNano())
 }
 
 // NewJobManager creates a new instance of JobManager.
@@ -141,7 +153,13 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 		batchprocessorfuncs:     make(map[string]BatchProcessor),
 		logger:                  logger,
 		config:                  *config,
+		instanceID:              generateInstanceID(),
 	}
+}
+
+// InstanceID returns the unique identifier for this JobManager instance.
+func (jm *JobManager) InstanceID() string {
+	return jm.instanceID
 }
 
 var ErrInitializerAlreadyRegistered = errors.New("initializer already registered for this app")
@@ -251,13 +269,18 @@ func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 // This method should be called in a separate goroutine. It is thread safe -- updates to database and Redis
 // are executed atomically.
 func (jm *JobManager) Run() {
+	ctx := context.Background()
+
+	go jm.runHeartbeat()
+	go jm.runPeriodicRecovery(ctx)
+
 	// Circuit breaker pattern at the supervisor layer:
 	// This is the ONLY layer where we make health decisions about the entire system.
 	// We tolerate occasional panics (transient issues) but exit on repeated failures
 	// (systemic issues). Lower layers MUST always recover to ensure cleanup.
 	consecutivePanics := 0
 	const maxConsecutivePanics = 3
-	
+
 	for {
 		// Wrap each iteration in a function with panic recovery
 		func() {
@@ -310,10 +333,13 @@ func (jm *JobManager) Run() {
 // canceled, the method will exit cleanly.
 // This should be preferred over Run() in production environments to allow for graceful shutdown.
 func (jm *JobManager) RunWithContext(ctx context.Context) {
+	go jm.runHeartbeat()
+	go jm.runPeriodicRecovery(ctx)
+
 	// Circuit breaker pattern: same as Run() but respects context cancellation
 	consecutivePanics := 0
 	const maxConsecutivePanics = 3
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -579,18 +605,25 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	// Set tx to nil to prevent rollback in defer
 	tx = nil
 
+	// Track all rows in Redis for crash recovery
+	// This allows other instances to recover these rows if this instance crashes
+	for _, row := range blockOfRows {
+		if err := jm.TrackRowProcessing(ctx, row.Rowid); err != nil {
+			jm.logger.Warn().LogActivity("Failed to track row in Redis", map[string]any{
+				"rowId": row.Rowid,
+				"error": err.Error(),
+			})
+		}
+	}
+
 	// Process the rows
 	// Track which batch+app+op combinations we've already processed for errors
 	processedErrorCombinations := make(map[string]bool)
 
 	for _, row := range blockOfRows {
-		// CANCELLATION POINT 4: Before processing each row
-		// Prevents starting potentially long-running processor functions
-		// Important because row processing happens outside a transaction
-		// Allows fast response to cancellation during CPU-intensive operations
-		if ctx.Err() != nil {
-			return false
-		}
+		// No cancellation point here. Once rows are committed as inprog,
+		// we finish processing them all. If SIGKILL arrives before completion,
+		// crash recovery resets the remaining rows via heartbeat expiry.
 
 		// send queries instance, not transaction
 		q := jm.queries
@@ -602,6 +635,14 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 			"line": row.Line,
 		})
 		_, err = jm.processRow(q, row)
+
+		if untrackErr := jm.UntrackRowProcessing(row.Rowid); untrackErr != nil {
+			jm.logger.Warn().LogActivity("Failed to untrack row from Redis", map[string]any{
+				"rowId": row.Rowid,
+				"error": untrackErr.Error(),
+			})
+		}
+
 		if err != nil {
 			jm.logger.Error(err).LogActivity("Error processing row", map[string]any{
 				"rowId": row.Rowid,
