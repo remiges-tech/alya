@@ -157,11 +157,6 @@ func NewJobManager(db *pgxpool.Pool, redisClient *redis.Client, minioClient *min
 	}
 }
 
-// InstanceID returns the unique identifier for this JobManager instance.
-func (jm *JobManager) InstanceID() string {
-	return jm.instanceID
-}
-
 var ErrInitializerAlreadyRegistered = errors.New("initializer already registered for this app")
 
 // RegisterInitializer registers an initializer for a specific application.
@@ -271,6 +266,10 @@ func (jm *JobManager) getOrCreateInitBlock(app string) (InitBlock, error) {
 func (jm *JobManager) Run() {
 	ctx := context.Background()
 
+	jm.logger.Info().LogActivity("JobManager started", map[string]any{
+		"instanceID": jm.instanceID,
+	})
+
 	go jm.runHeartbeat()
 	go jm.runPeriodicRecovery(ctx)
 	go jm.runPeriodicSweep(ctx)
@@ -334,6 +333,10 @@ func (jm *JobManager) Run() {
 // canceled, the method will exit cleanly.
 // This should be preferred over Run() in production environments to allow for graceful shutdown.
 func (jm *JobManager) RunWithContext(ctx context.Context) {
+	jm.logger.Info().LogActivity("JobManager started", map[string]any{
+		"instanceID": jm.instanceID,
+	})
+
 	go jm.runHeartbeat()
 	go jm.runPeriodicRecovery(ctx)
 	go jm.runPeriodicSweep(ctx)
@@ -610,7 +613,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 	// Track all rows in Redis for crash recovery
 	// This allows other instances to recover these rows if this instance crashes
 	for _, row := range blockOfRows {
-		if err := jm.TrackRowProcessing(ctx, row.Rowid); err != nil {
+		if err := jm.trackRowProcessing(ctx, row.Rowid); err != nil {
 			jm.logger.Warn().LogActivity("Failed to track row in Redis", map[string]any{
 				"rowId": row.Rowid,
 				"error": err.Error(),
@@ -638,7 +641,7 @@ func (jm *JobManager) RunOneIterationWithContext(ctx context.Context) (hadRows b
 		})
 		_, err = jm.processRow(q, row)
 
-		if untrackErr := jm.UntrackRowProcessing(row.Rowid); untrackErr != nil {
+		if untrackErr := jm.untrackRowProcessing(row.Rowid); untrackErr != nil {
 			jm.logger.Warn().LogActivity("Failed to untrack row from Redis", map[string]any{
 				"rowId": row.Rowid,
 				"error": untrackErr.Error(),

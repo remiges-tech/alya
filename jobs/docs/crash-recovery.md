@@ -60,13 +60,13 @@ ALYA_{hostname-1234-1234567890}_ROWS = { 100, 101, 102, ... }  (TTL: 180s)
 ```
 
 After each row finishes (success or failure), it's removed from the SET.
-`UntrackRowProcessing` does not accept a context parameter. It uses
+`untrackRowProcessing` does not accept a context parameter. It uses
 `context.Background()` internally because this SREM must succeed regardless
 of shutdown state. If a cancelled context caused the SREM to fail, the row
 ID would stay in the SET. Recovery would then reset an already-completed row
 back to `queued` -- double processing.
 
-`TrackRowProcessing` is different -- it accepts a caller context. If tracking
+`trackRowProcessing` is different -- it accepts a caller context. If tracking
 fails during shutdown, the row ID doesn't make it into the SET, so recovery
 won't find it. The worker is still alive and will finish the row normally.
 

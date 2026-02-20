@@ -18,72 +18,72 @@ const (
 	workerRowsTTL     = 3 * heartbeatTTL // 180s, must exceed recovery detection window
 )
 
-// TrackRowProcessing adds a row to this instance's active rows SET in Redis.
+// trackRowProcessing adds a row to this instance's active rows SET in Redis.
 // Sets a TTL on the SET so it expires if the worker crashes and recovery
 // doesn't run within the TTL window. The TTL is also refreshed by the
 // heartbeat loop.
-func (jm *JobManager) TrackRowProcessing(ctx context.Context, rowID int64) error {
+func (jm *JobManager) trackRowProcessing(ctx context.Context, rowID int64) error {
 	if jm.redisClient == nil {
 		return nil
 	}
-	key := WorkerRowsKey(jm.instanceID)
+	key := workerRowsKey(jm.instanceID)
 	if err := jm.redisClient.SAdd(ctx, key, rowID).Err(); err != nil {
 		return err
 	}
 	return jm.redisClient.Expire(ctx, key, workerRowsTTL).Err()
 }
 
-// UntrackRowProcessing removes a row from this instance's active rows SET in Redis.
+// untrackRowProcessing removes a row from this instance's active rows SET in Redis.
 // Uses context.Background() internally instead of accepting a caller context.
 // During shutdown the processing context is cancelled, but this SREM must still
 // succeed -- otherwise the row ID stays in the SET and recovery resets an
 // already-completed row back to 'queued', causing double processing.
-func (jm *JobManager) UntrackRowProcessing(rowID int64) error {
+func (jm *JobManager) untrackRowProcessing(rowID int64) error {
 	if jm.redisClient == nil {
 		return nil
 	}
-	return jm.redisClient.SRem(context.Background(), WorkerRowsKey(jm.instanceID), rowID).Err()
+	return jm.redisClient.SRem(context.Background(), workerRowsKey(jm.instanceID), rowID).Err()
 }
 
-// RefreshHeartbeat updates this instance's heartbeat TTL in Redis.
+// refreshHeartbeat updates this instance's heartbeat TTL in Redis.
 // The heartbeat indicates that this instance is alive and processing.
-func (jm *JobManager) RefreshHeartbeat(ctx context.Context) error {
+func (jm *JobManager) refreshHeartbeat(ctx context.Context) error {
 	if jm.redisClient == nil {
 		return nil
 	}
-	return jm.redisClient.Set(ctx, WorkerHeartbeatKey(jm.instanceID), "alive", heartbeatTTL).Err()
+	return jm.redisClient.Set(ctx, workerHeartbeatKey(jm.instanceID), "alive", heartbeatTTL).Err()
 }
 
-// RegisterWorker adds this instance's ID to the global worker registry SET.
+// registerWorker adds this instance's ID to the global worker registry SET.
 // This allows recovery to discover all workers without using SCAN
 // (which doesn't work across Redis Cluster nodes).
-func (jm *JobManager) RegisterWorker(ctx context.Context) error {
+func (jm *JobManager) registerWorker(ctx context.Context) error {
 	if jm.redisClient == nil {
 		return nil
 	}
-	return jm.redisClient.SAdd(ctx, WorkerRegistryKey(), jm.instanceID).Err()
+	return jm.redisClient.SAdd(ctx, workerRegistryKey(), jm.instanceID).Err()
 }
 
-// DeregisterWorker removes this instance's ID from the global worker registry SET.
+// deregisterWorker removes this instance's ID from the global worker registry SET.
 // Called during graceful shutdown after heartbeat removal.
-func (jm *JobManager) DeregisterWorker(ctx context.Context) error {
+func (jm *JobManager) deregisterWorker(ctx context.Context) error {
 	if jm.redisClient == nil {
 		return nil
 	}
-	return jm.redisClient.SRem(ctx, WorkerRegistryKey(), jm.instanceID).Err()
+	return jm.redisClient.SRem(ctx, workerRegistryKey(), jm.instanceID).Err()
 }
 
-// RecoverAbandonedRows finds rows from dead worker instances and resets them to queued.
+// recoverAbandonedRows finds rows from dead worker instances and resets them to queued.
 // It reads the worker registry SET to discover all workers, checks if each worker's
 // heartbeat has expired, and if so, resets those rows in the database.
 // Uses the registry instead of SCAN for Redis Cluster compatibility.
-func (jm *JobManager) RecoverAbandonedRows(ctx context.Context) (int, error) {
+func (jm *JobManager) recoverAbandonedRows(ctx context.Context) (int, error) {
 	if jm.redisClient == nil || jm.db == nil {
 		return 0, nil
 	}
 
 	// Get all registered worker instance IDs from the registry
-	instanceIDs, err := jm.redisClient.SMembers(ctx, WorkerRegistryKey()).Result()
+	instanceIDs, err := jm.redisClient.SMembers(ctx, workerRegistryKey()).Result()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get worker registry: %w", err)
 	}
@@ -97,7 +97,7 @@ func (jm *JobManager) RecoverAbandonedRows(ctx context.Context) (int, error) {
 		}
 
 		// Check if this instance is alive
-		heartbeatKey := WorkerHeartbeatKey(instanceID)
+		heartbeatKey := workerHeartbeatKey(instanceID)
 		exists, err := jm.redisClient.Exists(ctx, heartbeatKey).Result()
 		if err != nil {
 			jm.logger.Error(err).LogActivity("Failed to check heartbeat", map[string]any{
@@ -126,7 +126,7 @@ func (jm *JobManager) RecoverAbandonedRows(ctx context.Context) (int, error) {
 		// If we crash between recovery and this SREM, the next cycle finds the
 		// same dead worker. The rows SET is already deleted above, so
 		// recoverRowsFromDeadInstance returns 0 and we reach the SREM again.
-		if err := jm.redisClient.SRem(ctx, WorkerRegistryKey(), instanceID).Err(); err != nil {
+		if err := jm.redisClient.SRem(ctx, workerRegistryKey(), instanceID).Err(); err != nil {
 			jm.logger.Warn().LogActivity("Failed to remove dead worker from registry", map[string]any{
 				"instanceID": instanceID,
 				"error":      err.Error(),
@@ -140,7 +140,7 @@ func (jm *JobManager) RecoverAbandonedRows(ctx context.Context) (int, error) {
 // recoverRowsFromDeadInstance recovers rows from a dead worker instance.
 // It gets the row IDs from Redis, resets them in the database, and cleans up Redis.
 func (jm *JobManager) recoverRowsFromDeadInstance(ctx context.Context, instanceID string) (int, error) {
-	rowsKey := WorkerRowsKey(instanceID)
+	rowsKey := workerRowsKey(instanceID)
 
 	// Get all row IDs from the dead instance
 	rowIDStrs, err := jm.redisClient.SMembers(ctx, rowsKey).Result()
@@ -228,11 +228,11 @@ func (jm *JobManager) resetRowsToQueued(ctx context.Context, rowIDs []int64) err
 func (jm *JobManager) runHeartbeat() {
 	ctx := context.Background()
 
-	if err := jm.RegisterWorker(ctx); err != nil {
+	if err := jm.registerWorker(ctx); err != nil {
 		jm.logger.Error(err).LogActivity("Failed to register worker", nil)
 	}
 
-	if err := jm.RefreshHeartbeat(ctx); err != nil {
+	if err := jm.refreshHeartbeat(ctx); err != nil {
 		jm.logger.Error(err).LogActivity("Failed to send initial heartbeat", nil)
 	}
 
@@ -247,15 +247,15 @@ func (jm *JobManager) runHeartbeat() {
 		<-ticker.C
 		// Re-register on every tick so the registry is rebuilt if Redis restarts.
 		// SADD is idempotent -- returns 0 if already a member, no data change.
-		if err := jm.RegisterWorker(ctx); err != nil {
+		if err := jm.registerWorker(ctx); err != nil {
 			jm.logger.Error(err).LogActivity("Failed to re-register worker", nil)
 		}
-		if err := jm.RefreshHeartbeat(ctx); err != nil {
+		if err := jm.refreshHeartbeat(ctx); err != nil {
 			jm.logger.Error(err).LogActivity("Failed to refresh heartbeat", nil)
 		}
 		// Refresh TTL on the rows SET. EXPIRE on a non-existent key (no rows
 		// tracked or all rows untracked) is a no-op.
-		jm.redisClient.Expire(ctx, WorkerRowsKey(jm.instanceID), workerRowsTTL)
+		jm.redisClient.Expire(ctx, workerRowsKey(jm.instanceID), workerRowsTTL)
 	}
 }
 
@@ -263,7 +263,7 @@ func (jm *JobManager) runHeartbeat() {
 // It checks for abandoned rows every recoveryInterval.
 func (jm *JobManager) runPeriodicRecovery(ctx context.Context) {
 	// Immediate first recovery check
-	if recovered, err := jm.RecoverAbandonedRows(ctx); err != nil {
+	if recovered, err := jm.recoverAbandonedRows(ctx); err != nil {
 		jm.logger.Error(err).LogActivity("Initial recovery failed", nil)
 	} else if recovered > 0 {
 		jm.logger.Info().LogActivity("Initial recovery completed", map[string]any{
@@ -279,7 +279,7 @@ func (jm *JobManager) runPeriodicRecovery(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if recovered, err := jm.RecoverAbandonedRows(ctx); err != nil {
+			if recovered, err := jm.recoverAbandonedRows(ctx); err != nil {
 				jm.logger.Error(err).LogActivity("Periodic recovery failed", nil)
 			} else if recovered > 0 {
 				jm.logger.Info().LogActivity("Periodic recovery completed", map[string]any{
@@ -347,12 +347,12 @@ func (jm *JobManager) Shutdown(ctx context.Context) error {
 	}
 
 	// Remove heartbeat - this signals to other instances that we're shutting down
-	if err := jm.redisClient.Del(ctx, WorkerHeartbeatKey(jm.instanceID)).Err(); err != nil {
+	if err := jm.redisClient.Del(ctx, workerHeartbeatKey(jm.instanceID)).Err(); err != nil {
 		return fmt.Errorf("failed to remove heartbeat: %w", err)
 	}
 
 	// Deregister from the worker registry
-	if err := jm.DeregisterWorker(ctx); err != nil {
+	if err := jm.deregisterWorker(ctx); err != nil {
 		jm.logger.Warn().LogActivity("Failed to deregister worker from registry", map[string]any{
 			"instanceID": jm.instanceID,
 			"error":      err.Error(),

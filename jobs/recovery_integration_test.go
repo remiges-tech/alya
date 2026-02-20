@@ -109,20 +109,20 @@ func TestRecoverAbandonedRows_ResetsRowsInDB(t *testing.T) {
 
 	// Seed Redis to simulate a dead worker that was processing rows 2 and 3
 	deadInstanceID := "dead-worker-abc"
-	redisClient.SAdd(ctx, WorkerRegistryKey(), deadInstanceID)
-	redisClient.SAdd(ctx, WorkerRowsKey(deadInstanceID),
+	redisClient.SAdd(ctx, workerRegistryKey(), deadInstanceID)
+	redisClient.SAdd(ctx, workerRowsKey(deadInstanceID),
 		fmt.Sprintf("%d", rowID2),
 		fmt.Sprintf("%d", rowID3))
 	// No heartbeat key -- simulates expired TTL
 
 	// Register the live JobManager so it's in the registry with a heartbeat
-	err = jm.RegisterWorker(ctx)
+	err = jm.registerWorker(ctx)
 	require.NoError(t, err)
-	err = jm.RefreshHeartbeat(ctx)
+	err = jm.refreshHeartbeat(ctx)
 	require.NoError(t, err)
 
 	// Run recovery
-	recovered, err := jm.RecoverAbandonedRows(ctx)
+	recovered, err := jm.recoverAbandonedRows(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 2, recovered)
 
@@ -153,17 +153,17 @@ func TestRecoverAbandonedRows_ResetsRowsInDB(t *testing.T) {
 	assert.Equal(t, "inprog", batchStatus, "batch should remain inprog")
 
 	// Verify Redis: dead worker's rows SET deleted
-	exists, err := redisClient.Exists(ctx, WorkerRowsKey(deadInstanceID)).Result()
+	exists, err := redisClient.Exists(ctx, workerRowsKey(deadInstanceID)).Result()
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), exists, "dead worker's rows key should be deleted")
 
 	// Verify Redis: dead worker removed from registry
-	isMember, err := redisClient.SIsMember(ctx, WorkerRegistryKey(), deadInstanceID).Result()
+	isMember, err := redisClient.SIsMember(ctx, workerRegistryKey(), deadInstanceID).Result()
 	require.NoError(t, err)
 	assert.False(t, isMember, "dead worker should be removed from registry")
 
 	// Verify Redis: live worker still in registry
-	isMember, err = redisClient.SIsMember(ctx, WorkerRegistryKey(), jm.InstanceID()).Result()
+	isMember, err = redisClient.SIsMember(ctx, workerRegistryKey(), jm.instanceID).Result()
 	require.NoError(t, err)
 	assert.True(t, isMember, "live worker should remain in registry")
 }
