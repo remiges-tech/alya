@@ -4,6 +4,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-02-20
+
+### Fixed
+- Batch summarization failing when multiple workers finish the last row of a batch simultaneously
+
+### Added
+- Crash recovery: workers detect dead peers via heartbeat expiry and reprocess abandoned rows
+- Periodic sweep for batches that miss summarization due to race conditions
+
+### Upgrade
+Run migration 003 to add the required index:
+```sql
+CREATE INDEX IF NOT EXISTS idx_batches_status ON batches(status);
+```
+
 ## [0.34.0] - 2025-01-15
 
 ### Fixed
