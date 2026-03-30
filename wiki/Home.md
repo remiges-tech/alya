@@ -37,6 +37,12 @@ All of these are completely orthogonal to the actual business logic of any mid o
 
 This means that we have One True Alya Way to do most of these things. We accept call requests in JSON, not in XML. Responses from calls always carry their data payload in a specific format, and carry errors in another format. User session tracking is done using OAuth2, *via* Keycloak, and not through any cookies and a `sessions` table. These are embedded in the design of Alya and are not flexible. We have about a decade of writing web service calls to say that the Alya Way to do things makes for robust and efficient applications.
 
+## API transport and examples
+
+- [API transport styles and layering](API-transport-styles-and-layering)
+- [Users and orders SQLC examples](Users-orders-SQLC-examples)
+- [Production project structure](Production-project-structure)
+
 ## Open source
 
 Remiges Alya is the intellectual property of Remiges Technologies Pvt Ltd. It is being made available to you under the terms of the [Apache Licence 2.0](https://opensource.org/license/apache-2-0/).
