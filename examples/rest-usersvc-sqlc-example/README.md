@@ -245,6 +245,40 @@ curl -i -X POST http://localhost:8083/users \
   }'
 ```
 
+Trigger a custom validation mapping for `username` length:
+
+```bash
+curl -i -X POST http://localhost:8083/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sachin",
+    "email": "sachin@example.com",
+    "username": "abcdefghijklmnopqrstuvwxyz12345"
+  }'
+```
+
+The response will be a problem document. The `errors` array will include Alya fields:
+
+```json
+{
+  "type": "https://alya.dev/problems/validation",
+  "title": "Validation failed",
+  "status": 422,
+  "errors": [
+    {
+      "msgid": 7,
+      "errcode": "toobig",
+      "field": "username",
+      "vals": ["30"],
+      "message": "must be at most 30 characters",
+      "params": {
+        "max": "30"
+      }
+    }
+  ]
+}
+```
+
 List users:
 
 ```bash

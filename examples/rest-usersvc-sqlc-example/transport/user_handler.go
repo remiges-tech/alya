@@ -12,6 +12,7 @@ import (
 	"github.com/remiges-tech/alya/examples/rest-usersvc-sqlc-example/repository"
 	"github.com/remiges-tech/alya/restutils"
 	"github.com/remiges-tech/alya/service"
+	"github.com/remiges-tech/alya/wscutils"
 )
 
 type UserHandler struct {
@@ -116,13 +117,13 @@ func validateUpdateRequest(req api.UpdateUserRequest, validator *restutils.Valid
 	var fieldErrors []restutils.FieldError
 
 	if req.Name.Null {
-		fieldErrors = append(fieldErrors, restutils.FieldError{Field: "name", Code: "null_not_allowed", Message: "must not be null"})
+		fieldErrors = append(fieldErrors, restutils.FieldError{ErrorMessage: wscutils.BuildErrorMessage(104, "invalid", "name"), Message: "must not be null"})
 	}
 	if req.Email.Null {
-		fieldErrors = append(fieldErrors, restutils.FieldError{Field: "email", Code: "null_not_allowed", Message: "must not be null"})
+		fieldErrors = append(fieldErrors, restutils.FieldError{ErrorMessage: wscutils.BuildErrorMessage(104, "invalid", "email"), Message: "must not be null"})
 	}
 	if req.Username.Null {
-		fieldErrors = append(fieldErrors, restutils.FieldError{Field: "username", Code: "null_not_allowed", Message: "must not be null"})
+		fieldErrors = append(fieldErrors, restutils.FieldError{ErrorMessage: wscutils.BuildErrorMessage(104, "invalid", "username"), Message: "must not be null"})
 	}
 	if value, ok := req.Name.Get(); ok {
 		tmp := struct {

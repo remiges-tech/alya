@@ -51,7 +51,7 @@ func main() {
 	repo := repository.NewSQLCRepository(provider.Queries())
 	userAppService := app.NewUserService(repo)
 	orderAppService := app.NewOrderService(repo, repo)
-	validator := restutils.NewValidator()
+	validator := newValidator()
 	userHandler := transport.NewUserHandler(userAppService, validator)
 	orderHandler := transport.NewOrderHandler(orderAppService, validator)
 
@@ -92,4 +92,17 @@ func getConfigFilePath() string {
 
 func getEnvPrefix() string {
 	return "ALYA_REST_USERSVC"
+}
+
+func newValidator() *restutils.Validator {
+	return restutils.NewValidatorWithConfig(restutils.ValidatorConfig{
+		FieldRules: map[string]map[string]restutils.ValidationRule{
+			"username": {
+				"max": {
+					MsgID:   7,
+					ErrCode: "toobig",
+				},
+			},
+		},
+	})
 }

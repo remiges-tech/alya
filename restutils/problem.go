@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/remiges-tech/alya/wscutils"
 )
 
 const (
@@ -74,7 +75,10 @@ func ProblemFromBindError(err error) Problem {
 			Title:  "Bad request",
 			Status: http.StatusBadRequest,
 			Detail: bindErr.Detail,
-			Errors: []FieldError{{Field: bindErr.Field, Code: string(BindErrorUnknownField)}},
+			Errors: []FieldError{{
+				ErrorMessage: wscutils.BuildErrorMessage(msgIDInvalid, "invalid", bindErr.Field),
+				Message:      bindErr.Detail,
+			}},
 		}
 	case BindErrorEmptyBody, BindErrorMalformedJSON, BindErrorInvalidValue:
 		return NewProblem(

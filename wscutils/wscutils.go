@@ -26,8 +26,8 @@ type Response struct {
 // ErrorMessage defines the format of error part of the standard response object
 // See: https://redmine.bquanta.xyz/projects/mail-doc/wiki/Websvcgeneral#Web-service-response-format
 type ErrorMessage struct {
-	MsgID   int      `json:"msgid"`
-	ErrCode string   `json:"errcode"`
+	MsgID   int      `json:"msgid,omitempty"`
+	ErrCode string   `json:"errcode,omitempty"`
 	Field   string   `json:"field,omitempty"`
 	Vals    []string `json:"vals,omitempty"`
 }
@@ -306,7 +306,7 @@ func (o Optional[T]) MarshalJSON() ([]byte, error) {
 		// Field was explicitly set to null
 		return []byte("null"), nil
 	}
-	
+
 	// Field has a value or is not present - marshal the value
 	// When not present, this will marshal the zero value of T
 	return json.Marshal(o.Value)

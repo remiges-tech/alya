@@ -1,10 +1,12 @@
 package restutils
 
+import "github.com/remiges-tech/alya/wscutils"
+
 // Problem is a problem-details style error response.
 type Problem struct {
-	Type     string         `json:"type"`
-	Title    string         `json:"title"`
-	Status   int            `json:"status"`
+	Type     string         `json:"type,omitempty"`
+	Title    string         `json:"title,omitempty"`
+	Status   int            `json:"status,omitempty"`
 	Detail   string         `json:"detail,omitempty"`
 	Instance string         `json:"instance,omitempty"`
 	TraceID  string         `json:"trace_id,omitempty"`
@@ -14,8 +16,7 @@ type Problem struct {
 
 // FieldError describes one request field error.
 type FieldError struct {
-	Field   string            `json:"field"`
-	Code    string            `json:"code"`
+	wscutils.ErrorMessage
 	Message string            `json:"message,omitempty"`
 	Params  map[string]string `json:"params,omitempty"`
 }

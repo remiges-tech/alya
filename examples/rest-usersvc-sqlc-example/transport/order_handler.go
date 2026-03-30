@@ -11,6 +11,7 @@ import (
 	"github.com/remiges-tech/alya/examples/rest-usersvc-sqlc-example/repository"
 	"github.com/remiges-tech/alya/restutils"
 	"github.com/remiges-tech/alya/service"
+	"github.com/remiges-tech/alya/wscutils"
 )
 
 type OrderHandler struct {
@@ -111,16 +112,16 @@ func validateUpdateOrderRequest(req api.UpdateOrderRequest, validator *restutils
 	var fieldErrors []restutils.FieldError
 
 	if req.UserID.Null {
-		fieldErrors = append(fieldErrors, restutils.FieldError{Field: "user_id", Code: "null_not_allowed", Message: "must not be null"})
+		fieldErrors = append(fieldErrors, restutils.FieldError{ErrorMessage: wscutils.BuildErrorMessage(104, "invalid", "user_id"), Message: "must not be null"})
 	}
 	if req.Number.Null {
-		fieldErrors = append(fieldErrors, restutils.FieldError{Field: "number", Code: "null_not_allowed", Message: "must not be null"})
+		fieldErrors = append(fieldErrors, restutils.FieldError{ErrorMessage: wscutils.BuildErrorMessage(104, "invalid", "number"), Message: "must not be null"})
 	}
 	if req.Status.Null {
-		fieldErrors = append(fieldErrors, restutils.FieldError{Field: "status", Code: "null_not_allowed", Message: "must not be null"})
+		fieldErrors = append(fieldErrors, restutils.FieldError{ErrorMessage: wscutils.BuildErrorMessage(104, "invalid", "status"), Message: "must not be null"})
 	}
 	if req.TotalAmount.Null {
-		fieldErrors = append(fieldErrors, restutils.FieldError{Field: "total_amount", Code: "null_not_allowed", Message: "must not be null"})
+		fieldErrors = append(fieldErrors, restutils.FieldError{ErrorMessage: wscutils.BuildErrorMessage(104, "invalid", "total_amount"), Message: "must not be null"})
 	}
 	if value, ok := req.UserID.Get(); ok {
 		tmp := struct {
