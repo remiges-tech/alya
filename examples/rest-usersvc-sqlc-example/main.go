@@ -8,12 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/remiges-tech/alya/config"
-	"github.com/remiges-tech/alya/examples/rest-usersvc-sqlc-example/app"
-	pg "github.com/remiges-tech/alya/examples/rest-usersvc-sqlc-example/pg"
-	"github.com/remiges-tech/alya/examples/rest-usersvc-sqlc-example/repository"
-	"github.com/remiges-tech/alya/examples/rest-usersvc-sqlc-example/transport"
 	"github.com/remiges-tech/alya/restutils"
-	"github.com/remiges-tech/alya/service"
 )
 
 // AppConfig holds the startup configuration.
@@ -40,24 +35,12 @@ func main() {
 		log.Fatalf("failed to load startup config from %s: %v", sourceLabel, err)
 	}
 
-	provider := pg.NewProvider(pg.Config{
-		Host:     cfg.Database.Host,
-		Port:     cfg.Database.Port,
-		User:     cfg.Database.User,
-		Password: cfg.Database.Password,
-		DBName:   cfg.Database.DBName,
-	})
-
-	repo := repository.NewSQLCRepository(provider.Queries())
-	userAppService := app.NewUserService(repo)
-	orderAppService := app.NewOrderService(repo, repo)
-	validator := newValidator()
-	userHandler := transport.NewUserHandler(userAppService, validator)
-	orderHandler := transport.NewOrderHandler(orderAppService, validator)
-
 	router := gin.Default()
-	s := service.NewService(router)
-	transport.RegisterRoutes(s, userHandler, orderHandler)
+	_, cleanup, err := Build(router, cfg)
+	if err != nil {
+		log.Fatalf("failed to build application graph: %v", err)
+	}
+	defer cleanup()
 
 	serverAddr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("REST SQLC example listening on %s using %s", serverAddr, sourceLabel)

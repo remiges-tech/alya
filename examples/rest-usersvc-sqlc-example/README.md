@@ -11,6 +11,7 @@ It keeps:
 - business logic in `app/`
 - repository contracts and SQLC-backed implementation in `repository/`
 - schema, SQL queries, SQLC config, generated code, and DB provider in `pg/`
+- compile-time startup wiring in `graph.go` and generated bootstrap code in `zz_generated_di.go`
 
 ## Layers
 
@@ -60,14 +61,41 @@ client
 
 ```text
 rest-usersvc-sqlc-example/
-  api/         request and response types
-  app/         use cases and business rules
-  pg/          migrations, queries, SQLC config, generated code, provider
-  repository/  repository interfaces and SQLC implementation
-  transport/   Gin handlers and route registration
-  main.go      wiring
-  config.json  startup configuration file
+  api/                 request and response types
+  app/                 use cases and business rules
+  pg/                  migrations, queries, SQLC config, generated code, provider
+  repository/          repository interfaces and SQLC implementation
+  transport/           Gin handlers and route registration
+  graph.go             compile-time DI graph declaration
+  zz_generated_di.go   generated Build(...) function
+  main.go              config loading and server startup
+  config.json          startup configuration file
   docker-compose.yaml
+```
+
+## Compile-time DI wiring
+
+This example uses Alya's compile-time DI support.
+
+Files:
+
+- `graph.go` declares the graph inputs, providers, bindings, invoke function, and outputs
+- `zz_generated_di.go` is generated from `graph.go`
+- `main.go` loads config, creates the Gin router, and calls the generated `Build(...)`
+
+The graph uses:
+
+- `di.Inputs(...)` for `*gin.Engine` and `AppConfig`
+- `di.Provide(...)` for the DB config adapter, DB provider wrapper, repository adapter, validator, app services, handlers, and `service.NewService`
+- `di.Bind[...]()` to map repository interfaces to `*repository.SQLCRepository`
+- `di.Invoke(...)` for route registration
+- `di.Outputs(...)` for a few built values returned from `Build(...)`
+
+Regenerate the bootstrap file after changing `graph.go`:
+
+```bash
+cd examples/rest-usersvc-sqlc-example
+go generate
 ```
 
 ## Configuration

@@ -9,6 +9,7 @@ Brief introduction of packages in Alya:
 
 - `wscutils`: It contains utility functions for web service development, such as request validation, response building, and error handling.
 - `service`: It provides a service abstraction to create modular services with dependencies required for the service.
+- `di`: It provides an optional compile-time dependency graph declaration API used by the `alya-di` code generator to emit plain startup wiring.
 - `jobs`: It provides a framework for batch processing and slow queries (long-running tasks).
 
 ## Core Concepts
@@ -28,6 +29,24 @@ r := gin.Default() // creates a router
 userService := service.NewService(r) // creates a service
 userService.RegisterRoute(http.MethodPost, "/users", usersvc.HandleCreateUserRequest) // registers a route for the service
 ```
+
+### Compile-time DI
+
+Alya also includes an optional compile-time DI workflow.
+
+Use `github.com/remiges-tech/alya/di` to declare:
+
+- graph inputs
+- provider functions
+- interface bindings
+- invoke functions such as route registration
+- graph outputs
+
+Then run `alya-di` or `go run ./cmd/alya-di` to generate plain Go bootstrap code.
+
+This is constructor-based DI. Alya does not add a runtime container for this feature.
+
+See `di/README.md` and `examples/rest-usersvc-sqlc-example/` for a working example.
 
 ### Request handling
 
