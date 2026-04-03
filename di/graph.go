@@ -93,6 +93,9 @@ func Inputs(types ...TypeToken) Option {
 
 // Outputs declares values that the generated build function should return inside
 // the generated App struct.
+//
+// TODO: Add support for custom field names. One approach: di.Named("Name",
+// di.Type[T]()) wrapper function. Another: di.Type[T]().As("Name") fluent API.
 func Outputs(types ...TypeToken) Option {
 	return option{}
 }

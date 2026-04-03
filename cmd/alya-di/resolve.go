@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
 	"go/types"
+	"strings"
 )
 
 // resolveGraph turns the declarative model into a concrete build plan.
@@ -35,14 +38,20 @@ func resolveGraph(model graphModel) (resolvedGraph, error) {
 		bindingByInterface[binding.interfaceType.typeKey] = binding
 	}
 
+	baseFieldNameCounts := make(map[string]int, len(model.outputs))
+	for _, output := range model.outputs {
+		baseFieldNameCounts[baseFieldName(output.typeValue)]++
+	}
+
 	state := resolverState{
-		providerByType:     providerByType,
-		inputByType:        inputByType,
-		bindingByInterface: bindingByInterface,
-		visiting:           map[string]bool{},
-		resolved:           map[string]*providerNode{},
-		providerOrder:      []*providerNode{},
-		fieldNames:         map[string]int{},
+		providerByType:      providerByType,
+		inputByType:         inputByType,
+		bindingByInterface:  bindingByInterface,
+		visiting:            map[string]bool{},
+		resolved:            map[string]*providerNode{},
+		providerOrder:       []*providerNode{},
+		fieldNames:          map[string]int{},
+		baseFieldNameCounts: baseFieldNameCounts,
 	}
 
 	resolved := resolvedGraph{}
@@ -52,7 +61,7 @@ func resolveGraph(model graphModel) (resolvedGraph, error) {
 			return resolvedGraph{}, err
 		}
 		resolved.outputs = append(resolved.outputs, resolvedOutput{
-			fieldName: state.makeFieldName(output.typeValue),
+			fieldName: state.makeFieldName(output),
 			requested: output,
 			source:    source,
 		})
@@ -77,13 +86,14 @@ func resolveGraph(model graphModel) (resolvedGraph, error) {
 // resolverState holds the mutable state needed while recursively resolving one
 // graph.
 type resolverState struct {
-	providerByType     map[string]providerRef
-	inputByType        map[string]typeRef
-	bindingByInterface map[string]bindingRef
-	visiting           map[string]bool
-	resolved           map[string]*providerNode
-	providerOrder      []*providerNode
-	fieldNames         map[string]int
+	providerByType      map[string]providerRef
+	inputByType         map[string]typeRef
+	bindingByInterface  map[string]bindingRef
+	visiting            map[string]bool
+	resolved            map[string]*providerNode
+	providerOrder       []*providerNode
+	fieldNames          map[string]int
+	baseFieldNameCounts map[string]int
 }
 
 // resolveDependency resolves one requested type to either an input or a concrete
@@ -140,10 +150,16 @@ func (r *resolverState) resolveProvider(target typeRef) error {
 }
 
 // makeFieldName derives a readable field name for one App output.
-func (r *resolverState) makeFieldName(t types.Type) string {
-	name := baseTypeName(t)
-	if name == "" {
-		name = "Value"
+//
+// TODO: Support custom field names. One approach: di.Named("Name", di.Type[T]())
+// wrapper. Another: di.Type[T]().As("Name") fluent API. Requires extending
+// typeRef to carry optional custom names.
+func (r *resolverState) makeFieldName(output typeRef) string {
+	name := baseFieldName(output.typeValue)
+	if r.baseFieldNameCounts[name] > 1 {
+		if qualifier := outputFieldQualifier(output.exprString); qualifier != "" {
+			name = qualifier + name
+		}
 	}
 	count := r.fieldNames[name]
 	r.fieldNames[name] = count + 1
@@ -151,4 +167,54 @@ func (r *resolverState) makeFieldName(t types.Type) string {
 		return name
 	}
 	return fmt.Sprintf("%s%d", name, count+1)
+}
+
+func baseFieldName(t types.Type) string {
+	name := baseTypeName(t)
+	if name == "" {
+		return "Value"
+	}
+	return name
+}
+
+func outputFieldQualifier(expr string) string {
+	parsed, err := parser.ParseExpr(expr)
+	if err != nil {
+		return ""
+	}
+	return exportedQualifierName(typeQualifier(parsed))
+}
+
+func typeQualifier(expr ast.Expr) string {
+	switch typed := expr.(type) {
+	case *ast.ParenExpr:
+		return typeQualifier(typed.X)
+	case *ast.StarExpr:
+		return typeQualifier(typed.X)
+	case *ast.IndexExpr:
+		return typeQualifier(typed.X)
+	case *ast.IndexListExpr:
+		return typeQualifier(typed.X)
+	case *ast.SelectorExpr:
+		if ident, ok := typed.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+		return typeQualifier(typed.X)
+	}
+	return ""
+}
+
+func exportedQualifierName(name string) string {
+	if name == "" {
+		return ""
+	}
+	parts := strings.Split(name, "_")
+	result := strings.Builder{}
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		result.WriteString(upperFirst(part))
+	}
+	return result.String()
 }
