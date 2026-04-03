@@ -149,12 +149,21 @@ func (r *resolverState) resolveProvider(target typeRef) error {
 	return nil
 }
 
-// makeFieldName derives a readable field name for one App output.
+// makeFieldName returns the field name for one App output. If the output was
+// declared with di.Named, the custom name is used directly. Otherwise a name
+// is derived from the type, with a numeric suffix for collisions.
 //
-// TODO: Support custom field names. One approach: di.Named("Name", di.Type[T]())
-// wrapper. Another: di.Type[T]().As("Name") fluent API. Requires extending
-// typeRef to carry optional custom names.
+// No generator-side check for duplicate custom names is performed here. If two
+// Outputs entries declare the same custom name, the Go compiler emits a clear
+// duplicate field error when the generated code compiles. The generator only
+// validates things the compiler cannot, such as cycles and missing providers.
+//
+// TODO: Consider adding generator-side duplicate name detection so users get
+// the error during code generation instead of waiting for go build to fail.
 func (r *resolverState) makeFieldName(output typeRef) string {
+	if output.customName != "" {
+		return output.customName
+	}
 	name := baseFieldName(output.typeValue)
 	if r.baseFieldNameCounts[name] > 1 {
 		if qualifier := outputFieldQualifier(output.exprString); qualifier != "" {

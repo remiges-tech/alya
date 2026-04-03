@@ -198,7 +198,8 @@ func (ctx *packageContext) mergeGraphExpr(model *graphModel, expr ast.Expr, seen
 	return nil
 }
 
-// parseTypeTokens converts di.Type[T]() calls into type references.
+// parseTypeTokens converts di.Type[T]() and di.Named(..., di.Type[T]()) calls
+// into type references.
 func (ctx *packageContext) parseTypeTokens(args []ast.Expr) ([]typeRef, error) {
 	refs := make([]typeRef, 0, len(args))
 	for _, arg := range args {
@@ -207,13 +208,44 @@ func (ctx *packageContext) parseTypeTokens(args []ast.Expr) ([]typeRef, error) {
 			return nil, fmt.Errorf("type token must be a function call, got %s", ctx.nodeString(arg))
 		}
 		name, typeArgs, ok := calledDIFunction(call, ctx.pkg.TypesInfo)
-		if !ok || name != "Type" {
-			return nil, fmt.Errorf("expected di.Type[T](), got %s", ctx.nodeString(arg))
+		if !ok {
+			return nil, fmt.Errorf("expected di.Type[T]() or di.Named(...), got %s", ctx.nodeString(arg))
 		}
-		if len(typeArgs) != 1 {
-			return nil, fmt.Errorf("di.Type requires exactly one type argument")
+		switch name {
+		case "Type":
+			if len(typeArgs) != 1 {
+				return nil, fmt.Errorf("di.Type requires exactly one type argument")
+			}
+			refs = append(refs, ctx.makeTypeRef(typeArgs[0]))
+		case "Named":
+			if len(call.Args) != 2 {
+				return nil, fmt.Errorf("di.Named requires exactly two arguments")
+			}
+			lit, ok := call.Args[0].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return nil, fmt.Errorf("di.Named first argument must be a string literal")
+			}
+			customName, err := stringLiteralValue(lit.Value)
+			if err != nil {
+				return nil, fmt.Errorf("di.Named string literal: %w", err)
+			}
+			namedCall, ok := call.Args[1].(*ast.CallExpr)
+			if !ok {
+				return nil, fmt.Errorf("di.Named second argument must be a function call")
+			}
+			innerName, innerTypeArgs, ok := calledDIFunction(namedCall, ctx.pkg.TypesInfo)
+			if !ok || innerName != "Type" {
+				return nil, fmt.Errorf("di.Named second argument must be di.Type[T]()")
+			}
+			if len(innerTypeArgs) != 1 {
+				return nil, fmt.Errorf("di.Named di.Type requires exactly one type argument")
+			}
+			ref := ctx.makeTypeRef(innerTypeArgs[0])
+			ref.customName = customName
+			refs = append(refs, ref)
+		default:
+			return nil, fmt.Errorf("expected di.Type[T]() or di.Named(...), got %s", ctx.nodeString(arg))
 		}
-		refs = append(refs, ctx.makeTypeRef(typeArgs[0]))
 	}
 	return refs, nil
 }

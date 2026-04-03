@@ -30,6 +30,7 @@ type typeRef struct {
 	typeKey    string
 	typeValue  types.Type
 	exprString string
+	customName string // optional field name override via di.Named
 }
 
 // providerRef describes one provider function registered through di.Provide.

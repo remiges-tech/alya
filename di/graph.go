@@ -47,12 +47,30 @@ type token[T any] struct{}
 
 func (token[T]) isTypeToken() {}
 
+// namedToken wraps a TypeToken with a custom field name for Outputs.
+type namedToken struct {
+	tokenType TypeToken
+	name      string
+}
+
+func (namedToken) isTypeToken() {}
+
 // Type returns a compile-time type marker for T.
 //
 // The marker is never inspected at runtime. The generator reads the type
 // argument from source and type information.
 func Type[T any]() TypeToken {
 	return token[T]{}
+}
+
+// Named wraps a type token with a custom field name for use in Outputs.
+//
+// The generator uses the supplied name as the App struct field name instead
+// of deriving one from the type. No duplicate-name check is performed here;
+// if two Outputs entries declare the same custom name, the Go compiler
+// produces a clear duplicate field error when the generated code compiles.
+func Named(name string, t TypeToken) TypeToken {
+	return namedToken{tokenType: t, name: name}
 }
 
 // option is the concrete implementation behind Option.
@@ -94,8 +112,9 @@ func Inputs(types ...TypeToken) Option {
 // Outputs declares values that the generated build function should return inside
 // the generated App struct.
 //
-// TODO: Add support for custom field names. One approach: di.Named("Name",
-// di.Type[T]()) wrapper function. Another: di.Type[T]().As("Name") fluent API.
+// Custom field names can be supplied through di.Named:
+//
+//	di.Outputs(di.Named("DB", di.Type[*sql.DB]()), di.Type[*Logger]())
 func Outputs(types ...TypeToken) Option {
 	return option{}
 }
