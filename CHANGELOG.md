@@ -5,24 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## [Unreleased]
 
 ### Added
-- Compile-time dependency injection support via the `di` package
-- `alya-di` generator for compile-time wiring from declared graphs
-- Custom DI output names via `di.Named`
+- Compile-time dependency injection support via the `di` package and the `alya-di` generator
 - Config loader, provider, and watch support in `config`
 - Environment-backed startup config loading via `config.NewEnv(...)`
 - REST helper APIs in `restutils` for JSON binding, validation, problem responses, and standard responses
-- Additive envelope helper APIs in `wscutils` for `{"data": ...}` binding, path param parsing, and validator instances
-- Package docs for `config` and `restutils`, and expanded additive `wscutils` docs
+- Additive helper APIs in `wscutils` for `{"data": ...}` binding, path param parsing, and validator instances
 - PATCH route registration in `service.Service`
 - `examples/rest-usersvc-sqlc-example` with users and orders, SQLC, migrations, config loading, and compile-time DI wiring
 - `examples/wsc-usersvc-sqlc-example` with users and orders, SQLC, optional GORM repository, migrations, and config loading
-- Wiki guides for transport styles, layering, project structure, and SQLC examples
-- `di` package documentation and usage docs for the new WSC and REST SQLC examples
-
-### Changed
-- `wscutils.ErrorMessage` now uses `omitempty` for `msgid` and `errcode` in JSON output
-- `restutils` validation error mapping is now configurable by validator tag and by field
-- Generated DI output field names are disambiguated when types from different packages share the same name
 
 ### Breaking
 - Responses that include `wscutils.ErrorMessage` may omit `msgid` when it is `0` and `errcode` when it is empty. Clients that require those keys to always be present must be updated.
