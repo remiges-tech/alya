@@ -104,10 +104,10 @@ func updateProfileHandler(c *gin.Context, s *service.Service) {
 }
 
 // getUserProfileHandler demonstrates how Optional fields are serialized in responses
-func getUserProfileHandler(c *gin.Context) {
+func getUserProfileHandler(c *gin.Context, _ *service.Service) {
 	// Example: Fetch user profile from database
 	// In a real app, you'd fetch this from your database
-	
+
 	// Case 1: User with all fields populated
 	// Using the helper functions for cleaner code
 	user1 := UserProfile{
@@ -124,16 +124,16 @@ func getUserProfileHandler(c *gin.Context) {
 		}),
 		Score: 100,
 	}
-	
+
 	// Case 2: User with some null fields (explicitly removed)
 	user2 := UserProfile{
 		Username:    "priya_patel",
-		Email:       wscutils.NewOptionalNull[string](),      // Email was explicitly removed
+		Email:       wscutils.NewOptionalNull[string](), // Email was explicitly removed
 		IsActive:    wscutils.NewOptional(false),
 		Preferences: wscutils.NewOptionalNull[Preferences](), // Preferences were explicitly removed
 		Score:       50,
 	}
-	
+
 	// Case 3: User with missing optional fields (never set)
 	user3 := UserProfile{
 		Username: "rahul_verma",
@@ -141,13 +141,13 @@ func getUserProfileHandler(c *gin.Context) {
 		// These will serialize to their zero values due to JSON limitations
 		Score: 75,
 	}
-	
+
 	// For demo, return all three cases
 	response := map[string]interface{}{
 		"users": []UserProfile{user1, user2, user3},
-		"note": "Check how Optional fields serialize: present values, explicit nulls, and missing fields",
+		"note":  "Check how Optional fields serialize: present values, explicit nulls, and missing fields",
 	}
-	
+
 	successResponse := wscutils.NewSuccessResponse(response)
 	wscutils.SendSuccessResponse(c, successResponse)
 }
@@ -161,7 +161,7 @@ func main() {
 
 	// Register the profile update route directly
 	s.RegisterRoute("POST", "/profileUpdate", updateProfileHandler)
-	
+
 	// Register the get profile route to demonstrate response serialization
 	s.RegisterRoute("GET", "/profiles", getUserProfileHandler)
 
