@@ -301,7 +301,7 @@ curl -i -X DELETE http://localhost:8084/orders/1
 - This example uses `wscutils.BindData` for request binding.
 - Validator setup lives in `internal/validation/validator.go`.
 - `internal/validation.NewUserValidator()` and `internal/validation.NewOrderValidator()` build additive `wscutils.Validator` instances.
-- The handlers use `wscutils.SendOK`, `SendCreated`, `SendDeleted`, and `SendError` for Alya envelope responses.
+- The handlers use `wscutils.NewSuccessResponse`, `wscutils.NewResponse`, and `wscutils.SendSuccessResponse` for Alya envelope responses.
 - `cmd/service/main.go` initializes LogHarbour and wires the dependencies.
 - `cmd/service/main.go` uses Alya's `config.NewFile`, `config.NewEnv`, and `config.LoadWith` for startup config.
 - Only the backend selection in `cmd/service/main.go` changes between SQLC and GORM; the service and handler layers stay the same.

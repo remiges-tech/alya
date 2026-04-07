@@ -28,21 +28,21 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	var req api.CreateOrderRequest
 	if err := wscutils.BindData(c, &req); err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, invalidJSONMessages())
+		sendError(c, http.StatusBadRequest, invalidJSONMessages())
 		return
 	}
 	if errs := h.validator.Validate(req); len(errs) > 0 {
-		wscutils.SendError(c, http.StatusBadRequest, errs)
+		sendError(c, http.StatusBadRequest, errs)
 		return
 	}
 
 	order, err := h.app.CreateOrder(c.Request.Context(), req)
 	if err != nil {
 		status, messages := h.orderAppError(err)
-		wscutils.SendError(c, status, messages)
+		sendError(c, status, messages)
 		return
 	}
-	wscutils.SendCreated(c, "/orders/"+int64ToString(order.ID), toOrderResponse(order))
+	sendSuccess(c, toOrderResponse(order))
 }
 
 func (h *OrderHandler) ListOrders(c *gin.Context) {
@@ -51,14 +51,14 @@ func (h *OrderHandler) ListOrders(c *gin.Context) {
 	orders, err := h.app.ListOrders(c.Request.Context())
 	if err != nil {
 		h.logger.Error(fmt.Errorf("list orders failed: %w", err)).LogActivity("Request failed", nil)
-		wscutils.SendError(c, http.StatusInternalServerError, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "internal", "")})
+		sendError(c, http.StatusInternalServerError, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "internal", "")})
 		return
 	}
 	response := make([]api.OrderResponse, 0, len(orders))
 	for _, order := range orders {
 		response = append(response, toOrderResponse(order))
 	}
-	wscutils.SendOK(c, response)
+	sendSuccess(c, response)
 }
 
 func (h *OrderHandler) GetOrder(c *gin.Context) {
@@ -66,16 +66,16 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 
 	id, err := wscutils.ParseInt64PathParam(c, "id")
 	if err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
+		sendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
 		return
 	}
 	order, err := h.app.GetOrder(c.Request.Context(), id)
 	if err != nil {
 		status, messages := h.orderAppError(err)
-		wscutils.SendError(c, status, messages)
+		sendError(c, status, messages)
 		return
 	}
-	wscutils.SendOK(c, toOrderResponse(order))
+	sendSuccess(c, toOrderResponse(order))
 }
 
 func (h *OrderHandler) UpdateOrder(c *gin.Context) {
@@ -83,27 +83,27 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 
 	id, err := wscutils.ParseInt64PathParam(c, "id")
 	if err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
+		sendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
 		return
 	}
 
 	var req api.UpdateOrderRequest
 	if err := wscutils.BindData(c, &req); err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, invalidJSONMessages())
+		sendError(c, http.StatusBadRequest, invalidJSONMessages())
 		return
 	}
 	if errs := validateUpdateOrderRequest(req, h.validator); len(errs) > 0 {
-		wscutils.SendError(c, http.StatusBadRequest, errs)
+		sendError(c, http.StatusBadRequest, errs)
 		return
 	}
 
 	order, err := h.app.UpdateOrder(c.Request.Context(), id, req)
 	if err != nil {
 		status, messages := h.orderAppError(err)
-		wscutils.SendError(c, status, messages)
+		sendError(c, status, messages)
 		return
 	}
-	wscutils.SendOK(c, toOrderResponse(order))
+	sendSuccess(c, toOrderResponse(order))
 }
 
 func (h *OrderHandler) DeleteOrder(c *gin.Context) {
@@ -111,15 +111,15 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 
 	id, err := wscutils.ParseInt64PathParam(c, "id")
 	if err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
+		sendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
 		return
 	}
 	if err := h.app.DeleteOrder(c.Request.Context(), id); err != nil {
 		status, messages := h.orderAppError(err)
-		wscutils.SendError(c, status, messages)
+		sendError(c, status, messages)
 		return
 	}
-	wscutils.SendDeleted(c)
+	sendSuccess(c, map[string]any{})
 }
 
 func validateUpdateOrderRequest(req api.UpdateOrderRequest, validator *wscutils.Validator) []wscutils.ErrorMessage {

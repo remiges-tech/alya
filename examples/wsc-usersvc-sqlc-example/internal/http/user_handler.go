@@ -27,21 +27,21 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 
 	var req api.CreateUserRequest
 	if err := wscutils.BindData(c, &req); err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, invalidJSONMessages())
+		sendError(c, http.StatusBadRequest, invalidJSONMessages())
 		return
 	}
 	if errs := h.validator.Validate(req); len(errs) > 0 {
-		wscutils.SendError(c, http.StatusBadRequest, errs)
+		sendError(c, http.StatusBadRequest, errs)
 		return
 	}
 
 	user, err := h.app.CreateUser(c.Request.Context(), req)
 	if err != nil {
 		status, messages := h.userAppError(err)
-		wscutils.SendError(c, status, messages)
+		sendError(c, status, messages)
 		return
 	}
-	wscutils.SendCreated(c, "/users/"+int64ToString(user.ID), toUserResponse(user))
+	sendSuccess(c, toUserResponse(user))
 }
 
 func (h *UserHandler) ListUsers(c *gin.Context) {
@@ -50,14 +50,14 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 	users, err := h.app.ListUsers(c.Request.Context())
 	if err != nil {
 		h.logger.Error(fmt.Errorf("list users failed: %w", err)).LogActivity("Request failed", nil)
-		wscutils.SendError(c, http.StatusInternalServerError, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "internal", "")})
+		sendError(c, http.StatusInternalServerError, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "internal", "")})
 		return
 	}
 	response := make([]api.UserResponse, 0, len(users))
 	for _, user := range users {
 		response = append(response, toUserResponse(user))
 	}
-	wscutils.SendOK(c, response)
+	sendSuccess(c, response)
 }
 
 func (h *UserHandler) GetUser(c *gin.Context) {
@@ -65,16 +65,16 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 
 	id, err := wscutils.ParseInt64PathParam(c, "id")
 	if err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
+		sendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
 		return
 	}
 	user, err := h.app.GetUser(c.Request.Context(), id)
 	if err != nil {
 		status, messages := h.userAppError(err)
-		wscutils.SendError(c, status, messages)
+		sendError(c, status, messages)
 		return
 	}
-	wscutils.SendOK(c, toUserResponse(user))
+	sendSuccess(c, toUserResponse(user))
 }
 
 func (h *UserHandler) UpdateUser(c *gin.Context) {
@@ -82,27 +82,27 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 	id, err := wscutils.ParseInt64PathParam(c, "id")
 	if err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
+		sendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
 		return
 	}
 
 	var req api.UpdateUserRequest
 	if err := wscutils.BindData(c, &req); err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, invalidJSONMessages())
+		sendError(c, http.StatusBadRequest, invalidJSONMessages())
 		return
 	}
 	if errs := validateUpdateUserRequest(req, h.validator); len(errs) > 0 {
-		wscutils.SendError(c, http.StatusBadRequest, errs)
+		sendError(c, http.StatusBadRequest, errs)
 		return
 	}
 
 	user, err := h.app.UpdateUser(c.Request.Context(), id, req)
 	if err != nil {
 		status, messages := h.userAppError(err)
-		wscutils.SendError(c, status, messages)
+		sendError(c, status, messages)
 		return
 	}
-	wscutils.SendOK(c, toUserResponse(user))
+	sendSuccess(c, toUserResponse(user))
 }
 
 func (h *UserHandler) DeleteUser(c *gin.Context) {
@@ -110,15 +110,15 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 
 	id, err := wscutils.ParseInt64PathParam(c, "id")
 	if err != nil {
-		wscutils.SendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
+		sendError(c, http.StatusBadRequest, []wscutils.ErrorMessage{wscutils.BuildErrorMessage(msgIDInvalid, "invalid", "id")})
 		return
 	}
 	if err := h.app.DeleteUser(c.Request.Context(), id); err != nil {
 		status, messages := h.userAppError(err)
-		wscutils.SendError(c, status, messages)
+		sendError(c, status, messages)
 		return
 	}
-	wscutils.SendDeleted(c)
+	sendSuccess(c, map[string]any{})
 }
 
 func validateUpdateUserRequest(req api.UpdateUserRequest, validator *wscutils.Validator) []wscutils.ErrorMessage {

@@ -162,15 +162,12 @@ New additive APIs were added for new envelope-style services:
 
 - `BindData`
 - `ParseInt64PathParam`
-- `SendOK`
-- `SendCreated`
-- `SendAccepted`
-- `SendDeleted`
-- `SendError`
 - `Validator`
 - `ValidationRule`
 
 These are additive. Existing `wscutils` users do not need to change.
+
+Response construction stays on the existing `wscutils` response API.
 
 ## Why `wscutils.Validator` was added
 

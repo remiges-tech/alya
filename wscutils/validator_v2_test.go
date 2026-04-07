@@ -93,25 +93,3 @@ func TestBindDataRejectsUnknownFields(t *testing.T) {
 		t.Fatal("BindData() expected error")
 	}
 }
-
-func TestSendCreatedAndDeleted(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-
-	SendCreated(c, "/users/1", map[string]any{"id": 1})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("SendCreated() status = %d, want %d", w.Code, http.StatusCreated)
-	}
-	if got := w.Header().Get("Location"); got != "/users/1" {
-		t.Fatalf("SendCreated() location = %q, want %q", got, "/users/1")
-	}
-
-	w = httptest.NewRecorder()
-	c, _ = gin.CreateTestContext(w)
-	SendDeleted(c)
-	if w.Code != http.StatusOK {
-		t.Fatalf("SendDeleted() status = %d, want %d", w.Code, http.StatusOK)
-	}
-}

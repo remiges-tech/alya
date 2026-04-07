@@ -65,31 +65,3 @@ func ParseInt64PathParam(c *gin.Context, name string) (int64, error) {
 	}
 	return parsed, nil
 }
-
-// SendOK sends a 200 success response in Alya envelope format.
-func SendOK(c *gin.Context, data any) {
-	c.JSON(http.StatusOK, NewSuccessResponse(data))
-}
-
-// SendCreated sends a 201 success response in Alya envelope format.
-func SendCreated(c *gin.Context, location string, data any) {
-	if location != "" {
-		c.Header("Location", location)
-	}
-	c.JSON(http.StatusCreated, NewSuccessResponse(data))
-}
-
-// SendAccepted sends a 202 success response in Alya envelope format.
-func SendAccepted(c *gin.Context, data any) {
-	c.JSON(http.StatusAccepted, NewSuccessResponse(data))
-}
-
-// SendDeleted sends a 200 success response with an empty data object.
-func SendDeleted(c *gin.Context) {
-	c.JSON(http.StatusOK, NewSuccessResponse(map[string]any{}))
-}
-
-// SendError sends an error response in Alya envelope format with the given HTTP status.
-func SendError(c *gin.Context, status int, messages []ErrorMessage) {
-	c.JSON(status, NewResponse(ErrorStatus, nil, messages))
-}
