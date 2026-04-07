@@ -35,17 +35,29 @@ func TestProcessorNotFoundErrorHandling(t *testing.T) {
 	// Setup test database
 	db := getDb()
 	defer db.Close()
+	if err := db.Ping(context.Background()); err != nil {
+		t.Skipf("postgres not available on localhost:5432: %v", err)
+	}
 
 	// Ensure migrations are applied
 	conn, err := db.Acquire(context.Background())
 	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
 	defer conn.Release()
 	err = MigrateDatabase(conn.Conn())
 	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
 
 	// Create Redis client
 	redisClient := getRedisClient()
 	defer redisClient.Close()
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		t.Skipf("redis not available on localhost:6379: %v", err)
+	}
 
 	// Create a real logger for testing
 	logger := logharbour.NewLogger(&logharbour.LoggerContext{}, "jobmanager-test", os.Stdout)
@@ -158,10 +170,28 @@ func TestJobManagerWithMissingProcessor(t *testing.T) {
 	// Setup test database
 	db := getDb()
 	defer db.Close()
+	if err := db.Ping(context.Background()); err != nil {
+		t.Skipf("postgres not available on localhost:5432: %v", err)
+	}
+
+	conn, err := db.Acquire(context.Background())
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
+	defer conn.Release()
+	err = MigrateDatabase(conn.Conn())
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
 
 	// Create Redis client
 	redisClient := getRedisClient()
 	defer redisClient.Close()
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		t.Skipf("redis not available on localhost:6379: %v", err)
+	}
 
 	// Create a test logger
 	loggerCtx := &logharbour.LoggerContext{}
@@ -170,7 +200,7 @@ func TestJobManagerWithMissingProcessor(t *testing.T) {
 	jm := NewJobManager(db, redisClient, nil, logger, nil)
 
 	// Register initializer only (no processor)
-	err := jm.RegisterInitializer("testapp", &MockInitializer{})
+	err = jm.RegisterInitializer("testapp", &MockInitializer{})
 	assert.NoError(t, err)
 
 	// Create test data with an unregistered processor

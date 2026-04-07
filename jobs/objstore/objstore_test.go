@@ -21,15 +21,20 @@ func TestPutGetObject(t *testing.T) {
 		t.Fatalf("Error creating Minio client: %v", err)
 	}
 
+	ctx := context.Background()
+	bucketName := "testbucket"
+	if _, err := minioClient.BucketExists(ctx, bucketName); err != nil {
+		t.Skipf("minio not available on localhost:9000: %v", err)
+	}
+
 	// Create a new MinioObjectStore instance with the provided Minio client
 	store := objstore.NewMinioObjectStore(minioClient)
 
 	// Create the test bucket
-	bucketName := "testbucket"
-	err = minioClient.MakeBucket(context.Background(), bucketName, minio.MakeBucketOptions{})
+	err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
 	if err != nil {
 		// Check if the bucket already exists
-		exists, err := minioClient.BucketExists(context.Background(), bucketName)
+		exists, err := minioClient.BucketExists(ctx, bucketName)
 		if err != nil || !exists {
 			t.Fatalf("Error creating test bucket: %v", err)
 		}
@@ -40,13 +45,13 @@ func TestPutGetObject(t *testing.T) {
 	objectContent := []byte("Hello, World!")
 
 	// Put the test object
-	err = store.Put(context.Background(), bucketName, objectName, bytes.NewReader(objectContent), int64(len(objectContent)), "text/plain")
+	err = store.Put(ctx, bucketName, objectName, bytes.NewReader(objectContent), int64(len(objectContent)), "text/plain")
 	if err != nil {
 		t.Fatalf("Error putting object: %v", err)
 	}
 
 	// Get the test object
-	reader, err := store.Get(context.Background(), bucketName, objectName)
+	reader, err := store.Get(ctx, bucketName, objectName)
 	if err != nil {
 		t.Fatalf("Error getting object: %v", err)
 	}
