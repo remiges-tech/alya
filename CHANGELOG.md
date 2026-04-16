@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-04-16
+
 ### Added
 - Compile-time dependency injection support via the `di` package and the `alya-di` generator
 - Config loader, provider, and watch support in `config`
