@@ -14,9 +14,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - `examples/rest-usersvc-sqlc-example` with users and orders, SQLC, migrations, config loading, and compile-time DI wiring
 - `examples/wsc-usersvc-sqlc-example` with users and orders, SQLC, optional GORM repository, migrations, and config loading
 
-### Breaking
-- Responses that include `wscutils.ErrorMessage` may omit `msgid` when it is `0` and `errcode` when it is empty. Clients that require those keys to always be present must be updated.
-
 ## [0.35.0] - 2026-02-20
 
 ### Fixed
