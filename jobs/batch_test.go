@@ -63,18 +63,30 @@ func TestBatchDone(t *testing.T) {
 	// Create a PostgreSQL connection pool
 	db := getDb()
 	defer db.Close()
+	if err := db.Ping(context.Background()); err != nil {
+		t.Skipf("postgres not available on localhost:5432: %v", err)
+	}
 
 	// Acquire a connection from the pool
 	conn, err := db.Acquire(context.Background())
 	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
 	defer conn.Release()
 	// Run database migrations
 	err = MigrateDatabase(conn.Conn())
 	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
 
 	// Create a Redis client
 	redisClient := getRedisClient()
 	defer redisClient.Close()
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		t.Skipf("redis not available on localhost:6379: %v", err)
+	}
 
 	// Create a JobManager instance with the database and Redis dependencies
 	jm := &JobManager{
@@ -168,9 +180,27 @@ func getRedisClient() *redis.Client {
 func TestBatchMarkDone(t *testing.T) {
 	db := getDb()
 	defer db.Close()
+	if err := db.Ping(context.Background()); err != nil {
+		t.Skipf("postgres not available on localhost:5432: %v", err)
+	}
+
+	conn, err := db.Acquire(context.Background())
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
+	defer conn.Release()
+	err = MigrateDatabase(conn.Conn())
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
 
 	redisClient := getRedisClient()
 	defer redisClient.Close()
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		t.Skipf("redis not available on localhost:6379: %v", err)
+	}
 
 	processor := &mockBatchProcessor{t: t}
 	// Create a test logger
@@ -178,7 +208,7 @@ func TestBatchMarkDone(t *testing.T) {
 	logger := logharbour.NewLogger(loggerCtx, "test", log.Writer())
 	jm := NewJobManager(db, redisClient, nil, logger, nil)
 
-	err := jm.RegisterInitializer("testapp", &MockInitializer{})
+	err = jm.RegisterInitializer("testapp", &MockInitializer{})
 	assert.NoError(t, err)
 
 	err = jm.RegisterProcessorBatch("testapp", "testop", processor)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -85,7 +86,7 @@ func (l *LogharbourPgxTracerLogger) Log(ctx context.Context, level tracelog.LogL
 		logWithModule.Warn().LogActivity(msg, data)
 	case tracelog.LogLevelError:
 		// For error level, we use logharbour's error level and include the error message.
-		logWithModule.Error(fmt.Errorf(msg)).LogActivity(msg, data)
+		logWithModule.Error(errors.New(msg)).LogActivity(msg, data)
 	default:
 		// For any other levels, default to info.
 		logWithModule.Info().LogActivity(msg, data)

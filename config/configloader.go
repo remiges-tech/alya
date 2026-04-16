@@ -11,16 +11,24 @@ import (
 )
 
 func LoadConfigFromFile(filePath string, appConfig any) error {
-	configSource, err := newFile(filePath)
+	configSource, err := NewFile(filePath)
 	if err != nil {
 		return fmt.Errorf("Failed to create File config source: %v", err)
 	}
 
-	err = Load(configSource, appConfig)
+	err = LoadWith(configSource, appConfig)
 	if err != nil {
 		return fmt.Errorf("Error loading config: %v", err)
 	}
 
+	return nil
+}
+
+func LoadConfigFromEnv(prefix string, appConfig any) error {
+	configSource := NewEnv(prefix)
+	if err := LoadWith(configSource, appConfig); err != nil {
+		return fmt.Errorf("Error loading config from env: %v", err)
+	}
 	return nil
 }
 

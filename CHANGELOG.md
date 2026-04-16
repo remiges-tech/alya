@@ -4,6 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Added
+- Compile-time dependency injection support via the `di` package and the `alya-di` generator
+- Config loader, provider, and watch support in `config`
+- Environment-backed startup config loading via `config.NewEnv(...)`
+- REST helper APIs in `restutils` for JSON binding, validation, problem responses, and standard responses
+- Additive helper APIs in `wscutils` for `{"data": ...}` binding, path param parsing, and validator instances
+- PATCH route registration in `service.Service`
+- `examples/rest-usersvc-sqlc-example` with users and orders, SQLC, migrations, config loading, and compile-time DI wiring
+- `examples/wsc-usersvc-sqlc-example` with users and orders, SQLC, optional GORM repository, migrations, and config loading
+
 ## [0.35.0] - 2026-02-20
 
 ### Fixed

@@ -306,7 +306,7 @@ func (o Optional[T]) MarshalJSON() ([]byte, error) {
 		// Field was explicitly set to null
 		return []byte("null"), nil
 	}
-	
+
 	// Field has a value or is not present - marshal the value
 	// When not present, this will marshal the zero value of T
 	return json.Marshal(o.Value)

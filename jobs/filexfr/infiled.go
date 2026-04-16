@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -143,13 +144,14 @@ func (i *Infiled) processSingleMapping(mapping FileTypeMapping) error {
 func (i *Infiled) findFiles(pattern string) ([]string, error) {
 	i.logger.Info().LogActivity("Finding files matching pattern", map[string]any{"pattern": pattern, "directories": i.config.WatchDirs})
 	var files []string
+	fsPattern := strings.TrimPrefix(pattern, string(filepath.Separator))
 	for _, dir := range i.config.WatchDirs {
 		// Use os.DirFS rooted at dir
 		fs := os.DirFS(dir)
-		i.logger.Info().LogActivity("Using os.DirFS with root", map[string]any{"root": dir})
+		i.logger.Info().LogActivity("Using os.DirFS with root", map[string]any{"root": dir, "fsPattern": fsPattern})
 
 		// When using fs.Glob, the pattern should be relative to dir
-		matches, err := doublestar.Glob(fs, pattern)
+		matches, err := doublestar.Glob(fs, fsPattern)
 		if err != nil {
 			return nil, fmt.Errorf("error globbing pattern %s in directory %s: %w", pattern, dir, err)
 		}

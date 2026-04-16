@@ -1,12 +1,32 @@
 package filexfr
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestFindFiles(t *testing.T) {
 	logger := setupTestLogger(t)
+	root := t.TempDir()
+
+	mustWriteFile := func(relPath string) string {
+		t.Helper()
+		fullPath := filepath.Join(root, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(fullPath), err)
+		}
+		if err := os.WriteFile(fullPath, []byte("test"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", fullPath, err)
+		}
+		return fullPath
+	}
+
+	csvFile := mustWriteFile(filepath.Join("path", "to", "file.csv"))
+	xlsxFile := mustWriteFile(filepath.Join("incoming", "data.xlsx"))
+	datFile := mustWriteFile(filepath.Join("some", "path", "TXN20230615.dat"))
+	nestedFile := mustWriteFile(filepath.Join("user1", "incoming", "txnbatch", "TXN_data.xlsx"))
+	_ = mustWriteFile(filepath.Join("path", "to", "ignore.txt"))
 
 	tests := []struct {
 		name    string
@@ -16,51 +36,40 @@ func TestFindFiles(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "Match simple file extension",
-			config: InfiledConfig{
-				WatchDirs: []string{"/path/to"},
-			},
+			name:    "Match simple file extension",
+			config:  InfiledConfig{WatchDirs: []string{filepath.Join(root, "path", "to")}},
 			pattern: "*.csv",
-			want:    []string{"/path/to/file.csv"},
+			want:    []string{csvFile},
 			wantErr: false,
 		},
 		{
-			name: "Match file in specific directory",
-			config: InfiledConfig{
-				WatchDirs: []string{"/"},
-			},
+			name:    "Match file in specific directory with leading slash",
+			config:  InfiledConfig{WatchDirs: []string{root}},
 			pattern: "/incoming/*.xlsx",
-			want:    []string{"/incoming/data.xlsx"},
+			want:    []string{xlsxFile},
 			wantErr: false,
 		},
 		{
-			name: "Match file with prefix",
-			config: InfiledConfig{
-				WatchDirs: []string{"/some/path"},
-			},
+			name:    "Match file with prefix",
+			config:  InfiledConfig{WatchDirs: []string{filepath.Join(root, "some", "path")}},
 			pattern: "TXN*.dat",
-			want:    []string{"/some/path/TXN20230615.dat"},
+			want:    []string{datFile},
 			wantErr: false,
 		},
 		{
-			name: "Match file in nested directory",
-			config: InfiledConfig{
-				WatchDirs: []string{"/user1"},
-			},
-			pattern: "/*/incoming/txnbatch/TXN*.xlsx",
-			want:    []string{"/user1/incoming/txnbatch/TXN_data.xlsx"},
+			name:    "Match file in nested directory",
+			config:  InfiledConfig{WatchDirs: []string{root}},
+			pattern: "/user1/incoming/txnbatch/TXN*.xlsx",
+			want:    []string{nestedFile},
 			wantErr: false,
 		},
 		{
-			name: "No match",
-			config: InfiledConfig{
-				WatchDirs: []string{"/path/to"},
-			},
-			pattern: "*.csv",
+			name:    "No match",
+			config:  InfiledConfig{WatchDirs: []string{filepath.Join(root, "path", "to")}},
+			pattern: "*.json",
 			want:    []string{},
 			wantErr: false,
 		},
-		// Add more test cases as needed
 	}
 
 	for _, tt := range tests {

@@ -2,9 +2,8 @@ package validations
 
 import (
 	"fmt"
-	"time"
-
 	"testing"
+	"time"
 )
 
 // mobileNumber means argument 1 and the expected stands for the 'result we expect'
@@ -23,15 +22,13 @@ func TestIsValidMobileNumber(t *testing.T) {
 		{"+919999", "IN", false},
 		{"9876543210", "US", false},
 		{"abc123", "US", false},
-		{"+44201234567", "GB", true},
+		{"+442083661177", "GB", true},
 	}
 
 	for _, testCase := range testCases {
 		isValid := IsValidPhoneNumber(testCase.phoneNumber, testCase.regionCode)
-		if isValid == testCase.isValid {
-			fmt.Println("Test passed:", testCase.phoneNumber)
-		} else {
-			fmt.Println("Test failed:", testCase.phoneNumber)
+		if isValid != testCase.isValid {
+			t.Errorf("IsValidPhoneNumber(%q, %q) = %v, want %v", testCase.phoneNumber, testCase.regionCode, isValid, testCase.isValid)
 		}
 	}
 }
@@ -61,27 +58,19 @@ func TestIsFileTypeAllowed(t *testing.T) {
 }
 
 func TestCalculateAge(t *testing.T) {
-	// Assume the current year for the test is 2024
-	assumedCurrentYear := 2024
-	actualCurrentYear := time.Now().Year()
-	yearDifference := actualCurrentYear - assumedCurrentYear
-
-	// Define test cases
+	now := time.Now().UTC()
 	var tests = []struct {
 		name      string
 		birthDate time.Time
 		expected  int
 	}{
-		{"Age 30", time.Date(1990, 10, 10, 0, 0, 0, 0, time.UTC), 33},
-		{"Born Today", time.Now().UTC(), 0},
-		{"Leap Year", time.Date(2000, 2, 29, 0, 0, 0, 0, time.UTC), 23},
+		{"Age 30 after birthday", now.AddDate(-30, 0, -1), 30},
+		{"Born Today", now, 0},
+		{"Birthday tomorrow", now.AddDate(-18, 0, 1), 17},
 	}
 
-	// Run test cases
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.expected += yearDifference // Adjust the expected age
-
 			if got := CalculateAge(tt.birthDate); got != tt.expected {
 				t.Errorf("CalculateAge(%v) = %v, want %v", tt.birthDate, got, tt.expected)
 			}
@@ -133,7 +122,7 @@ func ExampleIsValidDateOfBirth() {
 
 	fmt.Println("Invalid DOB examples")
 	fmt.Println("2012-05-05: ", IsValidDateOfBirth("2012-05-05", intPointer(MIN_AGE), intPointer(MAX_AGE)))
-	fmt.Println("text: ", IsValidDateOfBirth("2006-09-02", intPointer(MIN_AGE), intPointer(MAX_AGE)))
+	fmt.Println("text: ", IsValidDateOfBirth("text", intPointer(MIN_AGE), intPointer(MAX_AGE)))
 
 	// Output:
 	// Valid DOB examples
@@ -147,7 +136,7 @@ func ExampleIsValidDateOfBirth() {
 // ExampleIsFileTypeAllowed generates examples of valid and invalid file names and prints the results.
 // No parameters.
 // No return value.
-func ExampleIsValidFileType() {
+func ExampleIsFileTypeAllowed() {
 	fmt.Println("Valid file type examples")
 	fmt.Println("text.doc: ", IsFileTypeAllowed("text.doc", []string{"doc", "docx", "png"}))
 	fmt.Println("text.png: ", IsFileTypeAllowed("text.png", []string{"doc", "docx", "png"}))
@@ -164,10 +153,10 @@ func ExampleIsValidFileType() {
 	// text:  false
 }
 
-// ExampleIsValidMobileNumber generates examples of valid and invalid mobile numbers and prints the results.
+// ExampleIsValidPhoneNumber generates examples of valid and invalid mobile numbers and prints the results.
 // No parameters.
 // No return value.
-func ExampleIsValidMobileNumber() {
+func ExampleIsValidPhoneNumber() {
 	fmt.Println("Valid phone number examples")
 	fmt.Println("+918888888888: ", IsValidPhoneNumber("+918888888888", "IN"))
 	fmt.Println("8888888888: ", IsValidPhoneNumber("8888888888", "IN")) // Local format

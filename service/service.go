@@ -116,6 +116,8 @@ func (s *Service) RegisterRoute(method, path string, handler HandlerFunc) {
 		s.Router.PUT(path, wrappedHandler)
 	case http.MethodDelete:
 		s.Router.DELETE(path, wrappedHandler)
+	case http.MethodPatch:
+		s.Router.PATCH(path, wrappedHandler)
 	default:
 		// Handle unsupported methods
 		log.Printf("Unsupported method: %s", method)
@@ -145,6 +147,8 @@ func (g *RouteGroup) RegisterRoute(method, path string, handler gin.HandlerFunc)
 		g.Group.PUT(path, handler)
 	case http.MethodDelete:
 		g.Group.DELETE(path, handler)
+	case http.MethodPatch:
+		g.Group.PATCH(path, handler)
 	default:
 		// Handle unsupported methods
 		log.Printf("Unsupported method: %s", method)
@@ -165,6 +169,8 @@ func (s *Service) RegisterRouteWithGroup(group *gin.RouterGroup, method, path st
 		group.PUT(path, wrappedHandler)
 	case http.MethodDelete:
 		group.DELETE(path, wrappedHandler)
+	case http.MethodPatch:
+		group.PATCH(path, wrappedHandler)
 	default:
 		// Handle unsupported methods
 		log.Printf("Unsupported method: %s", method)
